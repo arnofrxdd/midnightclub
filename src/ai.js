@@ -83,10 +83,20 @@ export class AICar {
     this._dodgeSide  = 0;    // -1 left, 0 centre, +1 right
     this._dodgeTimer = 0;
     this._dodgeApply = 0;    // actual lateral offset applied this frame (m)
+
+    // ── stuck physical speed tracking ────────────────────────────────────────
+    this._prevPos    = new THREE.Vector3(startPos.x, startPos.y, startPos.z);
+    this._recentDist = 10.0;
+
+    // ── confined area stuck tracking ─────────────────────────────────────────
+    this._stuckAnchorPos  = new THREE.Vector3(startPos.x, startPos.y, startPos.z);
+    this._stuckCheckTimer = 2.0;
+    this._isTrapped       = false;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   update(dt, world, raceManager, traffic, navGraph) {
+    this.debugLookahead = null;
     if (this.completed || !raceManager.active) {
       this.speed = 0;
       this.velocity.set(0, 0, 0);
@@ -152,7 +162,7 @@ export class AICar {
       this._tickEscape(dt, world);
       this._applyWallPushback(world);
       this._checkCheckpoints(target, raceManager, world);
-      this._updateMesh();
+      this._updateMesh(world, dt);
       return;
     }
 
@@ -191,6 +201,8 @@ export class AICar {
     const usePt = (world.checkCollision(dodgedPt.x, dodgedPt.z, 1.5).collision)
       ? baseLookahead
       : dodgedPt;
+
+    this.debugLookahead = usePt;
 
     // ── 7. Desired heading toward lookahead point ────────────────────────────
     const dx  = usePt.x - this.position.x;
@@ -272,19 +284,33 @@ export class AICar {
     );
 
     // ── 12. Stuck detection ──────────────────────────────────────────────────
-    // Use progress toward the *next waypoint* (not just speed) to detect stuck
-    const wpt = this._currentPath
-      ? (this._currentPath[this._pathWptIdx] || this._currentPath[this._currentPath.length - 1])
-      : targetPos;
-    const toWpt  = new THREE.Vector3(wpt.x - this.position.x, 0, wpt.z - this.position.z).normalize();
-    const progVel = this.velocity.dot(toWpt);
+    // Track actual physical distance moved to detect real blockages
+    const distMoved = this.position.distanceTo(this._prevPos);
+    this._prevPos.copy(this.position);
 
-    if (progVel < 1.5) {
+    const currentFrameSpeed = dt > 0 ? distMoved / dt : 0;
+    this._recentDist += (currentFrameSpeed - this._recentDist) * 1.5 * dt;
+
+    // Confined area check: evaluate displacement every 2.0s
+    this._stuckCheckTimer -= dt;
+    if (this._stuckCheckTimer <= 0) {
+      this._stuckCheckTimer = 2.0;
+      const displacement = this.position.distanceTo(this._stuckAnchorPos);
+      this._stuckAnchorPos.copy(this.position);
+      
+      // If we moved less than 4.5 meters in 2.0 seconds, we are trapped in a loop or obstacle
+      this._isTrapped = (displacement < 4.5);
+    }
+
+    // Stuck if the car is barely moving physically (under 1.0 m/s) or trapped in a loop
+    const isStuckActual = (this._recentDist < 1.0) || this._isTrapped;
+
+    if (isStuckActual) {
       this._stuckTimer += dt;
       this._longStuck  += dt;
     } else {
       this._stuckTimer = 0;
-      this._longStuck  = 0;
+      // Do NOT reset this._longStuck to 0 here! It should only reset on checkpoint clear or respawn.
     }
 
     if (this._stuckTimer > 1.0) {
@@ -317,7 +343,7 @@ export class AICar {
     this.isDrifting = absErr > 0.45 && this.speed > 12;
 
     // ── 17. Mesh sync ────────────────────────────────────────────────────────
-    this._updateMesh();
+    this._updateMesh(world, dt);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -395,7 +421,26 @@ export class AICar {
     const path = this._currentPath;
     if (!path || path.length === 0) return null;
 
-    // Advance waypoint index when we're close enough to it
+    // Find the waypoint in a small forward window that is physically closest to the car
+    let closestIdx = this._pathWptIdx;
+    let closestDist = this.position.distanceTo(path[closestIdx]);
+    
+    // Check up to 3 waypoints ahead (window of 4 total)
+    const searchLimit = Math.min(path.length, this._pathWptIdx + 4);
+    for (let i = this._pathWptIdx + 1; i < searchLimit; i++) {
+      const d = this.position.distanceTo(path[i]);
+      if (d < closestDist) {
+        closestDist = d;
+        closestIdx = i;
+      }
+    }
+    
+    // Advance to the closest waypoint if we found a closer one ahead
+    if (closestIdx > this._pathWptIdx) {
+      this._pathWptIdx = closestIdx;
+    }
+
+    // Also advance if we are very close to the current target (under 10m)
     while (
       this._pathWptIdx < path.length - 1 &&
       this.position.distanceTo(path[this._pathWptIdx]) < 10
@@ -509,6 +554,10 @@ export class AICar {
     this._stuckTimer  = 0;
     this.recoveryBoostTimer = 4.0;
 
+    this._isTrapped = false;
+    this._stuckCheckTimer = 2.0;
+    this._stuckAnchorPos.copy(this.position);
+
     // Recompute path after escape so we don't follow the old stuck path
     if (navGraph && targetPos) {
       this._computePath(navGraph, targetPos);
@@ -517,7 +566,7 @@ export class AICar {
     // First frame of escape: update position
     this._tickEscape(0, world);
     this._applyWallPushback(world);
-    this._updateMesh();
+    this._updateMesh(world, 0.016);
   }
 
   _tickEscape(dt, world) {
@@ -618,6 +667,12 @@ export class AICar {
     this._escapeTimer = 0;
     this._longStuck   = 0;
     this.recoveryBoostTimer = 4.0;
+
+    this._isTrapped = false;
+    this._stuckCheckTimer = 2.0;
+    this._stuckAnchorPos.copy(this.position);
+    this._prevPos.copy(this.position);
+    this._recentDist = 10.0;
     this._currentPath = null; // force path recompute next frame
 
     // Point toward next checkpoint
@@ -687,9 +742,13 @@ export class AICar {
     }
   }
 
-  _updateMesh() {
+  _updateMesh(world, dt) {
     if (!this.meshGroup) return;
     this.meshGroup.position.copy(this.position);
-    this.meshGroup.rotation.y = this.heading;
+    if (world && typeof world.alignMeshToTerrain === 'function') {
+      world.alignMeshToTerrain(this.meshGroup, this.position, this.heading, false, dt || 0.016);
+    } else {
+      this.meshGroup.rotation.y = this.heading;
+    }
   }
 }

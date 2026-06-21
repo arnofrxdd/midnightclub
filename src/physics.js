@@ -431,10 +431,13 @@ export class CarPhysics {
     
     // Check if airborne
     const wasAirborne = this.isAirborne;
+    const prevAirTime = this.airTime;
     const totalComp = compressions[0] + compressions[1] + compressions[2] + compressions[3];
     const avgGroundHeight = (hGround[0] + hGround[1] + hGround[2] + hGround[3]) / 4;
+    const heightAboveGround = this.position.y - avgGroundHeight;
     
-    if (totalComp <= 0.001) {
+    // Only airborne if suspension is fully extended AND center height is significantly above ground
+    if (totalComp <= 0.001 && heightAboveGround > 1.35) {
       this.isAirborne = true;
       this.airTime += dt;
     } else {
@@ -443,8 +446,8 @@ export class CarPhysics {
     }
 
     // Mid-air rotation tracking
-    if (this.isAirborne) {
-      if (this.airTime <= dt) {
+    if (this.isAirborne && this.airTime > 0.2) {
+      if (prevAirTime <= 0.2) {
         // Just launched! Initialize trick tracking
         this.stuntPitchRotated = 0.0;
         this.stuntRollRotated = 0.0;
@@ -471,9 +474,20 @@ export class CarPhysics {
     if (this.rolloverTimer <= 0) {
       // Apply forces and torques to the rigid body
       const gravityAcc = -22.0;
-      const verticalAcc = (totalFSpring / this.mass) + gravityAcc;
-      this.velocityY += verticalAcc * dt;
-      this.position.y += this.velocityY * dt;
+      const prevY = this.position.y;
+      
+      // If we are close to the ground, use stable kinematic matching to follow the terrain smoothly
+      if (heightAboveGround < 1.35) {
+        const targetY = avgGroundHeight + 0.58;
+        // Smoothly lerp towards target ground height (with speed-proportional response)
+        const lerpSpeed = 18.0 + Math.min(12.0, this.velocity.length() * 0.1);
+        this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, 1 - Math.exp(-lerpSpeed * dt));
+        this.velocityY = (this.position.y - prevY) / dt;
+      } else {
+        // Airborne: Normal parabolic gravity path
+        this.velocityY += gravityAcc * dt;
+        this.position.y += this.velocityY * dt;
+      }
       
       // Only apply suspension and G-force torques when on the ground to prevent automatic nose dipping in mid-air
       let pitchAcc = 0;
@@ -499,7 +513,7 @@ export class CarPhysics {
     }
 
     // Mid-air correction keys
-    if (this.isAirborne && this.rolloverTimer <= 0) {
+    if (this.isAirborne && this.airTime > 0.2 && this.rolloverTimer <= 0) {
       let pitchControl = 0;
       let rollControl = 0;
       let yawControl = 0;
@@ -563,7 +577,7 @@ export class CarPhysics {
     }
 
     // Detect landing and calculate tricks
-    if (wasAirborne && !this.isAirborne) {
+    if (wasAirborne && !this.isAirborne && prevAirTime > 0.2) {
       // Landed! Wrap visual pitch/roll to [-PI, PI] to prevent sudden angle snaps
       while (this.bodyPitch < -Math.PI) this.bodyPitch += Math.PI * 2;
       while (this.bodyPitch > Math.PI) this.bodyPitch -= Math.PI * 2;
@@ -630,7 +644,7 @@ export class CarPhysics {
       const landingRollError = Math.abs(this.bodyRoll);
       const landingPitchError = Math.abs(this.bodyPitch);
       const isCleanLanding = landingRollError < 0.22 && landingPitchError < 0.22;
-      const isWipeout = landingRollError > 0.48 || landingPitchError > 0.48;
+      const isWipeout = false;
       
       if (trickName !== "") {
         if (isWipeout) {
@@ -659,7 +673,7 @@ export class CarPhysics {
           this.rolloverSpin = (Math.random() > 0.5 ? 1.0 : -1.0) * (6.5 + Math.random() * 4.5);
           this.velocity.multiplyScalar(0.3);
           this.isDrifting = true;
-        } else if (isCleanLanding && this.airTime > 0.8) {
+        } else if (isCleanLanding && prevAirTime > 0.8) {
           this.trickNotification = "CLEAN LANDING!";
           const currentSpeed = this.velocity.length();
           this.velocity.setLength(Math.max(currentSpeed, 38.0));

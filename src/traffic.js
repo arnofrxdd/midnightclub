@@ -74,7 +74,8 @@ export class TrafficVehicle {
     const playerGridX = Math.round(playerPos.x / 40);
     const playerGridZ = Math.round(playerPos.z / 40);
     
-    for (let attempt = 0; attempt < 30; attempt++) {
+    // First pass: try 80 attempts in a 9x9 grid around the player (medium distance)
+    for (let attempt = 0; attempt < 80; attempt++) {
       const gx = playerGridX + Math.floor(Math.random() * 9) - 4;
       const gz = playerGridZ + Math.floor(Math.random() * 9) - 4;
       
@@ -83,7 +84,7 @@ export class TrafficVehicle {
       
       const tempPos = new THREE.Vector3(posX, 0.5, posZ);
       const dist = tempPos.distanceTo(playerPos);
-      if (dist < 50 || dist > 200) continue;
+      if (dist < 50 || dist > 220) continue;
       
       const isCol = world.roadColumns && world.roadColumns.has(gx);
       const isRow = world.roadRows && world.roadRows.has(gz);
@@ -195,6 +196,124 @@ export class TrafficVehicle {
         return { x: parkX, z: parkZ, heading, roadAxis, roadCoord, dirSign };
       }
     }
+
+    // Second pass: wider search range (13x13 grid) and up to 80 more attempts
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const gx = playerGridX + Math.floor(Math.random() * 13) - 6;
+      const gz = playerGridZ + Math.floor(Math.random() * 13) - 6;
+      
+      const posX = gx * 40;
+      const posZ = gz * 40;
+      
+      const tempPos = new THREE.Vector3(posX, 0.5, posZ);
+      const dist = tempPos.distanceTo(playerPos);
+      if (dist < 40 || dist > 300) continue;
+      
+      const isCol = world.roadColumns && world.roadColumns.has(gx);
+      const isRow = world.roadRows && world.roadRows.has(gz);
+      const isIntersection = isCol && isRow;
+      const isAlley = typeof world.isAlley === 'function' && world.isAlley(gx, gz);
+      
+      if (isIntersection) continue;
+      
+      let parkX = posX;
+      let parkZ = posZ;
+      let heading = 0;
+      let roadAxis = 'x';
+      let roadCoord = 0;
+      let dirSign = 1;
+      let foundSpot = false;
+
+      if (isCol && !isAlley) {
+        const { rwX } = world.getRoadWidthForGrid(gx, gz);
+        const roadWidth = rwX;
+        const side = Math.random() > 0.5 ? 1 : -1;
+        const offsetZ = Math.random() > 0.5 ? 6 : -6;
+        
+        parkX = posX + side * (roadWidth / 2 - 1.2);
+        parkZ = posZ + offsetZ;
+        heading = side > 0 ? 0 : Math.PI;
+        roadAxis = 'z';
+        roadCoord = posX;
+        dirSign = side;
+        foundSpot = true;
+      } else if (isRow && !isAlley) {
+        const { rwZ } = world.getRoadWidthForGrid(gx, gz);
+        const roadWidth = rwZ;
+        const side = Math.random() > 0.5 ? 1 : -1;
+        const offsetX = Math.random() > 0.5 ? 6 : -6;
+        
+        parkX = posX + offsetX;
+        parkZ = posZ + side * (roadWidth / 2 - 1.2);
+        heading = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+        roadAxis = 'x';
+        roadCoord = posZ;
+        dirSign = side;
+        foundSpot = true;
+      } else if (isAlley) {
+        const isNS = world.shortcutColumns && world.shortcutColumns.has(gx);
+        const isEW = world.shortcutRows && world.shortcutRows.has(gz);
+        
+        if (isNS && !isEW) {
+          const side = Math.random() > 0.5 ? 1 : -1;
+          const offsetZ = Math.random() > 0.5 ? 6 : -6;
+          
+          parkX = posX + side * 13;
+          parkZ = posZ + offsetZ;
+          heading = side > 0 ? 0 : Math.PI;
+          roadAxis = 'z';
+          roadCoord = posX;
+          dirSign = side;
+          foundSpot = true;
+        } else if (isEW && !isNS) {
+          const side = Math.random() > 0.5 ? 1 : -1;
+          const offsetX = Math.random() > 0.5 ? 6 : -6;
+          
+          parkX = posX + offsetX;
+          parkZ = posZ + side * 13;
+          heading = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+          roadAxis = 'x';
+          roadCoord = posZ;
+          dirSign = side;
+          foundSpot = true;
+        }
+      }
+
+      if (foundSpot) {
+        let overlapsProp = false;
+        if (world.breakables) {
+          for (const b of world.breakables) {
+            if (b.broken) continue;
+            const dx = parkX - b.position.x;
+            const dz = parkZ - b.position.z;
+            if (dx * dx + dz * dz < 25.0) {
+              overlapsProp = true;
+              break;
+            }
+          }
+        }
+        if (overlapsProp) continue;
+
+        let overlapsExisting = false;
+        for (const pos of existingPositions) {
+          if (!pos) continue;
+          const dx = parkX - pos.x;
+          const dz = parkZ - pos.z;
+          if (dx * dx + dz * dz < 49.0) {
+            overlapsExisting = true;
+            break;
+          }
+        }
+        if (overlapsExisting) continue;
+
+        if (world.checkCollision && world.checkCollision(parkX, parkZ, 3.2).collision) {
+          continue;
+        }
+
+        return { x: parkX, z: parkZ, heading, roadAxis, roadCoord, dirSign };
+      }
+    }
+
     return null;
   }
 
@@ -221,6 +340,9 @@ export class TrafficVehicle {
         dirSign = spot.dirSign;
         heading = spot.heading;
         found = true;
+      } else {
+        // If we really couldn't find a spot, abort recycling to prevent spawning in active lanes
+        return;
       }
     }
 
@@ -390,7 +512,10 @@ export class TrafficVehicle {
       }
     }
 
-    this.position.set(spawnX, 0.5, spawnZ);
+    const spawnY = (world && typeof world.getGroundHeight === 'function')
+      ? world.getGroundHeight(spawnX, spawnZ)
+      : 0.5;
+    this.position.set(spawnX, spawnY, spawnZ);
     this.roadAxis = axis;
     this.dirSign = dirSign;
     this.roadCoord = roadCoord;
@@ -410,6 +535,12 @@ export class TrafficVehicle {
     }
     this.opacity = 0.0; // Fade in from invisible
     this.isRecovering = false;
+    this.crashedAirborne = false;
+    this.velocityY = 0.0;
+    this.roll = 0.0;
+    this.pitch = 0.0;
+    this.rollVelocity = 0.0;
+    this.pitchVelocity = 0.0;
   }
 
   update(dt, playerPos, playerHeading = 0, otherCars = [], forceFade = false, frustum = null, activeCops = []) {
@@ -510,15 +641,55 @@ export class TrafficVehicle {
       this.position.x += (fwdSin * forwardSpeed + rgtCos * newLateralSpeed) * dt;
       this.position.z += (fwdCos * forwardSpeed + rgtSin * newLateralSpeed) * dt;
 
+      // Advanced 3D Crash Physics
+      if (this.crashedAirborne === undefined) this.crashedAirborne = false;
+      if (this.velocityY === undefined) this.velocityY = 0.0;
+      if (this.roll === undefined) this.roll = 0.0;
+      if (this.pitch === undefined) this.pitch = 0.0;
+      if (this.rollVelocity === undefined) this.rollVelocity = 0.0;
+      if (this.pitchVelocity === undefined) this.pitchVelocity = 0.0;
+
       const targetY = (this.world && typeof this.world.getGroundHeight === 'function')
         ? this.world.getGroundHeight(this.position.x, this.position.z)
         : 0.5;
-      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+
+      if (this.crashedAirborne) {
+        const heightAboveGround = this.position.y - targetY;
+        if (heightAboveGround > 0.05 || this.velocityY > 0.5) {
+          this.isAirborne = true;
+          this.velocityY -= 22.0 * dt;
+          this.position.y += this.velocityY * dt;
+          this.roll += this.rollVelocity * dt;
+          this.pitch += this.pitchVelocity * dt;
+          this.rollVelocity *= Math.exp(-3.0 * dt);
+          this.pitchVelocity *= Math.exp(-3.0 * dt);
+        } else {
+          this.position.y = targetY;
+          if (this.velocityY < -2.0) {
+            this.velocityY = -this.velocityY * 0.18;
+          } else {
+            this.velocityY = 0.0;
+            this.isAirborne = false;
+            this.crashedAirborne = false;
+          }
+          this.roll += (0.0 - this.roll) * 8.0 * dt;
+          this.pitch += (0.0 - this.pitch) * 8.0 * dt;
+          this.rollVelocity = 0.0;
+          this.pitchVelocity = 0.0;
+        }
+      } else {
+        this.position.y = targetY;
+        this.isAirborne = false;
+        this.roll += (0.0 - this.roll) * 8.0 * dt;
+        this.pitch += (0.0 - this.pitch) * 8.0 * dt;
+        this.rollVelocity = 0.0;
+        this.pitchVelocity = 0.0;
+      }
 
       // Decay impact forces and spin
       this.impactVelocity.multiplyScalar(Math.exp(-2.2 * dt));
       this.heading += this.impactSpin * dt;
-      this.impactSpin *= Math.exp(-2.8 * dt);
+      this.impactSpin *= Math.exp(-3.5 * dt);
 
       return false;
     }
@@ -673,15 +844,55 @@ export class TrafficVehicle {
     this.position.x += (fwdSin * forwardSpeed + rgtCos * newLateralSpeed) * dt;
     this.position.z += (fwdCos * forwardSpeed + rgtSin * newLateralSpeed) * dt;
 
+    // Advanced 3D Crash Physics
+    if (this.crashedAirborne === undefined) this.crashedAirborne = false;
+    if (this.velocityY === undefined) this.velocityY = 0.0;
+    if (this.roll === undefined) this.roll = 0.0;
+    if (this.pitch === undefined) this.pitch = 0.0;
+    if (this.rollVelocity === undefined) this.rollVelocity = 0.0;
+    if (this.pitchVelocity === undefined) this.pitchVelocity = 0.0;
+
     const targetY = (this.world && typeof this.world.getGroundHeight === 'function')
       ? this.world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+
+    if (this.crashedAirborne) {
+      const heightAboveGround = this.position.y - targetY;
+      if (heightAboveGround > 0.05 || this.velocityY > 0.5) {
+        this.isAirborne = true;
+        this.velocityY -= 22.0 * dt;
+        this.position.y += this.velocityY * dt;
+        this.roll += this.rollVelocity * dt;
+        this.pitch += this.pitchVelocity * dt;
+        this.rollVelocity *= Math.exp(-3.0 * dt);
+        this.pitchVelocity *= Math.exp(-3.0 * dt);
+      } else {
+        this.position.y = targetY;
+        if (this.velocityY < -2.0) {
+          this.velocityY = -this.velocityY * 0.18;
+        } else {
+          this.velocityY = 0.0;
+          this.isAirborne = false;
+          this.crashedAirborne = false;
+        }
+        this.roll += (0.0 - this.roll) * 8.0 * dt;
+        this.pitch += (0.0 - this.pitch) * 8.0 * dt;
+        this.rollVelocity = 0.0;
+        this.pitchVelocity = 0.0;
+      }
+    } else {
+      this.position.y = targetY;
+      this.isAirborne = false;
+      this.roll += (0.0 - this.roll) * 8.0 * dt;
+      this.pitch += (0.0 - this.pitch) * 8.0 * dt;
+      this.rollVelocity = 0.0;
+      this.pitchVelocity = 0.0;
+    }
 
     // Decay the external impact velocity forces and spin over time
     this.impactVelocity.multiplyScalar(Math.exp(-2.2 * dt));
     this.heading += this.impactSpin * dt;
-    this.impactSpin *= Math.exp(-2.8 * dt);
+    this.impactSpin *= Math.exp(-3.5 * dt);
 
     if (this.isRecovering) {
       if (this.impactVelocity.lengthSq() < 1.5) {
@@ -798,7 +1009,7 @@ export class TrafficManager {
     this.maxVehicles = maxVehicles;
     this.vehicles = [];
     this.parkedVehicles = [];
-    this.maxParkedVehicles = 16;
+    this.maxParkedVehicles = 12;
   }
 
   init(playerPos, world = null) {
@@ -900,14 +1111,12 @@ export class TrafficManager {
         const existingPositions = [];
         existingPositions.push(playerPos);
         this.parkedVehicles.forEach(other => {
-          if (other !== pv && other.opacity > 0.05) {
+          if (other !== pv) {
             existingPositions.push(other.position);
           }
         });
         this.vehicles.forEach(other => {
-          if (other.opacity > 0.05) {
-            existingPositions.push(other.position);
-          }
+          existingPositions.push(other.position);
         });
         activeCops.forEach(cop => {
           if (cop.active) {
@@ -922,20 +1131,6 @@ export class TrafficManager {
     for (let i = this.vehicles.length - 1; i >= 0; i--) {
       const v = this.vehicles[i];
 
-      // Check if this vehicle is near a trailing AI racer to fade it out smoothly (pure scalar, zero alloc)
-      let nearTrailingAI = false;
-      for (let a = 0; a < aiRacers.length; a++) {
-        const ai = aiRacers[a];
-        const toAIx = ai.position.x - playerPos.x;
-        const toAIz = ai.position.z - playerPos.z;
-        const isBehind = (toAIx * pFwdX + toAIz * pFwdZ) < 0.0;
-        const isTrailing = isBehind && (toAIx * toAIx + toAIz * toAIz) > (25.0 * 25.0);
-        if (isTrailing) {
-          const distToTraffic = v.position.distanceTo(ai.position);
-          if (distToTraffic < 55.0) { nearTrailingAI = true; break; }
-        }
-      }
-
       // Build per-update obstacle list excluding self (reuse allObstacles, skip by id)
       const selfKey = 'traffic_' + v.id;
       const others = allObstacles.filter(o => o.id !== selfKey);
@@ -949,9 +1144,9 @@ export class TrafficManager {
       });
       
       // Update vehicle state
-      const needsRecycle = v.update(dt, playerPos, playerHeading, others, nearTrailingAI || nearRoadblock, frustum, activeCops);
+      const needsRecycle = v.update(dt, playerPos, playerHeading, others, nearRoadblock, frustum, activeCops);
 
-      if (needsRecycle || (nearTrailingAI && v.opacity < 0.05)) {
+      if (needsRecycle) {
         if (this.vehicles.length > activeMax) {
           // Unload (remove) from scene silently out of view to avoid popping
           if (v.meshGroup) {

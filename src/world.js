@@ -594,6 +594,8 @@ export class World {
     // roadColumns and roadRows contains all drivable roads (main + shortcuts)
     this.roadColumns = new Set([...this.mainRoadColumns, ...this.shortcutColumns]);
     this.roadRows = new Set([...this.mainRoadRows, ...this.shortcutRows]);
+    this.sortedColumnsArray = Array.from(this.roadColumns).sort((a, b) => a - b);
+    this.sortedRowsArray = Array.from(this.roadRows).sort((a, b) => a - b);
     
     // Generate baked city environment reflections
     const envMap = createCityEnvMap();
@@ -1461,8 +1463,9 @@ export class World {
     };
 
     const addBench = (bx, bz, rotY) => {
-      const bench = this.createBenchMesh();
       const h = this.getBaseHeight(bx, bz);
+      if (Math.abs(h) > 0.1) return;
+      const bench = this.createBenchMesh();
       bench.position.set(bx, 0.6 + h, bz);
       bench.rotation.y = rotY;
       group.add(bench);
@@ -1484,8 +1487,9 @@ export class World {
     };
 
     const addPhoneBooth = (pbx, pbz, rotY) => {
-      const pb = this.createPhoneBoothMesh();
       const h = this.getBaseHeight(pbx, pbz);
+      if (Math.abs(h) > 0.1) return;
+      const pb = this.createPhoneBoothMesh();
       pb.position.set(pbx, 1.4 + h, pbz);
       pb.rotation.y = rotY;
       group.add(pb);
@@ -1507,8 +1511,9 @@ export class World {
     };
 
     const addTrashCan = (tcx, tcz) => {
-      const tc = this.createTrashCanMesh();
       const h = this.getBaseHeight(tcx, tcz);
+      if (Math.abs(h) > 0.1) return;
+      const tc = this.createTrashCanMesh();
       tc.position.set(tcx, 0.5 + h, tcz);
       tc.rotation.y = Math.random() * Math.PI * 2;
       group.add(tc);
@@ -2541,8 +2546,9 @@ export class World {
     };
 
     const addDumpster = (lx, lz, rotationY = 0) => {
-      const dumpsterGroup = new THREE.Group();
       const h = this.getBaseHeight(posX + lx, posZ + lz);
+      if (Math.abs(h) > 0.1) return;
+      const dumpsterGroup = new THREE.Group();
       
       // Dumpster Body
       const bodyGeo = new THREE.BoxGeometry(3.2, 2.2, 2.0);
@@ -2574,6 +2580,7 @@ export class World {
 
     const addCardboardBoxes = (lx, lz) => {
       const h = this.getBaseHeight(posX + lx, posZ + lz);
+      if (Math.abs(h) > 0.1) return;
       // Base box
       const box1Geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
       const box1 = new THREE.Mesh(box1Geo, this.cardboardMat);
@@ -2604,6 +2611,7 @@ export class World {
 
     const addTrashBags = (lx, lz) => {
       const h = this.getBaseHeight(posX + lx, posZ + lz);
+      if (Math.abs(h) > 0.1) return;
       const numBags = 2 + Math.floor(rand * 2);
       for (let i = 0; i < numBags; i++) {
         const size = 0.8 + (i * 0.15);
@@ -2629,8 +2637,9 @@ export class World {
     };
 
     const addUtilityPole = (lx, lz) => {
-      const poleGroup = new THREE.Group();
       const h = this.getBaseHeight(posX + lx, posZ + lz);
+      if (Math.abs(h) > 0.1) return;
+      const poleGroup = new THREE.Group();
 
       // Main wooden vertical pole
       const poleGeo = new THREE.BoxGeometry(0.6, 9.5, 0.6);
@@ -3094,6 +3103,8 @@ export class World {
     const wZ = zMax - zMin;
     const centerX = (xMin + xMax) / 2;
     const centerZ = (zMin + zMax) / 2;
+    const buildingBaseHeight = this.getBaseHeight(posX + centerX, posZ + centerZ);
+    const hasDoor = Math.abs(buildingBaseHeight) < 0.1;
 
     let currentHeight = 0;
     
@@ -3111,29 +3122,30 @@ export class World {
 
     // Layer 1
     const l1Height = 8 + rand * 4;
-    const l1Geo = new THREE.BoxGeometry(wX, l1Height, wZ, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
-    l1Geo.translate(centerX, l1Height / 2, centerZ);
+    // Extend downward by 15.0 meters to fill any cutoff/gap issues on slopes
+    const l1Geo = new THREE.BoxGeometry(wX, l1Height + 15.0, wZ, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
+    l1Geo.translate(centerX, (l1Height - 15.0) / 2, centerZ);
     facadeGeoms.push(l1Geo);
 
-    // Layer 1 Corner Columns (Voxel detailing)
+    // Layer 1 Corner Columns (Voxel detailing) - also extended down by 15m
     if (xMin > -20 && zMin > -20) {
-      const c = new THREE.BoxGeometry(colW, l1Height, colW);
-      c.translate(xMin + colOffset, l1Height / 2, zMin + colOffset);
+      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+      c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
       facadeGeoms.push(c);
     }
     if (xMax < 20 && zMin > -20) {
-      const c = new THREE.BoxGeometry(colW, l1Height, colW);
-      c.translate(xMax - colOffset, l1Height / 2, zMin + colOffset);
+      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+      c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
       facadeGeoms.push(c);
     }
     if (xMin > -20 && zMax < 20) {
-      const c = new THREE.BoxGeometry(colW, l1Height, colW);
-      c.translate(xMin + colOffset, l1Height / 2, zMax - colOffset);
+      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+      c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
       facadeGeoms.push(c);
     }
     if (xMax < 20 && zMax < 20) {
-      const c = new THREE.BoxGeometry(colW, l1Height, colW);
-      c.translate(xMax - colOffset, l1Height / 2, zMax - colOffset);
+      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+      c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
       facadeGeoms.push(c);
     }
 
@@ -3145,9 +3157,11 @@ export class World {
     // Only generate ground features (doors, signs, shop windows) on street-facing sides (no building neighbor)
     if (zMax < 20) {
       // Front Facade features
-      const frontDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
-      frontDoor.translate(centerX, 2.1, zMax + 0.05);
-      doorGeoms.push(frontDoor);
+      if (hasDoor) {
+        const frontDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
+        frontDoor.translate(centerX, 2.1, zMax + 0.05);
+        doorGeoms.push(frontDoor);
+      }
 
       const shopWinW = 6.0;
       const shopWinH = 4.5;
@@ -3173,7 +3187,7 @@ export class World {
       awning.translate(centerX, 6.0, zMax + 1.0);
       accessoryGeoms.push(awning);
 
-      if (wX >= 28) {
+      if (wX >= 28 && hasDoor) {
         const trashCan = new THREE.BoxGeometry(1.0, 1.6, 1.0);
         trashCan.translate(centerX - wX / 2 + 2.5, 0.8, zMax + 2.0);
         accessoryGeoms.push(trashCan);
@@ -3233,7 +3247,7 @@ export class World {
       lights.push(storefrontLightR);
     }
 
-    if (zMin > -20) {
+    if (zMin > -20 && hasDoor) {
       // Back Facade features
       const backDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
       backDoor.translate(centerX, 2.1, zMin - 0.05);
@@ -3491,7 +3505,7 @@ export class World {
     this.deformGeometryToHills(groundGeo, posX, posZ);
 
     const mergedFacade = BufferGeometryUtils.mergeGeometries(facadeGeoms);
-    this.deformGeometryToHills(mergedFacade, posX, posZ);
+    mergedFacade.translate(0, buildingBaseHeight, 0);
     
     // --- LOD Level 0: Full Detail (0m to 140m) ---
     const highGroup = new THREE.Group();
@@ -3506,25 +3520,25 @@ export class World {
     let windowMeshShared = null;
     if (windowGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(windowGeoms);
-      this.deformGeometryToHills(merged, posX, posZ);
+      merged.translate(0, buildingBaseHeight, 0);
       windowMeshShared = new THREE.Mesh(merged, this.windowDetailedMat);
       highGroup.add(windowMeshShared);
     }
     if (doorGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(doorGeoms);
-      this.deformGeometryToHills(merged, posX, posZ);
+      merged.translate(0, buildingBaseHeight, 0);
       highGroup.add(new THREE.Mesh(merged, this.doorMat));
     }
     if (accessoryGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(accessoryGeoms);
-      this.deformGeometryToHills(merged, posX, posZ);
+      merged.translate(0, buildingBaseHeight, 0);
       highGroup.add(new THREE.Mesh(merged, this.accessoryMat));
     }
     
     let billboardMesh = null;
     if (billboardGeoms.length > 0) {
       const mergedBill = BufferGeometryUtils.mergeGeometries(billboardGeoms);
-      this.deformGeometryToHills(mergedBill, posX, posZ);
+      mergedBill.translate(0, buildingBaseHeight, 0);
       const neonMat = new THREE.MeshStandardMaterial({
         color: 0x111111,
         emissive: billboardColor,
@@ -3537,7 +3551,7 @@ export class World {
     let beaconMesh = null;
     if (beaconGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(beaconGeoms);
-      this.deformGeometryToHills(merged, posX, posZ);
+      merged.translate(0, buildingBaseHeight, 0);
       const beaconMat = new THREE.MeshStandardMaterial({
         color: 0xff0000,
         emissive: 0xff0000,
@@ -3700,62 +3714,76 @@ export class World {
   }
 
   getBaseHeight(x, z) {
-    const wave1 = Math.sin(x * 0.006) * Math.cos(z * 0.006) * 14.0;
-    const wave2 = Math.sin(z * 0.012) * 5.0;
-    let val = wave1 + wave2;
-
-    // Smooth sweeping modulation wave for occasional extreme valleys/peaks
-    // We use a low-frequency wave that goes up to 55m and down to -65m
-    const extremeWave = Math.sin(x * 0.0015) * Math.cos(z * 0.0015);
-    
-    // We use a threshold to determine where the extreme zones are, but interpolate smoothly
-    // to avoid sudden slope steps.
-    let extremeH = 0;
-    const extremeThreshold = 0.2;
-    const extremeAbs = Math.abs(extremeWave);
-    if (extremeAbs > extremeThreshold) {
-      const factor = (extremeAbs - extremeThreshold) / (1.0 - extremeThreshold);
-      // Smoothstep the factor for beautiful transitions
-      const smoothFactor = factor * factor * (3 - 2 * factor);
-      
-      // Let's create the extreme hill shape: positive goes up to +55m, negative goes down to -65m
-      const targetExtreme = Math.sign(extremeWave) * (extremeWave > 0 ? 55.0 : 65.0);
-      
-      extremeH = targetExtreme * smoothFactor;
+    if (!this.sortedColumnsArray || !this.sortedRowsArray || this.sortedColumnsArray.length < 2 || this.sortedRowsArray.length < 2) {
+      return 0;
     }
 
-    // Debug natural extreme hill slope: giant rolling mountain climbing to +45m and dropping to -40m
-    if (x >= -16 && x <= 16 && z >= 100 && z <= 260) {
-      let debugSlope = 0;
-      if (z <= 160) {
-        // Smooth mountain climb up to +45m
-        const pct = (z - 100) / 60;
-        const smooth = pct * pct * (3 - 2 * pct);
-        debugSlope = smooth * 45.0;
-      } else if (z <= 210) {
-        // Deep canyon drop down to -40m (85m elevation delta!)
-        const pct = (z - 160) / 50;
-        const smooth = pct * pct * (3 - 2 * pct);
-        debugSlope = 45.0 + (-40.0 - 45.0) * smooth;
-      } else {
-        // Recovery back to normal height
-        const pct = (z - 210) / 50;
-        const smooth = pct * pct * (3 - 2 * pct);
-        debugSlope = -40.0 + (0.0 - (-40.0)) * smooth;
+    const tileSize = this.tileSize || 40;
+    const tileX = x / tileSize;
+    const tileZ = z / tileSize;
+
+    // Helper binary search
+    const findIntervalIndex = (arr, val) => {
+      let low = 0;
+      let high = arr.length - 1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (arr[mid] < val) {
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
       }
+      return low - 1;
+    };
 
-      // Blend on sides (x direction) so it matches the surrounding city terrain
-      const xDist = Math.abs(x);
-      const xBlend = 1.0 - Math.min(1.0, xDist / 16);
-      
-      // Override terrain value in this zone
-      val = val * (1 - xBlend) + debugSlope * xBlend;
-      extremeH = 0; // Disable other extreme waves in this debug zone
-    }
+    const idxX = findIntervalIndex(this.sortedColumnsArray, tileX);
+    const idxZ = findIntervalIndex(this.sortedRowsArray, tileZ);
 
-    const dist = Math.sqrt(x * x + z * z);
-    const fade = THREE.MathUtils.clamp((dist - 60.0) / 100.0, 0.0, 1.0);
-    return (val + extremeH) * fade;
+    const lenX = this.sortedColumnsArray.length;
+    const lenZ = this.sortedRowsArray.length;
+
+    const colIdx1 = Math.max(0, Math.min(lenX - 2, idxX));
+    const colIdx2 = colIdx1 + 1;
+    const col1 = this.sortedColumnsArray[colIdx1];
+    const col2 = this.sortedColumnsArray[colIdx2];
+
+    const rowIdx1 = Math.max(0, Math.min(lenZ - 2, idxZ));
+    const rowIdx2 = rowIdx1 + 1;
+    const row1 = this.sortedRowsArray[rowIdx1];
+    const row2 = this.sortedRowsArray[rowIdx2];
+
+    const hashString = (str) => {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) | 0;
+      }
+      return (Math.abs(hash) % 10000) / 10000;
+    };
+
+    const getIntersectionHeight = (c, r) => {
+      if ((c + r) % 2 !== 0) return 0.0;
+      const key = `I,${c},${r}`;
+      const hash = hashString(key);
+      if (hash < 0.30) {
+        const sign = ((c + r) % 4 === 0) ? 1 : -1;
+        const isSharp = hashString(key + "sharp") < 0.45;
+        const amp = isSharp ? (12.0 + hashString(key + "h") * 4.0) : (7.0 + hashString(key + "h") * 3.0);
+        return sign * amp;
+      }
+      return 0.0;
+    };
+
+    const h00 = getIntersectionHeight(colIdx1, rowIdx1);
+    const h10 = getIntersectionHeight(colIdx2, rowIdx1);
+    const h01 = getIntersectionHeight(colIdx1, rowIdx2);
+    const h11 = getIntersectionHeight(colIdx2, rowIdx2);
+
+    const u = (tileX - col1) / (col2 - col1);
+    const v = (tileZ - row1) / (row2 - row1);
+
+    const val = (1 - u) * (1 - v) * h00 + u * (1 - v) * h10 + (1 - u) * v * h01 + u * v * h11;
+    return val;
   }
 
   deformGeometryToHills(geometry, tileX, tileZ) {
@@ -3817,7 +3845,7 @@ export class World {
     return groundHeight;
   }
 
-  alignMeshToTerrain(mesh, position, heading, isAirborne = null) {
+  alignMeshToTerrain(mesh, position, heading, isAirborne = null, dt = 0.016) {
     const groundH = this.getGroundHeight(position.x, position.z);
     const heightAboveGround = Math.max(0, position.y - groundH);
 
@@ -3839,7 +3867,8 @@ export class World {
     _qFlat.setFromAxisAngle(_yAxis, heading);
 
     if (alignmentWeight <= 0.001) {
-      mesh.quaternion.copy(_qFlat);
+      const t = Math.min(1.0, 18.0 * dt);
+      mesh.quaternion.slerp(_qFlat, t);
       return;
     }
 
@@ -3886,7 +3915,9 @@ export class World {
     _qTarget.setFromRotationMatrix(_matrix);
 
     // Slerp from flat to terrain slope target
-    mesh.quaternion.copy(_qFlat).slerp(_qTarget, alignmentWeight);
+    const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
+    const t = Math.min(1.0, 18.0 * dt);
+    mesh.quaternion.slerp(targetQ, t);
   }
 }
 

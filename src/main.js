@@ -233,9 +233,10 @@ class Game {
     this.crashShake = 0.0;
     this.initSkidmarks(); // Pooled system for tire skid marks
     this.initRaceHUD();
+    this.initDebugVisuals();
     
     // Traffic System
-    this.traffic = new TrafficManager(this.scene, 32);
+    this.traffic = new TrafficManager(this.scene, 30);
     this.traffic.init(this.physics.position, this.world);
     
     // Hide loader
@@ -969,10 +970,67 @@ class Game {
   initInput() {
     window.addEventListener('keydown', (e) => {
       this.keys[e.key.toLowerCase()] = true;
+      if (e.key === 'p' || e.key === 'P') {
+        this.cycleCameraFocus();
+      }
     });
     window.addEventListener('keyup', (e) => {
       this.keys[e.key.toLowerCase()] = false;
     });
+  }
+
+  initDebugVisuals() {
+    this.debugFocusAI = null;
+    
+    // Cyan line for the path
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0x00f0ff,
+      linewidth: 3,
+      depthWrite: false,
+      depthTest: false
+    });
+    const lineGeo = new THREE.BufferGeometry();
+    this.debugPathLine = new THREE.Line(lineGeo, lineMat);
+    this.debugPathLine.visible = false;
+    this.debugPathLine.frustumCulled = false; // Prevents disappearing due to outdated bounding volumes
+    this.scene.add(this.debugPathLine);
+    
+    // Yellow box marker for lookahead point
+    const markerGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+    const markerMat = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      depthWrite: false
+    });
+    this.debugLookaheadMarker = new THREE.Mesh(markerGeo, markerMat);
+    this.debugLookaheadMarker.visible = false;
+    this.debugLookaheadMarker.frustumCulled = false;
+    this.scene.add(this.debugLookaheadMarker);
+  }
+
+  cycleCameraFocus() {
+    if (!this.race || !this.race.aiRacers || this.race.aiRacers.length === 0) {
+      this.debugFocusAI = null;
+      return;
+    }
+    
+    if (this.debugFocusAI === null) {
+      this.debugFocusAI = this.race.aiRacers[0].id;
+    } else {
+      const idx = this.race.aiRacers.findIndex(ai => ai.id === this.debugFocusAI);
+      if (idx === -1 || idx === this.race.aiRacers.length - 1) {
+        this.debugFocusAI = null; // back to player
+      } else {
+        this.debugFocusAI = this.race.aiRacers[idx + 1].id;
+      }
+    }
+    
+    // Show banner indicating who we are focusing on
+    if (this.debugFocusAI === null) {
+      this.showBanner("CAMERA: PLAYER", "Focused on Player Car", 1500);
+    } else {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      this.showBanner(`CAMERA: ${activeAI.name}`, `Focusing on AI racer`, 1500);
+    }
   }
 
   initMinimap() {
@@ -1503,13 +1561,29 @@ class Game {
         // Check collision against all entities
         for (let ent of entities) {
           const dist = ent.position.distanceTo(b.position);
-          if (dist < ent.radius + 0.8) {
+          const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
+          if (dist < collisionDist) {
+            const speed = ent.velocity.length();
+            if (speed < 4.0) {
+              // Solid collision: push out and bounce velocity
+              const normal = ent.position.clone().sub(b.position);
+              normal.y = 0;
+              normal.normalize();
+              const overlap = collisionDist - dist;
+              ent.position.addScaledVector(normal, overlap);
+              
+              const dot = ent.velocity.dot(normal);
+              if (dot < 0) {
+                ent.velocity.addScaledVector(normal, -1.2 * dot);
+              }
+              continue;
+            }
+
             // CRASH! Break the streetlight
             b.broken = true;
             b.fadeTimer = 10.0; // minimum stay time before eligible for off-camera cleanup (increased from 3.5s)
 
             // Impulse calculation
-            const speed = ent.velocity.length();
             const impactForceDir = ent.velocity.clone().normalize();
             if (speed > 2.0) {
               // Pole flies off in the direction of the impact velocity
@@ -1599,8 +1673,15 @@ class Game {
           b.angularVelocity.multiplyScalar(0.5 * Math.exp(-dt * 3.0));
           
           // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
-          const targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
-          const targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+          let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
+          let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+          if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
+            if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
+              targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
+            } else {
+              targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+            }
+          }
           b.group.rotation.x += (targetX - b.group.rotation.x) * 4.0 * dt;
           b.group.rotation.z += (targetZ - b.group.rotation.z) * 4.0 * dt;
         }
@@ -1894,7 +1975,7 @@ class Game {
       // Reduce traffic density during active race
       if (this.traffic) {
         this.traffic.clear();
-        this.traffic.maxVehicles = 28;
+        this.traffic.maxVehicles = 18;
         this.traffic.init(this.physics.position, this.world);
       }
 
@@ -1918,7 +1999,7 @@ class Game {
     setTimeout(() => {
       if (this.traffic) {
         this.traffic.clear();
-        this.traffic.maxVehicles = 40;
+        this.traffic.maxVehicles = 30;
         this.traffic.init(this.physics.position, this.world);
       }
       this.clock.getDelta(); // flush accumulated time
@@ -2030,9 +2111,28 @@ class Game {
   }
 
   updateCamera(dt = 0.016) {
-    const heading = this.physics.heading;
-    const speed = this.physics.velocity.length();
-    const isDrifting = this.physics.isDrifting;
+    let targetObj = this.physics;
+    let targetVisual = this.carVisualContainer;
+    let isBoosting = this.physics.isBoosting;
+    let isAirborne = this.physics.isAirborne;
+    let airTime = this.physics.airTime;
+    let isDrifting = this.physics.isDrifting;
+    let speed = this.physics.velocity.length();
+
+    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      if (activeAI) {
+        targetObj = activeAI;
+        targetVisual = activeAI.meshGroup || targetVisual;
+        isBoosting = activeAI.isBoosting || false;
+        isAirborne = false;
+        airTime = 0;
+        isDrifting = activeAI.isDrifting || false;
+        speed = activeAI.velocity ? activeAI.velocity.length() : activeAI.speed;
+      }
+    }
+
+    const heading = targetObj.heading;
 
     // Decay gearShiftPunch over time
     if (this.gearShiftPunch > 0.0) {
@@ -2093,7 +2193,7 @@ class Game {
     );
 
     // 4. Lerp camera position smoothly
-    const targetCamPos = this.physics.position.clone().add(offset);
+    const targetCamPos = targetObj.position.clone().add(offset);
     this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
 
     // Add Hand-held Micro-Wobble to position
@@ -2108,10 +2208,10 @@ class Game {
     if (isDrifting) {
       shakeIntensity += 0.08;
     }
-    if (this.gearShiftPunch > 0.0) {
+    if (this.gearShiftPunch > 0.0 && targetObj === this.physics) {
       shakeIntensity += this.gearShiftPunch * 0.12;
     }
-    if (this.crashShake > 0.0) {
+    if (this.crashShake > 0.0 && targetObj === this.physics) {
       shakeIntensity += this.crashShake;
     }
     if (shakeIntensity > 0) {
@@ -2120,9 +2220,16 @@ class Game {
       this.camera.position.z += (Math.random() - 0.5) * shakeIntensity;
     }
 
+    // Prevent camera from colliding/clipping with the ground/roads
+    const minCamClearance = 2.0;
+    const camGroundH = this.world ? this.world.getGroundHeight(this.camera.position.x, this.camera.position.z) : 0.0;
+    if (this.camera.position.y < camGroundH + minCamClearance) {
+      this.camera.position.y = camGroundH + minCamClearance;
+    }
+
     // 6. LookAt: Look slightly ahead of the car's body center to keep target focused
     const lookAheadDistance = 4.0 + speed * 0.08;
-    const targetLook = this.physics.position.clone().add(
+    const targetLook = targetObj.position.clone().add(
       new THREE.Vector3(
         Math.sin(heading) * lookAheadDistance,
         1.1,
@@ -2135,8 +2242,8 @@ class Game {
     this.camera.rotateZ(this.camRoll);
 
     // Update shadow/directional light to follow player
-    this.dirLight.position.set(this.physics.position.x + 30, 60, this.physics.position.z + 30);
-    this.dirLight.target = this.carVisualContainer;
+    this.dirLight.position.set(targetObj.position.x + 30, 60, targetObj.position.z + 30);
+    this.dirLight.target = targetVisual;
   }
 
   updateMinimap() {
@@ -2155,9 +2262,15 @@ class Game {
     ctx.stroke();
     
     const scale = 0.35;
-    const px = this.physics.position.x;
-    const pz = this.physics.position.z;
-    const heading = this.physics.heading;
+    
+    let targetObj = this.physics;
+    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      if (activeAI) targetObj = activeAI;
+    }
+    const px = targetObj.position.x;
+    const pz = targetObj.position.z;
+    const heading = targetObj.heading;
     
     ctx.save();
     ctx.translate(w/2, h/2);
@@ -2239,11 +2352,43 @@ class Game {
         ctx.fill();
       });
     }
+
+    // Draw focused AI path on minimap
+    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      if (activeAI && activeAI._currentPath && activeAI._currentPath.length > 0) {
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        
+        const startRx = activeAI.position.x - px;
+        const startRz = activeAI.position.z - pz;
+        ctx.moveTo(startRx * scale, startRz * scale);
+        
+        for (let i = activeAI._pathWptIdx; i < activeAI._currentPath.length; i++) {
+          const wpt = activeAI._currentPath[i];
+          const rx = wpt.x - px;
+          const rz = wpt.z - pz;
+          ctx.lineTo(rx * scale, rz * scale);
+        }
+        ctx.stroke();
+
+        // Draw lookahead point on minimap as a small yellow dot
+        if (activeAI.debugLookahead) {
+          const lx = activeAI.debugLookahead.x - px;
+          const lz = activeAI.debugLookahead.z - pz;
+          ctx.fillStyle = '#ffff00';
+          ctx.beginPath();
+          ctx.arc(lx * scale, lz * scale, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
     
     ctx.restore();
     
-    // Draw player arrow
-    ctx.fillStyle = '#e84545';
+    // Draw target arrow
+    ctx.fillStyle = targetObj === this.physics ? '#e84545' : '#' + (targetObj.colorHex ? targetObj.colorHex.toString(16).padStart(6, '0') : '00f0ff');
     ctx.beginPath();
     ctx.moveTo(w/2, h/2 - 9);
     ctx.lineTo(w/2 - 6, h/2 + 7);
@@ -2279,6 +2424,12 @@ class Game {
     }
     
     const scaledDt = dt; // Slow-motion disabled by player request
+    
+    let focusTarget = this.physics;
+    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      if (activeAI) focusTarget = activeAI;
+    }
     
     // Collect dynamic lights for the lighting pool (headlamps from player and traffic)
     const dynamicLights = [];
@@ -2589,7 +2740,7 @@ class Game {
     }
 
     // Dynamically load/unload infinite chunks around the car and update lights
-    this.world.update(this.physics.position.x, this.physics.position.z, this.physics.heading, dynamicLights);
+    this.world.update(focusTarget.position.x, focusTarget.position.z, focusTarget.heading, dynamicLights);
     
     // Maintain global gameTime for traffic lights synchronization
     if (window.gameTime === undefined) window.gameTime = 0;
@@ -2627,7 +2778,7 @@ class Game {
     // Update civilian traffic (dynamically adjust density based on player speed)
     if (this.traffic) {
       const playerSpeed = this.physics.velocity.length();
-      const baseMax = this.race.active ? 28 : 40;
+      const baseMax = this.race.active ? 18 : 30;
       let densityScale = 1.0;
       if (playerSpeed > 25.0) {
         // At speed <= 25 m/s, keep 100% density. At higher speeds, reduce to 70% density.
@@ -2638,8 +2789,8 @@ class Game {
     
     this.traffic.update(
       scaledDt,
-      this.physics.position,
-      this.physics.heading,
+      focusTarget.position,
+      focusTarget.heading,
       this.race.active ? this.race.aiRacers : [],
       this.camera,
       this.world,
@@ -2667,8 +2818,12 @@ class Game {
       }
       
       v.meshGroup.position.copy(v.position);
-      this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading);
-      // Removed explicit updateMatrixWorld — Three.js updates it automatically during render
+      this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
+      if (v.roll || v.pitch) {
+        const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
+        const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
+        v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
+      }
 
       // Update traffic headlight lens flares
       this.updateHeadlightFlares(v.meshGroup, v.heading);
@@ -2765,7 +2920,12 @@ class Game {
         }
         
         v.meshGroup.position.copy(v.position);
-        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading);
+        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
+        if (v.roll || v.pitch) {
+          const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
+          const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
+          v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
+        }
         
         // Update mesh opacity smoothly
         const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
@@ -2870,8 +3030,23 @@ class Game {
           v.impactVelocity.addScaledVector(impulseVec, -1.0 / m2);
           
           // Spin traffic car based on impact force offset (random offset torque)
-          const spinMagnitude = impulseScalar / 40.0;
-          v.impactSpin = (Math.random() - 0.5) * Math.min(22.0, spinMagnitude);
+          const contactPos = this.physics.position.clone().add(v.position).multiplyScalar(0.5);
+          const offset = contactPos.clone().sub(v.position);
+          offset.y = 0;
+          const forceDir = pushDir.clone().negate();
+          const leverArm = offset.x * forceDir.z - offset.z * forceDir.x;
+          const spinFactor = 0.2 + Math.min(2.5, Math.abs(leverArm));
+          const spinDirection = leverArm >= 0 ? 1 : -1;
+          v.impactSpin = spinDirection * Math.min(4.2, (impulseScalar / 300.0) * spinFactor);
+
+          // Launch the traffic car in the air on heavy impact!
+          if (impulseScalar > 8000) {
+            v.crashedAirborne = true;
+            v.isAirborne = true;
+            v.velocityY = Math.min(2.0, impulseScalar * 0.0001 + 0.5);
+            v.rollVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+            v.pitchVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+          }
           
           // Deduct speed based on how much was absorbed
           v.speed = Math.max(0.0, v.speed - (impulseScalar * 0.0006));
@@ -2930,9 +3105,24 @@ class Game {
               ai.velocity.addScaledVector(impulseVec, 1.0 / m1);
               v.impactVelocity.addScaledVector(impulseVec, -1.0 / m2);
               
-              const spinMagnitude = impulseScalar / 40.0;
-              v.impactSpin = (Math.random() - 0.5) * Math.min(18.0, spinMagnitude);
+              const contactPos = ai.position.clone().add(v.position).multiplyScalar(0.5);
+              const offset = contactPos.clone().sub(v.position);
+              offset.y = 0;
+              const forceDir = pushDir.clone().negate();
+              const leverArm = offset.x * forceDir.z - offset.z * forceDir.x;
+              const spinFactor = 0.2 + Math.min(2.5, Math.abs(leverArm));
+              const spinDirection = leverArm >= 0 ? 1 : -1;
+              v.impactSpin = spinDirection * Math.min(4.2, (impulseScalar / 300.0) * spinFactor);
               v.speed = Math.max(0.0, v.speed - (impulseScalar * 0.0005));
+
+              // Launch the traffic car in the air on heavy impact!
+              if (impulseScalar > 8000) {
+                v.crashedAirborne = true;
+                v.isAirborne = true;
+                v.velocityY = Math.min(2.0, impulseScalar * 0.0001 + 0.5);
+                v.rollVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+                v.pitchVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+              }
             }
 
             ai.recoveryBoostTimer = 3.0;
@@ -3000,9 +3190,40 @@ class Game {
             v2.impactVelocity.addScaledVector(impulseVec, -1.0 / m2);
 
             // Spin cars based on impact offset torque
-            const spinMag = impulseScalar / 40.0;
-            v1.impactSpin = (Math.random() - 0.5) * Math.min(18.0, spinMag);
-            v2.impactSpin = (Math.random() - 0.5) * Math.min(18.0, spinMag);
+            const contactPos = v1.position.clone().add(v2.position).multiplyScalar(0.5);
+            
+            const offset1 = contactPos.clone().sub(v1.position);
+            offset1.y = 0;
+            const forceDir1 = pushDir.clone().negate();
+            const leverArm1 = offset1.x * forceDir1.z - offset1.z * forceDir1.x;
+            const spinFactor1 = 0.2 + Math.min(2.5, Math.abs(leverArm1));
+            const spinDirection1 = leverArm1 >= 0 ? 1 : -1;
+            v1.impactSpin = spinDirection1 * Math.min(4.2, (impulseScalar / 300.0) * spinFactor1);
+
+            const offset2 = contactPos.clone().sub(v2.position);
+            offset2.y = 0;
+            const forceDir2 = pushDir.clone();
+            const leverArm2 = offset2.x * forceDir2.z - offset2.z * forceDir2.x;
+            const spinFactor2 = 0.2 + Math.min(2.5, Math.abs(leverArm2));
+            const spinDirection2 = leverArm2 >= 0 ? 1 : -1;
+            v2.impactSpin = spinDirection2 * Math.min(4.2, (impulseScalar / 300.0) * spinFactor2);
+
+            // Launch in air on heavy impact!
+            if (impulseScalar > 8000) {
+              if (Math.random() > 0.5) {
+                v1.crashedAirborne = true;
+                v1.isAirborne = true;
+                v1.velocityY = Math.min(2.0, impulseScalar * 0.0001 + 0.5);
+                v1.rollVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+                v1.pitchVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+              } else {
+                v2.crashedAirborne = true;
+                v2.isAirborne = true;
+                v2.velocityY = Math.min(2.0, impulseScalar * 0.0001 + 0.5);
+                v2.rollVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+                v2.pitchVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
+              }
+            }
 
             // Reduce forward speed slightly
             v1.speed = Math.max(0.0, v1.speed - (impulseScalar * 0.0005));
@@ -3270,7 +3491,8 @@ class Game {
       this.carVisualContainer,
       this.physics.position,
       this.physics.heading,
-      this.physics.isAirborne || this.physics.rolloverTimer > 0
+      (this.physics.isAirborne && this.physics.airTime > 0.2) || this.physics.rolloverTimer > 0,
+      scaledDt
     );
     this.carVisualContainer.updateMatrixWorld(true);
 
@@ -3501,7 +3723,7 @@ class Game {
       this.race.aiRacers.forEach(ai => {
         if (ai.meshGroup) {
           ai.meshGroup.position.copy(ai.position);
-          this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading);
+          this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
           ai.meshGroup.updateMatrixWorld(true);
           
           // Update AI light trails
@@ -3716,6 +3938,39 @@ class Game {
     this.checkSlipstream(scaledDt);
     this.checkNearMisses(scaledDt);
     this.updateDriftNitro(scaledDt);
+
+    // Update debug path and lookahead visuals
+    let hasPath = false;
+    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
+      if (activeAI) {
+        if (activeAI._currentPath && activeAI._currentPath.length > 0) {
+          hasPath = true;
+          const pts = [];
+          pts.push(activeAI.position.clone());
+          for (let i = activeAI._pathWptIdx; i < activeAI._currentPath.length; i++) {
+            const wpt = activeAI._currentPath[i].clone();
+            wpt.y = 1.2 + (this.world ? this.world.getGroundHeight(wpt.x, wpt.z) : 0.5);
+            pts.push(wpt);
+          }
+          this.debugPathLine.geometry.setFromPoints(pts);
+          this.debugPathLine.visible = true;
+        }
+        
+        if (activeAI.debugLookahead) {
+          this.debugLookaheadMarker.position.copy(activeAI.debugLookahead);
+          this.debugLookaheadMarker.position.y = 1.5 + (this.world ? this.world.getGroundHeight(activeAI.debugLookahead.x, activeAI.debugLookahead.z) : 0.5);
+          this.debugLookaheadMarker.visible = true;
+        } else {
+          this.debugLookaheadMarker.visible = false;
+        }
+      }
+    }
+    
+    if (!hasPath) {
+      this.debugPathLine.visible = false;
+      this.debugLookaheadMarker.visible = false;
+    }
     
     // Update skidmarks (Persistent until far away - 220m)
     const px = this.physics.position.x;

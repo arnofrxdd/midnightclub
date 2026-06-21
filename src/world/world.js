@@ -14,7 +14,9 @@ import {
   createDetailedWindowGeometry
 } from './geometry.js';
 import { createFireHydrantMesh, createNewspaperBoxMesh, spawnTemplateTree, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
-import { buildRoadTile, buildAlleyTile, buildBuildingTile } from './tiles.js';
+import { buildRoadTile } from './roadTile.js';
+import { buildAlleyTile } from './alleyTile.js';
+import { buildBuildingTile } from './buildingTile.js';
 
 
 

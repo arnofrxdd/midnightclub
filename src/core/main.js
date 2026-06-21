@@ -11,6 +11,10 @@ import { CarPhysics } from './physics.js';
 import { RaceManager } from '../gameplay/race.js';
 import { TrafficManager } from '../ai/trafficManager.js';
 import { PursuitManager } from '../gameplay/pursuitManager.js';
+import { initInput, initDebugVisuals } from './input.js';
+import { updateCamera, cycleCameraFocus } from './camera.js';
+import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
+import { formatTime, showBanner, showNitroNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
 
 
 
@@ -275,69 +279,15 @@ class Game {
   }
 
   initInput() {
-    window.addEventListener('keydown', (e) => {
-      this.keys[e.key.toLowerCase()] = true;
-      if (e.key === 'p' || e.key === 'P') {
-        this.cycleCameraFocus();
-      }
-    });
-    window.addEventListener('keyup', (e) => {
-      this.keys[e.key.toLowerCase()] = false;
-    });
+    return initInput.call(this);
   }
 
   initDebugVisuals() {
-    this.debugFocusAI = null;
-    
-    // Cyan line for the path
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x00f0ff,
-      linewidth: 3,
-      depthWrite: false,
-      depthTest: false
-    });
-    const lineGeo = new THREE.BufferGeometry();
-    this.debugPathLine = new THREE.Line(lineGeo, lineMat);
-    this.debugPathLine.visible = false;
-    this.debugPathLine.frustumCulled = false; // Prevents disappearing due to outdated bounding volumes
-    this.scene.add(this.debugPathLine);
-    
-    // Yellow box marker for lookahead point
-    const markerGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-    const markerMat = new THREE.MeshBasicMaterial({
-      color: 0xffff00,
-      depthWrite: false
-    });
-    this.debugLookaheadMarker = new THREE.Mesh(markerGeo, markerMat);
-    this.debugLookaheadMarker.visible = false;
-    this.debugLookaheadMarker.frustumCulled = false;
-    this.scene.add(this.debugLookaheadMarker);
+    return initDebugVisuals.call(this);
   }
 
   cycleCameraFocus() {
-    if (!this.race || !this.race.aiRacers || this.race.aiRacers.length === 0) {
-      this.debugFocusAI = null;
-      return;
-    }
-    
-    if (this.debugFocusAI === null) {
-      this.debugFocusAI = this.race.aiRacers[0].id;
-    } else {
-      const idx = this.race.aiRacers.findIndex(ai => ai.id === this.debugFocusAI);
-      if (idx === -1 || idx === this.race.aiRacers.length - 1) {
-        this.debugFocusAI = null; // back to player
-      } else {
-        this.debugFocusAI = this.race.aiRacers[idx + 1].id;
-      }
-    }
-    
-    // Show banner indicating who we are focusing on
-    if (this.debugFocusAI === null) {
-      this.showBanner("CAMERA: PLAYER", "Focused on Player Car", 1500);
-    } else {
-      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
-      this.showBanner(`CAMERA: ${activeAI.name}`, `Focusing on AI racer`, 1500);
-    }
+    return cycleCameraFocus.call(this);
   }
 
   initMinimap() {
@@ -348,440 +298,55 @@ class Game {
   }
 
   getParticleMaterial(color, opacity) {
-    const roundedOpacity = Math.round(opacity * 20) / 20; // 20 discrete steps
-    const key = `${color}_${roundedOpacity}`;
-    if (!this.particleMaterialCache) this.particleMaterialCache = {};
-    if (!this.particleMaterialCache[key]) {
-      this.particleMaterialCache[key] = new THREE.MeshStandardMaterial({
-        color: color,
-        roughness: 0.9,
-        transparent: true,
-        opacity: roundedOpacity,
-        depthWrite: false
-      });
-    }
-    return this.particleMaterialCache[key];
+    return getParticleMaterial.call(this, color, opacity);
   }
 
   getSmokeMaterial(color, opacity) {
-    const roundedOpacity = Math.round(opacity * 20) / 20;
-    const key = `${color}_${roundedOpacity}`;
-    if (!this.smokeMaterialCache) this.smokeMaterialCache = {};
-    if (!this.smokeMaterialCache[key]) {
-      this.smokeMaterialCache[key] = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: roundedOpacity,
-        depthWrite: false
-      });
-    }
-    return this.smokeMaterialCache[key];
+    return getSmokeMaterial.call(this, color, opacity);
   }
 
   initParticles() {
-    // Particle pool for realistic white/grey tire smoke, exhaust fumes, and water splashes
-    this.particlePool = [];
-    this.maxParticles = 280;
-    
-    const pGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-
-    for (let i = 0; i < this.maxParticles; i++) {
-      // Each particle gets its OWN material so we can mutate opacity in-place
-      // without triggering a material reference swap (avoids GPU re-upload every frame)
-      const pMat = new THREE.MeshBasicMaterial({
-        color: 0xcccccc,
-        transparent: true,
-        opacity: 0.5,
-        depthWrite: false
-      });
-      const mesh = new THREE.Mesh(pGeo, pMat);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.particlePool.push({
-        mesh: mesh,
-        mat: pMat,   // direct reference — no lookup needed per frame
-        life: 0,
-        maxLife: 1.0,
-        velocity: new THREE.Vector3(),
-        isWater: false,
-        color: 0xcccccc
-      });
-    }
+    return initParticles.call(this);
   }
 
   initCheckpointSmoke() {
-    // Separate particle pool for the towering checkpoint smoke columns
-    this.smokePool = [];
-    this.maxSmoke = 120;
-    
-    const sGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-
-    for (let i = 0; i < this.maxSmoke; i++) {
-      // Each smoke particle owns its material so opacity is mutated in-place
-      const sMat = new THREE.MeshBasicMaterial({
-        color: 0xffaa3a,
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false
-      });
-      const mesh = new THREE.Mesh(sGeo, sMat);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.smokePool.push({
-        mesh: mesh,
-        mat: sMat,
-        life: 0.0,
-        maxLife: 2.0,
-        velocity: new THREE.Vector3(),
-        color: 0xffaa3a
-      });
-    }
+    return initCheckpointSmoke.call(this);
   }
 
   initSkidmarks() {
-    this.skidmarkPool = [];
-    this.maxSkidmarks = 300; // Increased pool slightly for persistence
-    this.skidIndex = 0;
-
-    const skidGeo = new THREE.BoxGeometry(0.35, 0.01, 1.0);
-    
-    // Create a pool of 10 shared materials for different lengths (from 0.5 to 5.0 in steps of 0.5)
-    this.skidMaterials = [];
-    for (let i = 0; i < 10; i++) {
-      const length = 0.5 + i * 0.5;
-      const treadTex = createSkidmarkTexture();
-      treadTex.repeat.set(1, length * 4.0); // 4 repeats per meter for consistent voxel density
-      
-      const mat = new THREE.MeshStandardMaterial({
-        map: treadTex,
-        transparent: true,
-        opacity: 0.85,
-        roughness: 0.9,
-        metalness: 0.1,
-        depthWrite: false
-      });
-      this.skidMaterials.push(mat);
-    }
-
-    for (let i = 0; i < this.maxSkidmarks; i++) {
-      // Default to first material, changes dynamically based on length
-      const mesh = new THREE.Mesh(skidGeo, this.skidMaterials[0]);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.skidmarkPool.push({
-        mesh: mesh
-      });
-    }
-
-    // Keep track of previous wheel positions for drawing lines
-    this.prevLeftWheel = null;
-    this.prevRightWheel = null;
+    return initSkidmarks.call(this);
   }
 
   spawnSkidmarkSegment(p1, p2) {
-    const s = this.skidmarkPool[this.skidIndex];
-    const mesh = s.mesh;
-    
-    const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-
-    // Determine height: if inside sidewalk bounds (road is 26m wide, tile is 40m), y is 0.37, else 0.22
-    const ts = 40;
-    const gridX = Math.round(p1.x / ts);
-    const gridZ = Math.round(p1.z / ts);
-    const isRoad = this.world.roadColumns.has(gridX) || this.world.roadRows.has(gridZ);
-    const isIntersection = this.world.roadColumns.has(gridX) && this.world.roadRows.has(gridZ);
-    
-    let height = 0.22; // Default road top surface (road block center y=0.1 + thickness/2 = 0.2)
-    if (isRoad && !isIntersection) {
-      const localX = p1.x - gridX * ts;
-      const localZ = p1.z - gridZ * ts;
-      const { rwX, rwZ } = this.world.getRoadWidthForGrid(gridX, gridZ);
-      if (this.world.roadRows.has(gridZ)) {
-        // Vertical road: Z must be within [-rwZ/2, rwZ/2]
-        if (Math.abs(localZ) > rwZ / 2) height = 0.37;
-      } else {
-        // Horizontal road: X must be within [-rwX/2, rwX/2]
-        if (Math.abs(localX) > rwX / 2) height = 0.37;
-      }
-    } else if (!isRoad) {
-      height = 0.37; // Sidewalks / building ground level (sidewalk block center y=0.175 + thickness/2 = 0.35)
-    }
-    
-    const baseHeight = this.world.getBaseHeight(midpoint.x, midpoint.z);
-    midpoint.y = height + baseHeight;
-
-    const dir = new THREE.Vector3().subVectors(p2, p1);
-    const len = dir.length();
-    if (len < 0.05) return;
-
-    // Pick closest material in pool to match length, preventing texture stretch
-    const closestIdx = Math.max(0, Math.min(9, Math.round((len - 0.5) / 0.5)));
-    mesh.material = this.skidMaterials[closestIdx];
-
-    mesh.position.copy(midpoint);
-    mesh.scale.set(1.0, 1.0, len);
-    mesh.visible = true;
-    
-    // Rotate to point along direction vector
-    const target = p2.clone();
-    target.y = height + this.world.getBaseHeight(target.x, target.z);
-    mesh.lookAt(target);
-
-    s.age = 0;
-    this.skidIndex = (this.skidIndex + 1) % this.maxSkidmarks;
+    return spawnSkidmarkSegment.call(this, p1, p2);
   }
 
   spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false) {
-    let spawned = 0;
-    for (const p of this.particlePool) {
-      if (p.life <= 0) {
-        p.mesh.position.copy(pos);
-        p.mesh.visible = true;
-        // Mutate the per-particle material color in-place (no material swap)
-        if (p.color !== color) {
-          p.color = color;
-          p.mat.color.setHex(color);
-        }
-        p.mat.opacity = isWater ? 0.6 : 0.4;
-        p.life = isWater ? (0.4 + Math.random() * 0.4) : (0.5 + Math.random() * 0.5);
-        p.maxLife = p.life;
-        p.isWater = isWater;
-        
-        if (isWater) {
-          p.velocity.set(
-            (Math.random() - 0.5) * 6 + dir.x * 5,
-            Math.random() * 5 + 4.5,
-            (Math.random() - 0.5) * 6 + dir.z * 5
-          );
-          p.mesh.scale.setScalar(0.7 + Math.random() * 0.7);
-        } else {
-          p.velocity.set(
-            (Math.random() - 0.5) * 3 + dir.x * 1.5,
-            Math.random() * 2 + 0.5,
-            (Math.random() - 0.5) * 3 + dir.z * 1.5
-          );
-          p.mesh.scale.setScalar(1.0);
-        }
-        
-        spawned++;
-        if (spawned >= count) break;
-      }
-    }
+    return spawnParticles.call(this, pos, dir, color, count, isWater);
   }
 
   spawnCheckpointSmoke(pos, color = 0xffaa3a, opacityScale = 1.0, sizeScale = 1.0) {
-    for (const p of this.smokePool) {
-      if (p.life <= 0) {
-        const h = (this.world && typeof this.world.getGroundHeight === 'function')
-          ? this.world.getGroundHeight(pos.x, pos.z)
-          : 0.5;
-        p.mesh.position.set(
-          pos.x + (Math.random() - 0.5) * 6,
-          h - 0.3,
-          pos.z + (Math.random() - 0.5) * 6
-        );
-        p.mesh.visible = true;
-        // Mutate color in-place on the per-particle material
-        if (p.color !== color) {
-          p.color = color;
-          p.mat.color.setHex(color);
-        }
-        p.mat.opacity = 0.28 * opacityScale;
-        p.life = (1.2 + Math.random() * 0.8) * sizeScale;
-        p.maxLife = p.life;
-        p.opacityScale = opacityScale;
-        p.sizeScale = sizeScale;
-        
-        p.velocity.set(
-          (Math.random() - 0.5) * 1.2,
-          (10.0 + Math.random() * 6.0) * sizeScale,
-          (Math.random() - 0.5) * 1.2
-        );
-        break;
-      }
-    }
+    return spawnCheckpointSmoke.call(this, pos, color, opacityScale, sizeScale);
   }
 
   updateParticles(dt) {
-    for (const p of this.particlePool) {
-      if (p.life > 0) {
-        p.life -= dt;
-        p.mesh.position.addScaledVector(p.velocity, dt);
-        
-        if (p.isWater) {
-          p.velocity.y -= 14.5 * dt;
-          const factor = p.life / p.maxLife;
-          p.mesh.scale.setScalar((0.8 + (1.0 - factor) * 1.5) * (p.maxLife / 0.8));
-          // Mutate opacity on the owned material — no material swap
-          p.mat.opacity = factor * 0.6;
-          
-          // Floor check to prevent clipping through terrain
-          const baseHeight = this.world.getBaseHeight(p.mesh.position.x, p.mesh.position.z);
-          const floorY = 0.22 + baseHeight;
-          if (p.mesh.position.y < floorY) {
-            p.mesh.position.y = floorY;
-            p.velocity.y = 0;
-            p.velocity.x *= 0.85;
-            p.velocity.z *= 0.85;
-          }
-        } else {
-          p.velocity.y += 0.2 * dt;
-          const factor = p.life / p.maxLife;
-          p.mesh.scale.setScalar(1.0 + (1.0 - factor) * 2.0);
-          p.mat.opacity = factor * 0.4;
-        }
-
-        if (p.life <= 0) p.mesh.visible = false;
-      }
-    }
+    return updateParticles.call(this, dt);
   }
 
   updateCheckpointSmoke(dt) {
-    for (const p of this.smokePool) {
-      if (p.life > 0) {
-        p.life -= dt;
-        p.mesh.position.addScaledVector(p.velocity, dt);
-        
-        p.velocity.x += Math.sin(p.mesh.position.y * 0.2) * 0.2;
-        p.velocity.z += Math.cos(p.mesh.position.y * 0.2) * 0.2;
-
-        const factor = p.life / p.maxLife;
-        const sizeS = p.sizeScale || 1.0;
-        const opacS = p.opacityScale || 1.0;
-        
-        p.mesh.scale.setScalar((1.0 + (1.0 - factor) * 3.5) * sizeS);
-        // Mutate opacity on the owned material — no material swap, no GC
-        p.mat.opacity = factor * 0.28 * opacS;
-
-        if (p.life <= 0) p.mesh.visible = false;
-      }
-    }
+    return updateCheckpointSmoke.call(this, dt);
   }
 
   initDebris() {
-    this.debrisPool = [];
-    this.maxDebris = 120;
-    const dGeo = new THREE.BoxGeometry(1, 1, 1);
-    for (let i = 0; i < this.maxDebris; i++) {
-      const dMat = new THREE.MeshStandardMaterial({
-        color: 0xcccccc,
-        roughness: 0.5,
-        metalness: 0.5,
-        transparent: true,
-        opacity: 1.0,
-        depthWrite: true
-      });
-      const mesh = new THREE.Mesh(dGeo, dMat);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.debrisPool.push({
-        mesh: mesh,
-        material: dMat,
-        life: 0,
-        maxLife: 1.0,
-        scale: 0.2,
-        velocity: new THREE.Vector3(),
-        rotVelocity: new THREE.Vector3()
-      });
-    }
+    return initDebris.call(this);
   }
 
   spawnDebris(pos, dir, color, count = 5) {
-    let spawned = 0;
-    for (const d of this.debrisPool) {
-      if (d.life <= 0) {
-        d.mesh.position.copy(pos);
-        d.mesh.position.x += (Math.random() - 0.5) * 0.8;
-        d.mesh.position.y += (Math.random() - 0.5) * 0.4;
-        d.mesh.position.z += (Math.random() - 0.5) * 0.8;
-        d.mesh.visible = true;
-        d.material.color.setHex(color);
-        d.material.opacity = 1.0;
-        d.material.transparent = false;
-        
-        d.life = 1.2 + Math.random() * 1.2;
-        d.maxLife = d.life;
-        d.scale = 0.12 + Math.random() * 0.26;
-        d.mesh.scale.set(d.scale, d.scale, d.scale);
-        
-        d.velocity.set(
-          dir.x * (6.0 + Math.random() * 6.0) + (Math.random() - 0.5) * 6.0,
-          Math.random() * 8.0 + 3.5,
-          dir.z * (6.0 + Math.random() * 6.0) + (Math.random() - 0.5) * 6.0
-        );
-        
-        d.rotVelocity.set(
-          (Math.random() - 0.5) * 16.0,
-          (Math.random() - 0.5) * 16.0,
-          (Math.random() - 0.5) * 16.0
-        );
-        
-        spawned++;
-        if (spawned >= count) break;
-      }
-    }
+    return spawnDebris.call(this, pos, dir, color, count);
   }
 
   updateDebris(dt) {
-    if (dt <= 0) return;
-    this.debrisPool.forEach(d => {
-      if (d.life > 0) {
-        d.life -= dt;
-        d.velocity.y -= 22.0 * dt;
-        d.mesh.position.addScaledVector(d.velocity, dt);
-        
-        d.mesh.rotation.x += d.rotVelocity.x * dt;
-        d.mesh.rotation.y += d.rotVelocity.y * dt;
-        d.mesh.rotation.z += d.rotVelocity.z * dt;
-        
-        const baseHeight = this.world.getBaseHeight(d.mesh.position.x, d.mesh.position.z);
-        // Quick estimate: if outside sidewalk bounds, use 0.37, else 0.22
-        const ts = 40;
-        const gridX = Math.round(d.mesh.position.x / ts);
-        const gridZ = Math.round(d.mesh.position.z / ts);
-        const isRoad = this.world.roadColumns.has(gridX) || this.world.roadRows.has(gridZ);
-        const isIntersection = this.world.roadColumns.has(gridX) && this.world.roadRows.has(gridZ);
-        
-        let height = 0.22;
-        if (isRoad && !isIntersection) {
-          const localX = d.mesh.position.x - gridX * ts;
-          const localZ = d.mesh.position.z - gridZ * ts;
-          const { rwX, rwZ } = this.world.getRoadWidthForGrid(gridX, gridZ);
-          if (this.world.roadRows.has(gridZ)) {
-            if (Math.abs(localZ) > rwZ / 2) height = 0.37;
-          } else {
-            if (Math.abs(localX) > rwX / 2) height = 0.37;
-          }
-        } else if (!isRoad) {
-          height = 0.37;
-        }
-        const floorY = height + baseHeight;
-
-        if (d.mesh.position.y < floorY + d.scale / 2) {
-          d.mesh.position.y = floorY + d.scale / 2;
-          if (d.velocity.y < -1.5) {
-            d.velocity.y = -d.velocity.y * 0.45;
-            d.velocity.x *= 0.65;
-            d.velocity.z *= 0.65;
-            d.rotVelocity.multiplyScalar(0.6);
-          } else {
-            d.velocity.y = 0.0;
-            d.velocity.x *= 0.92 * Math.exp(-dt);
-            d.velocity.z *= 0.92 * Math.exp(-dt);
-            d.rotVelocity.multiplyScalar(0.9 * Math.exp(-dt));
-          }
-        }
-        
-        if (d.life < 0.5) {
-          d.material.transparent = true;
-          d.material.opacity = Math.max(0.0, d.life / 0.5);
-        }
-        
-        if (d.life <= 0) {
-          d.mesh.visible = false;
-        }
-      }
-    });
+    return updateDebris.call(this, dt);
   }
 
   checkBreakablesCollision(dt) {
@@ -1171,55 +736,15 @@ class Game {
   }
 
   showNitroNotification(text) {
-    if (!this.nitroNotifEl) return;
-    this.nitroNotifEl.textContent = text;
-    this.nitroNotifEl.style.opacity = '1';
-    this.nitroNotifEl.style.transform = 'translateY(0)';
-    
-    if (this.nitroNotifTimeout) clearTimeout(this.nitroNotifTimeout);
-    this.nitroNotifTimeout = setTimeout(() => {
-      this.nitroNotifEl.style.opacity = '0';
-      this.nitroNotifEl.style.transform = 'translateY(-15px)';
-    }, 1200);
+    return showNitroNotification.call(this, text);
   }
 
   showStuntNotification(title, scoreText) {
-    if (!this.stuntNotifEl) return;
-    this.stuntTitleEl.textContent = title;
-    this.stuntScoreEl.textContent = scoreText;
-    
-    // Animate display container with a scale-up pop
-    this.stuntNotifEl.style.opacity = '1';
-    this.stuntNotifEl.style.transform = 'translate(-50%, -50%) scale(1.1)';
-    
-    if (this.stuntNotifTimeout) clearTimeout(this.stuntNotifTimeout);
-    this.stuntNotifTimeout = setTimeout(() => {
-      this.stuntNotifEl.style.opacity = '0';
-      this.stuntNotifEl.style.transform = 'translate(-50%, -50%) scale(0.8)';
-    }, 2000);
+    return showStuntNotification.call(this, title, scoreText);
   }
 
   initRaceHUD() {
-    this.hudStatsEl = document.getElementById('stats-hud');
-    this.statsModeEl = document.getElementById('stats-mode');
-    this.statsProgressEl = document.getElementById('stats-progress');
-    this.statsProgressLabelEl = document.getElementById('stats-progress-label');
-    this.statsTimerEl = document.getElementById('stats-timer');
-    this.cancelBtnEl = document.getElementById('btn-cancel');
-    
-    this.racePanelEl = document.querySelector('.race-panel');
-    
-    // Register buttons
-    document.getElementById('btn-sprint').onclick = () => this.startRace('sprint');
-    document.getElementById('btn-circuit').onclick = () => this.startRace('circuit');
-    document.getElementById('btn-unordered').onclick = () => this.startRace('unordered');
-    document.getElementById('btn-autocross').onclick = () => this.startRace('autocross');
-    
-    this.cancelBtnEl.onclick = () => this.cancelRace();
-
-    // Visual checkpoint container
-    this.checkpointVisualsGroup = new THREE.Group();
-    this.scene.add(this.checkpointVisualsGroup);
+    return initRaceHUD.call(this);
   }
 
   buildAIMeshes() {
@@ -1401,314 +926,19 @@ class Game {
   }
 
   showBanner(title, subtitle, duration = 2000) {
-    const banner = document.getElementById('race-banner');
-    const titleEl = document.getElementById('banner-title');
-    const subEl = document.getElementById('banner-subtitle');
-
-    titleEl.textContent = title;
-    subEl.textContent = subtitle;
-
-    banner.classList.add('show');
-    
-    // Autoclose banner
-    if (this.bannerTimeout) clearTimeout(this.bannerTimeout);
-    this.bannerTimeout = setTimeout(() => {
-      banner.classList.remove('show');
-    }, duration);
+    return showBanner.call(this, title, subtitle, duration);
   }
 
   updateCamera(dt = 0.016) {
-    let targetObj = this.physics;
-    let targetVisual = this.carVisualContainer;
-    let isBoosting = this.physics.isBoosting;
-    let isAirborne = this.physics.isAirborne;
-    let airTime = this.physics.airTime;
-    let isDrifting = this.physics.isDrifting;
-    let speed = this.physics.velocity.length();
-
-    if (this.debugFocusAI && this.race && this.race.aiRacers) {
-      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
-      if (activeAI) {
-        targetObj = activeAI;
-        targetVisual = activeAI.meshGroup || targetVisual;
-        isBoosting = activeAI.isBoosting || false;
-        isAirborne = false;
-        airTime = 0;
-        isDrifting = activeAI.isDrifting || false;
-        speed = activeAI.velocity ? activeAI.velocity.length() : activeAI.speed;
-      }
-    }
-
-    const heading = targetObj.heading;
-
-    // Decay gearShiftPunch over time
-    if (this.gearShiftPunch > 0.0) {
-      this.gearShiftPunch = Math.max(0.0, this.gearShiftPunch - 4.5 * dt);
-    }
-
-    // Initialize custom camera effects if undefined
-    if (this.camRoll === undefined) this.camRoll = 0.0;
-    if (this.camPitchOffset === undefined) this.camPitchOffset = 0.0;
-    if (this.camBungeeOffset === undefined) this.camBungeeOffset = 0.0;
-    if (this.lastCamSpeed === undefined) this.lastCamSpeed = 0.0;
-
-    // Calculate longitudinal acceleration (G-Force pitching & bungee distance lag)
-    const accelLong = dt > 0 ? (speed - this.lastCamSpeed) / dt : 0;
-    this.lastCamSpeed = speed;
-    const clampedAccel = Math.max(-20.0, Math.min(20.0, accelLong));
-    
-    // G-Force Pitching
-    const targetPitch = -clampedAccel * 0.035; // Accel drops camera (squat), Brake lifts camera (dive)
-    this.camPitchOffset += (targetPitch - this.camPitchOffset) * (1 - Math.exp(-6 * dt));
-
-    // Bungee Distance Lag (pulls back on acceleration, pushes forward on braking)
-    const targetBungee = clampedAccel * 0.18;
-    this.camBungeeOffset += (targetBungee - this.camBungeeOffset) * (1 - Math.exp(-4 * dt));
-
-    // GoPro Hand-held Micro-Wobble (organic noise)
-    const noiseTime = Date.now() * 0.0015;
-    const wobbleX = Math.sin(noiseTime * 1.7) * 0.04 + Math.cos(noiseTime * 3.1) * 0.02;
-    const wobbleY = Math.cos(noiseTime * 2.1) * 0.04 + Math.sin(noiseTime * 4.3) * 0.02;
-
-    // Calculate lateral velocity (Steering Roll / Lean)
-    const playerRight = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
-    const lateralVel = this.physics.velocity.dot(playerRight);
-    const targetRoll = -lateralVel * 0.005; // Rolls slightly into the turn/slide
-    this.camRoll += (targetRoll - this.camRoll) * (1 - Math.exp(-5 * dt));
-
-    // 1. Dynamic FOV: Opens up at high speed to emphasize velocity + NFS shift punch, Nitro warp, and mid-air flight
-    const boostFOVOffset = this.physics.isBoosting ? 16.0 : 0.0;
-    const airFOVOffset = this.physics.isAirborne ? Math.min(12.0, this.physics.airTime * 15.0) : 0.0;
-    const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + boostFOVOffset + airFOVOffset;
-    this.camera.fov += (targetFOV - this.camera.fov) * (1 - Math.exp(-6 * dt));
-    this.camera.updateProjectionMatrix();
-
-    // 2. Heading Interpolation with Drift Lag: camera swings wider during drifts
-    let diff = heading - this.camHeading;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    const rotSpeed = isDrifting ? 2.5 : 5.0; // Balanced rotation lag
-    this.camHeading += diff * (1 - Math.exp(-rotSpeed * dt));
-
-    // 3. Dynamic Distance & Height: Medium voxel chase cam + G-Force Pitching & Bungee Lag
-    const distance = 15.0 + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8);
-    const height = 5.2 + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset;
-
-    const offset = new THREE.Vector3(
-      -Math.sin(this.camHeading) * distance,
-      height,
-      -Math.cos(this.camHeading) * distance
-    );
-
-    // 4. Lerp camera position smoothly
-    const targetCamPos = targetObj.position.clone().add(offset);
-    this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
-
-    // Add Hand-held Micro-Wobble to position
-    this.camera.position.x += wobbleX;
-    this.camera.position.y += wobbleY;
-
-    // 5. Visceral Shake: Add high-frequency camera vibration at high speed or during drift (moderated for medium view)
-    let shakeIntensity = 0;
-    if (speed > 25) {
-      shakeIntensity += (speed - 25) * 0.005;
-    }
-    if (isDrifting) {
-      shakeIntensity += 0.08;
-    }
-    if (this.gearShiftPunch > 0.0 && targetObj === this.physics) {
-      shakeIntensity += this.gearShiftPunch * 0.12;
-    }
-    if (this.crashShake > 0.0 && targetObj === this.physics) {
-      shakeIntensity += this.crashShake;
-    }
-    if (shakeIntensity > 0) {
-      this.camera.position.x += (Math.random() - 0.5) * shakeIntensity;
-      this.camera.position.y += (Math.random() - 0.5) * shakeIntensity;
-      this.camera.position.z += (Math.random() - 0.5) * shakeIntensity;
-    }
-
-    // Prevent camera from colliding/clipping with the ground/roads
-    const minCamClearance = 2.0;
-    const camGroundH = this.world ? this.world.getGroundHeight(this.camera.position.x, this.camera.position.z) : 0.0;
-    if (this.camera.position.y < camGroundH + minCamClearance) {
-      this.camera.position.y = camGroundH + minCamClearance;
-    }
-
-    // 6. LookAt: Look slightly ahead of the car's body center to keep target focused
-    const lookAheadDistance = 4.0 + speed * 0.08;
-    const targetLook = targetObj.position.clone().add(
-      new THREE.Vector3(
-        Math.sin(heading) * lookAheadDistance,
-        1.1,
-        Math.cos(heading) * lookAheadDistance
-      )
-    );
-    this.camera.lookAt(targetLook);
-
-    // Apply Camera Roll (Lean) after lookAt
-    this.camera.rotateZ(this.camRoll);
-
-    // Update shadow/directional light to follow player
-    this.dirLight.position.set(targetObj.position.x + 30, 60, targetObj.position.z + 30);
-    this.dirLight.target = targetVisual;
+    return updateCamera.call(this, dt);
   }
 
   updateMinimap() {
-    const ctx = this.minimapCtx;
-    const w = this.minimapCanvas.width;
-    const h = this.minimapCanvas.height;
-    
-    ctx.clearRect(0, 0, w, h);
-    
-    ctx.fillStyle = '#111218';
-    ctx.beginPath();
-    ctx.arc(w/2, h/2, w/2 - 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#4e5a70';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    
-    const scale = 0.35;
-    
-    let targetObj = this.physics;
-    if (this.debugFocusAI && this.race && this.race.aiRacers) {
-      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
-      if (activeAI) targetObj = activeAI;
-    }
-    const px = targetObj.position.x;
-    const pz = targetObj.position.z;
-    const heading = targetObj.heading;
-    
-    ctx.save();
-    ctx.translate(w/2, h/2);
-    ctx.rotate(-heading);
-    
-    // Draw roads on map
-    ctx.fillStyle = '#222530';
-    const ts = this.world.tileSize;
-    const pTileX = Math.round(px / ts);
-    const pTileZ = Math.round(pz / ts);
-    const mapRadius = 7;
-    
-    for (let x = pTileX - mapRadius; x <= pTileX + mapRadius; x++) {
-      for (let z = pTileZ - mapRadius; z <= pTileZ + mapRadius; z++) {
-        const isRoad = this.world.roadColumns.has(x) || this.world.roadRows.has(z);
-        if (isRoad) {
-          const rx = (x * ts) - px;
-          const rz = (z * ts) - pz;
-          ctx.fillRect(rx * scale - (ts * scale)/2, rz * scale - (ts * scale)/2, ts * scale, ts * scale);
-        }
-      }
-    }
-
-    // Draw active checkpoints on minimap
-    if (this.race.active) {
-      ctx.fillStyle = '#e5a93b';
-      this.race.checkpoints.forEach((cp, index) => {
-        let isVisible = false;
-        if (this.race.mode === 'unordered') {
-          isVisible = !this.race.unorderedCleared.has(index);
-        } else {
-          isVisible = (index === this.race.currentIndex);
-        }
-
-        if (isVisible) {
-          const rx = cp.x - px;
-          const rz = cp.z - pz;
-          
-          ctx.fillStyle = (index === this.race.checkpoints.length - 1) ? '#e84545' : '#e5a93b';
-          ctx.beginPath();
-          ctx.arc(rx * scale, rz * scale, 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
-    }
-    
-    // Draw AI cars on minimap
-    if (this.race.active) {
-      this.race.aiRacers.forEach(ai => {
-        const rx = ai.position.x - px;
-        const rz = ai.position.z - pz;
-        ctx.fillStyle = '#' + ai.colorHex.toString(16).padStart(6, '0');
-        ctx.beginPath();
-        ctx.arc(rx * scale, rz * scale, 5.0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      });
-    }
-    // Draw traffic cars on minimap
-    this.traffic.vehicles.forEach(v => {
-      const rx = v.position.x - px;
-      const rz = v.position.z - pz;
-      ctx.fillStyle = '#6c7182';
-      ctx.beginPath();
-      ctx.arc(rx * scale, rz * scale, 3.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Draw parked vehicles on minimap (smaller and darker grey)
-    if (this.traffic.parkedVehicles) {
-      this.traffic.parkedVehicles.forEach(v => {
-        const rx = v.position.x - px;
-        const rz = v.position.z - pz;
-        ctx.fillStyle = '#444855';
-        ctx.beginPath();
-        ctx.arc(rx * scale, rz * scale, 2.4, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    }
-
-    // Draw focused AI path on minimap
-    if (this.debugFocusAI && this.race && this.race.aiRacers) {
-      const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
-      if (activeAI && activeAI._currentPath && activeAI._currentPath.length > 0) {
-        ctx.strokeStyle = '#00f0ff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        
-        const startRx = activeAI.position.x - px;
-        const startRz = activeAI.position.z - pz;
-        ctx.moveTo(startRx * scale, startRz * scale);
-        
-        for (let i = activeAI._pathWptIdx; i < activeAI._currentPath.length; i++) {
-          const wpt = activeAI._currentPath[i];
-          const rx = wpt.x - px;
-          const rz = wpt.z - pz;
-          ctx.lineTo(rx * scale, rz * scale);
-        }
-        ctx.stroke();
-
-        // Draw lookahead point on minimap as a small yellow dot
-        if (activeAI.debugLookahead) {
-          const lx = activeAI.debugLookahead.x - px;
-          const lz = activeAI.debugLookahead.z - pz;
-          ctx.fillStyle = '#ffff00';
-          ctx.beginPath();
-          ctx.arc(lx * scale, lz * scale, 3.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    
-    ctx.restore();
-    
-    // Draw target arrow
-    ctx.fillStyle = targetObj === this.physics ? '#e84545' : '#' + (targetObj.colorHex ? targetObj.colorHex.toString(16).padStart(6, '0') : '00f0ff');
-    ctx.beginPath();
-    ctx.moveTo(w/2, h/2 - 9);
-    ctx.lineTo(w/2 - 6, h/2 + 7);
-    ctx.lineTo(w/2 + 6, h/2 + 7);
-    ctx.closePath();
-    ctx.fill();
+    return updateMinimap.call(this);
   }
 
   formatTime(seconds) {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 100);
-    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    return formatTime.call(this, seconds);
   }
 
   animate() {

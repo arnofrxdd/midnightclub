@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { createSkidmarkTexture } from './textures.js';
 
+// Preallocated scratch vectors for skidmark calculations to avoid per-frame allocations
+const _skidMidpoint = new THREE.Vector3();
+const _skidDir = new THREE.Vector3();
+const _skidTarget = new THREE.Vector3();
+
 export function getParticleMaterial(color, opacity) {
     const roundedOpacity = Math.round(opacity * 20) / 20; // 20 discrete steps
     const key = `${color}_${roundedOpacity}`;
@@ -136,7 +141,7 @@ export function spawnSkidmarkSegment(p1, p2) {
     const s = this.skidmarkPool[this.skidIndex];
     const mesh = s.mesh;
     
-    const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    const midpoint = _skidMidpoint.addVectors(p1, p2).multiplyScalar(0.5);
 
     // Determine height: if inside sidewalk bounds (road is 26m wide, tile is 40m), y is 0.37, else 0.22
     const ts = 40;
@@ -164,7 +169,7 @@ export function spawnSkidmarkSegment(p1, p2) {
     const baseHeight = this.world.getBaseHeight(midpoint.x, midpoint.z);
     midpoint.y = height + baseHeight;
 
-    const dir = new THREE.Vector3().subVectors(p2, p1);
+    const dir = _skidDir.subVectors(p2, p1);
     const len = dir.length();
     if (len < 0.05) return;
 
@@ -177,7 +182,7 @@ export function spawnSkidmarkSegment(p1, p2) {
     mesh.visible = true;
     
     // Rotate to point along direction vector
-    const target = p2.clone();
+    const target = _skidTarget.copy(p2);
     target.y = height + this.world.getBaseHeight(target.x, target.z);
     mesh.lookAt(target);
 

@@ -3,6 +3,109 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { createDetailedWindowGeometry, applySidewalkUVs } from './geometry.js';
 
 export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {
+    const key = `${gridX},${gridZ}`;
+    if (this.buildingGeoCache && this.buildingGeoCache.has(key)) {
+      const cached = this.buildingGeoCache.get(key);
+      const lod = new THREE.LOD();
+      lod.position.set(posX, 0.35, posZ);
+      
+      const highGroup = new THREE.Group();
+      const highGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      highGround.receiveShadow = true;
+      highGroup.add(highGround);
+      const facadeMesh = new THREE.Mesh(cached.facadeGeo, cached.bMat);
+      facadeMesh.castShadow = true;
+      facadeMesh.receiveShadow = true;
+      highGroup.add(facadeMesh);
+      
+      if (cached.windowGeo) {
+        highGroup.add(new THREE.Mesh(cached.windowGeo, this.windowDetailedMat));
+      }
+      if (cached.doorGeo) {
+        highGroup.add(new THREE.Mesh(cached.doorGeo, this.doorMat));
+      }
+      if (cached.accessoryGeo) {
+        highGroup.add(new THREE.Mesh(cached.accessoryGeo, this.accessoryMat));
+      }
+      if (cached.billboardGeo) {
+        const neonMat = new THREE.MeshStandardMaterial({
+          color: 0x111111,
+          emissive: cached.billboardColor,
+          emissiveIntensity: 4.0
+        });
+        highGroup.add(new THREE.Mesh(cached.billboardGeo, neonMat));
+      }
+      if (cached.beaconGeo) {
+        const beaconMat = new THREE.MeshStandardMaterial({
+          color: 0xff0000,
+          emissive: 0xff0000,
+          emissiveIntensity: 6.0
+        });
+        highGroup.add(new THREE.Mesh(cached.beaconGeo, beaconMat));
+      }
+      lod.addLevel(highGroup, 0);
+
+      const medGroup = new THREE.Group();
+      const medGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      medGround.receiveShadow = true;
+      medGroup.add(medGround);
+      const medFacade = new THREE.Mesh(cached.facadeGeo, cached.bMat);
+      medFacade.castShadow = true;
+      medFacade.receiveShadow = true;
+      medGroup.add(medFacade);
+      if (cached.windowGeo) {
+        medGroup.add(new THREE.Mesh(cached.windowGeo, this.windowDetailedMat));
+      }
+      if (cached.billboardGeo) {
+        const neonMat = new THREE.MeshStandardMaterial({
+          color: 0x111111,
+          emissive: cached.billboardColor,
+          emissiveIntensity: 4.0
+        });
+        medGroup.add(new THREE.Mesh(cached.billboardGeo, neonMat));
+      }
+      if (cached.beaconGeo) {
+        const beaconMat = new THREE.MeshStandardMaterial({
+          color: 0xff0000,
+          emissive: 0xff0000,
+          emissiveIntensity: 6.0
+        });
+        medGroup.add(new THREE.Mesh(cached.beaconGeo, beaconMat));
+      }
+      lod.addLevel(medGroup, 280);
+
+      const lowGroup = new THREE.Group();
+      const lowGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      lowGround.receiveShadow = true;
+      lowGroup.add(lowGround);
+      const lowFacade = new THREE.Mesh(cached.facadeGeo, cached.bMat);
+      lowGroup.add(lowFacade);
+      if (cached.windowGeo) {
+        lowGroup.add(new THREE.Mesh(cached.windowGeo, this.windowDetailedMat));
+      }
+      lod.addLevel(lowGroup, 400);
+
+      group.add(lod);
+
+      if (cached.lights) {
+        cached.lights.forEach(light => {
+          const newPoolMesh = light.poolMesh.clone();
+          group.add(newPoolMesh);
+          lights.push({
+            x: light.x,
+            y: light.y,
+            z: light.z,
+            intensity: light.intensity,
+            color: light.color,
+            poolMesh: newPoolMesh,
+            defaultOpacity: light.defaultOpacity
+          });
+        });
+      }
+      obstacles.push(cached.obstacle);
+      return;
+    }
+
     // Helper to check if a neighbor grid cell is a building tile (excluding alleys)
     const isBuildingTile = (gx, gz) => {
       return !this.roadColumns.has(gx) && !this.roadRows.has(gz) && !this.isAlley(gx, gz);
@@ -506,28 +609,45 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     facadeMesh.receiveShadow = true;
     highGroup.add(facadeMesh);
 
+    groundGeo.isCached = true;
+    mergedFacade.isCached = true;
+
+    let windowGeo = null;
     let windowMeshShared = null;
     if (windowGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(windowGeoms);
       merged.translate(0, buildingBaseHeight, 0);
+      windowGeo = merged;
+      windowGeo.isCached = true;
       windowMeshShared = new THREE.Mesh(merged, this.windowDetailedMat);
       highGroup.add(windowMeshShared);
     }
+    
+    let doorGeo = null;
     if (doorGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(doorGeoms);
       merged.translate(0, buildingBaseHeight, 0);
+      doorGeo = merged;
+      doorGeo.isCached = true;
       highGroup.add(new THREE.Mesh(merged, this.doorMat));
     }
+    
+    let accessoryGeo = null;
     if (accessoryGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(accessoryGeoms);
       merged.translate(0, buildingBaseHeight, 0);
+      accessoryGeo = merged;
+      accessoryGeo.isCached = true;
       highGroup.add(new THREE.Mesh(merged, this.accessoryMat));
     }
     
     let billboardMesh = null;
+    let billboardGeo = null;
     if (billboardGeoms.length > 0) {
       const mergedBill = BufferGeometryUtils.mergeGeometries(billboardGeoms);
       mergedBill.translate(0, buildingBaseHeight, 0);
+      billboardGeo = mergedBill;
+      billboardGeo.isCached = true;
       const neonMat = new THREE.MeshStandardMaterial({
         color: 0x111111,
         emissive: billboardColor,
@@ -538,9 +658,12 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     }
     
     let beaconMesh = null;
+    let beaconGeo = null;
     if (beaconGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(beaconGeoms);
       merged.translate(0, buildingBaseHeight, 0);
+      beaconGeo = merged;
+      beaconGeo.isCached = true;
       const beaconMat = new THREE.MeshStandardMaterial({
         color: 0xff0000,
         emissive: 0xff0000,
@@ -585,11 +708,44 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
 
     group.add(lod);
 
-    obstacles.push({
+    const obstacle = {
       xMin: posX + xMin,
       xMax: posX + xMax,
       zMin: posZ + zMin,
       zMax: posZ + zMax,
       height: currentHeight
-    });
+    };
+    obstacles.push(obstacle);
+
+    if (this.buildingGeoCache) {
+      this.buildingGeoCache.set(key, {
+        groundGeo,
+        facadeGeo: mergedFacade,
+        windowGeo,
+        doorGeo,
+        accessoryGeo,
+        billboardGeo,
+        billboardColor,
+        beaconGeo,
+        bMat,
+        obstacle,
+        lights: []
+      });
+
+      if (this.buildingGeoCache.size > 500) {
+        for (const [cacheKey, toEvict] of this.buildingGeoCache.entries()) {
+          if (!this.loadedTiles.has(cacheKey)) {
+            this.buildingGeoCache.delete(cacheKey);
+            if (toEvict.groundGeo) toEvict.groundGeo.dispose();
+            if (toEvict.facadeGeo) toEvict.facadeGeo.dispose();
+            if (toEvict.windowGeo) toEvict.windowGeo.dispose();
+            if (toEvict.doorGeo) toEvict.doorGeo.dispose();
+            if (toEvict.accessoryGeo) toEvict.accessoryGeo.dispose();
+            if (toEvict.billboardGeo) toEvict.billboardGeo.dispose();
+            if (toEvict.beaconGeo) toEvict.beaconGeo.dispose();
+            break;
+          }
+        }
+      }
+    }
   }

@@ -36,6 +36,11 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const localLeaves = [];
     const localLeavesCherry = [];
     const localLeavesAutumn = [];
+    const localRedHydrantGeoms = [];
+    const localCapHydrantGeoms = [];
+    const localBodyNewspaperGeoms = [];
+    const localGlassNewspaperGeoms = [];
+    const localPaperNewspaperGeoms = [];
 
     const addTree = (tx, tz) => {
       const h = this.getBaseHeight(tx, tz);
@@ -98,10 +103,24 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     };
 
     const addFireHydrant = (fhx, fhz) => {
-      const fh = this.templates.fireHydrant.clone();
       const h = this.getBaseHeight(fhx, fhz);
-      fh.position.set(fhx, 0.35 + h, fhz);
-      group.add(fh);
+      
+      const barrelGeo = new THREE.BoxGeometry(0.35, 0.7, 0.35);
+      barrelGeo.translate(fhx, 0.35 + h + 0.35, fhz);
+      localRedHydrantGeoms.push(barrelGeo);
+      
+      const topCapGeo = new THREE.BoxGeometry(0.42, 0.1, 0.42);
+      topCapGeo.translate(fhx, 0.35 + h + 0.75, fhz);
+      localCapHydrantGeoms.push(topCapGeo);
+      
+      const nozzleLGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
+      nozzleLGeo.translate(fhx - 0.2, 0.35 + h + 0.45, fhz);
+      localCapHydrantGeoms.push(nozzleLGeo);
+      
+      const nozzleRGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
+      nozzleRGeo.translate(fhx + 0.2, 0.35 + h + 0.45, fhz);
+      localCapHydrantGeoms.push(nozzleRGeo);
+
       obstacles.push({
         xMin: fhx - 0.25,
         xMax: fhx + 0.25,
@@ -112,11 +131,26 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     };
 
     const addNewspaperBox = (nbx, nbz, rotY) => {
-      const nb = this.templates.newspaperBox.clone();
       const h = this.getBaseHeight(nbx, nbz);
-      nb.position.set(nbx, 0.35 + h, nbz);
-      nb.rotation.y = rotY;
-      group.add(nb);
+      
+      const bodyGeo = new THREE.BoxGeometry(0.8, 1.1, 0.8);
+      bodyGeo.translate(0, 0.55, 0);
+      bodyGeo.rotateY(rotY);
+      bodyGeo.translate(nbx, 0.35 + h, nbz);
+      localBodyNewspaperGeoms.push(bodyGeo);
+      
+      const glassGeo = new THREE.BoxGeometry(0.6, 0.4, 0.05);
+      glassGeo.translate(0, 0.75, 0.41);
+      glassGeo.rotateY(rotY);
+      glassGeo.translate(nbx, 0.35 + h, nbz);
+      localGlassNewspaperGeoms.push(glassGeo);
+      
+      const paperGeo = new THREE.BoxGeometry(0.5, 0.3, 0.5);
+      paperGeo.translate(0, 0.35, 0.1);
+      paperGeo.rotateY(rotY);
+      paperGeo.translate(nbx, 0.35 + h, nbz);
+      localPaperNewspaperGeoms.push(paperGeo);
+
       obstacles.push({
         xMin: nbx - 0.4,
         xMax: nbx + 0.4,
@@ -129,7 +163,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const addBench = (bx, bz, rotY) => {
       const h = this.getBaseHeight(bx, bz);
       if (Math.abs(h) > 0.1) return;
-      const bench = this.createBenchMesh();
+      const bench = this.templates.bench.clone();
       bench.position.set(bx, 0.6 + h, bz);
       bench.rotation.y = rotY;
       group.add(bench);
@@ -153,7 +187,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const addPhoneBooth = (pbx, pbz, rotY) => {
       const h = this.getBaseHeight(pbx, pbz);
       if (Math.abs(h) > 0.1) return;
-      const pb = this.createPhoneBoothMesh();
+      const pb = this.templates.phoneBooth.clone();
       pb.position.set(pbx, 1.4 + h, pbz);
       pb.rotation.y = rotY;
       group.add(pb);
@@ -177,7 +211,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const addTrashCan = (tcx, tcz) => {
       const h = this.getBaseHeight(tcx, tcz);
       if (Math.abs(h) > 0.1) return;
-      const tc = this.createTrashCanMesh();
+      const tc = this.templates.trashCan.clone();
       tc.position.set(tcx, 0.5 + h, tcz);
       tc.rotation.y = Math.random() * Math.PI * 2;
       group.add(tc);
@@ -377,26 +411,56 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         slObject.position.set(slX, 4.25 + h, slZ); // Centered at Center of Mass (y=4.25)
         group.add(slObject);
 
-        // Streetlight pole mesh (local coordinates relative to center of mass y=4.25)
-        const pole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);
-        pole.position.y = 0; // Centered at local origin
-        pole.castShadow = true;
-        slObject.add(pole);
-
         const armDirX = ox > 0 ? -1 : 1;
         const isLED = Math.sin(slX * 5.0 + slZ * 3.0) > 0.0;
         const lightColor = isLED ? 0xd2e5ff : 0xffd5a1;
 
-        // Streetlight arm/handle
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.15, 0.15), this.streetlightPoleMat);
-        arm.position.set(armDirX * 0.65, 4.15, 0);
-        arm.castShadow = true;
-        slObject.add(arm);
+        const isDoubleArm = (Math.sin(slX * 1.2 + slZ * 2.8) - Math.floor(Math.sin(slX * 1.2 + slZ * 2.8))) > 0.65;
+        const localFlares = [];
+        const localLights = [];
+        let poolMesh2 = null;
 
-        // Streetlight bulb mesh (local y offset is 8.4 - 4.25 = 4.15)
-        const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), this.streetlightBulbMat);
-        bulb.position.set(armDirX * 1.3, 4.15, 0);
-        slObject.add(bulb);
+        // Streetlight pole & arm merged geometry
+        const poleGeoms = [];
+        const poleGeo = new THREE.BoxGeometry(0.3, 8.5, 0.3);
+        poleGeoms.push(poleGeo);
+        
+        const armGeo = new THREE.BoxGeometry(1.3, 0.15, 0.15);
+        armGeo.translate(armDirX * 0.65, 4.15, 0);
+        poleGeoms.push(armGeo);
+
+        if (isDoubleArm) {
+          const arm2Geo = new THREE.BoxGeometry(1.3, 0.15, 0.15);
+          arm2Geo.translate(-armDirX * 0.65, 4.15, 0);
+          poleGeoms.push(arm2Geo);
+        }
+
+        const mergedPoles = BufferGeometryUtils.mergeGeometries(poleGeoms);
+        const poleMesh = new THREE.Mesh(mergedPoles, this.streetlightPoleMat);
+        poleMesh.castShadow = true;
+        slObject.add(poleMesh);
+
+        // Streetlight bulb merged geometry
+        const bulbGeoms = [];
+        const bulbGeo = new THREE.BoxGeometry(0.6, 0.2, 0.6);
+        bulbGeo.translate(armDirX * 1.3, 4.15, 0);
+        bulbGeoms.push(bulbGeo);
+
+        if (isDoubleArm) {
+          const bulb2Geo = new THREE.BoxGeometry(0.6, 0.2, 0.6);
+          bulb2Geo.translate(-armDirX * 1.3, 4.15, 0);
+          bulbGeoms.push(bulb2Geo);
+        }
+
+        const mergedBulbs = BufferGeometryUtils.mergeGeometries(bulbGeoms);
+        const bulbMesh = new THREE.Mesh(mergedBulbs, this.streetlightBulbMat);
+        slObject.add(bulbMesh);
+
+        // Volumetric light cone
+        const coneMesh = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+        coneMesh.position.set(armDirX * 1.3, 0.25, 0);
+        coneMesh.name = "lightCone";
+        slObject.add(coneMesh);
 
         // Baked ground light pool under streetlight 1
         const poolMesh1 = new THREE.Mesh(
@@ -406,21 +470,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         poolMesh1.position.set(armDirX * 1.3, -3.89, 0);
         slObject.add(poolMesh1);
 
-        // Double-arm variety (35% chance)
-        const isDoubleArm = (Math.sin(slX * 1.2 + slZ * 2.8) - Math.floor(Math.sin(slX * 1.2 + slZ * 2.8))) > 0.65;
-        const localFlares = [];
-        const localLights = [];
-        let poolMesh2 = null;
-
         if (isDoubleArm) {
-          const arm2 = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.15, 0.15), this.streetlightPoleMat);
-          arm2.position.set(-armDirX * 0.65, 4.15, 0);
-          arm2.castShadow = true;
-          slObject.add(arm2);
-
-          const bulb2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), this.streetlightBulbMat);
-          bulb2.position.set(-armDirX * 1.3, 4.15, 0);
-          slObject.add(bulb2);
+          // Volumetric light cone 2
+          const coneMesh2 = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+          coneMesh2.position.set(-armDirX * 1.3, 0.25, 0);
+          coneMesh2.name = "lightCone";
+          slObject.add(coneMesh2);
 
           // Baked ground light pool under streetlight 2
           poolMesh2 = new THREE.Mesh(
@@ -737,6 +792,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           bulb.position.set(0, 4.15, -1.3);
           slObject.add(bulb);
 
+          // Volumetric light cone
+          const coneMesh = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+          coneMesh.position.set(0, 0.25, -1.3);
+          coneMesh.name = "lightCone";
+          slObject.add(coneMesh);
+
           // Baked ground light pool under streetlight 1
           const poolMesh1 = new THREE.Mesh(
             this.lightPoolGeo,
@@ -808,6 +869,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             const bulb2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), this.streetlightBulbMat);
             bulb2.position.set(0, 4.15, 1.3); // Offset towards the road (+Z)
             slObject2.add(bulb2);
+
+            // Volumetric light cone 2
+            const coneMesh2 = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+            coneMesh2.position.set(0, 0.25, 1.3);
+            coneMesh2.name = "lightCone";
+            slObject2.add(coneMesh2);
 
             const poolMesh2 = new THREE.Mesh(
               this.lightPoolGeo,
@@ -971,22 +1038,30 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           slObject.position.set(sx, 4.25 + h, posZ); // Centered at Center of Mass (y=4.25)
           group.add(slObject);
 
-          // Pole mesh local
-          const pole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);
-          pole.position.y = 0; // Centered at local origin
-          pole.castShadow = true;
-          slObject.add(pole);
+          // Pole and arm merged geometry
+          const poleGeoms = [];
+          const poleGeo = new THREE.BoxGeometry(0.3, 8.5, 0.3);
+          poleGeoms.push(poleGeo);
 
-          // Streetlight arm/handle (extends along X, towards the road)
-          const arm = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.15, 0.15), this.streetlightPoleMat);
-          arm.position.set(-0.65, 4.15, 0);
-          arm.castShadow = true;
-          slObject.add(arm);
-          
+          const armGeo = new THREE.BoxGeometry(1.3, 0.15, 0.15);
+          armGeo.translate(-0.65, 4.15, 0);
+          poleGeoms.push(armGeo);
+
+          const mergedPoles = BufferGeometryUtils.mergeGeometries(poleGeoms);
+          const poleMesh = new THREE.Mesh(mergedPoles, this.streetlightPoleMat);
+          poleMesh.castShadow = true;
+          slObject.add(poleMesh);
+
           // Bulb geometry local (local y offset is 8.4 - 4.25 = 4.15)
           const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), this.streetlightBulbMat);
           bulb.position.set(-1.3, 4.15, 0);
           slObject.add(bulb);
+
+          // Volumetric light cone
+          const coneMesh = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+          coneMesh.position.set(-1.3, 0.25, 0);
+          coneMesh.name = "lightCone";
+          slObject.add(coneMesh);
 
           // Baked ground light pool under streetlight 1
           const poolMesh1 = new THREE.Mesh(
@@ -1045,20 +1120,28 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             slObject2.position.set(sx2, 4.25 + h2, posZ);
             group.add(slObject2);
 
-            const pole2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);
-            pole2.position.y = 0;
+            const poleGeoms = [];
+            const poleGeo = new THREE.BoxGeometry(0.3, 8.5, 0.3);
+            poleGeoms.push(poleGeo);
+
+            const armGeo = new THREE.BoxGeometry(1.3, 0.15, 0.15);
+            armGeo.translate(0.65, 4.15, 0);
+            poleGeoms.push(armGeo);
+
+            const mergedPoles = BufferGeometryUtils.mergeGeometries(poleGeoms);
+            const pole2 = new THREE.Mesh(mergedPoles, this.streetlightPoleMat);
             pole2.castShadow = true;
             slObject2.add(pole2);
-
-            // Streetlight arm/handle (extends along X, towards the road)
-            const arm2 = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.15, 0.15), this.streetlightPoleMat);
-            arm2.position.set(0.65, 4.15, 0);
-            arm2.castShadow = true;
-            slObject2.add(arm2);
 
             const bulb2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), this.streetlightBulbMat);
             bulb2.position.set(1.3, 4.15, 0); // Offset towards the road (+X)
             slObject2.add(bulb2);
+
+            // Volumetric light cone 2
+            const coneMesh2 = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
+            coneMesh2.position.set(1.3, 0.25, 0);
+            coneMesh2.name = "lightCone";
+            slObject2.add(coneMesh2);
 
             const poolMesh2 = new THREE.Mesh(
               this.lightPoolGeo,
@@ -1144,5 +1227,37 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       const leavesMesh = new THREE.Mesh(mergedLeaves, this.leafAutumnMat);
       leavesMesh.castShadow = true;
       group.add(leavesMesh);
+    }
+
+    // Merge and instantiate Fire Hydrants
+    if (localRedHydrantGeoms.length > 0) {
+      const mergedRed = BufferGeometryUtils.mergeGeometries(localRedHydrantGeoms);
+      const hydrantRedMesh = new THREE.Mesh(mergedRed, this.hydrantRedMat);
+      hydrantRedMesh.castShadow = true;
+      group.add(hydrantRedMesh);
+    }
+    if (localCapHydrantGeoms.length > 0) {
+      const mergedCap = BufferGeometryUtils.mergeGeometries(localCapHydrantGeoms);
+      const hydrantCapMesh = new THREE.Mesh(mergedCap, this.hydrantCapMat);
+      group.add(hydrantCapMesh);
+    }
+
+    // Merge and instantiate Newspaper Boxes
+    if (localBodyNewspaperGeoms.length > 0) {
+      const mergedBody = BufferGeometryUtils.mergeGeometries(localBodyNewspaperGeoms);
+      const newspaperBodyMesh = new THREE.Mesh(mergedBody, this.newspaperBodyMat);
+      newspaperBodyMesh.castShadow = true;
+      newspaperBodyMesh.receiveShadow = true;
+      group.add(newspaperBodyMesh);
+    }
+    if (localGlassNewspaperGeoms.length > 0) {
+      const mergedGlass = BufferGeometryUtils.mergeGeometries(localGlassNewspaperGeoms);
+      const newspaperGlassMesh = new THREE.Mesh(mergedGlass, this.newspaperGlassMat);
+      group.add(newspaperGlassMesh);
+    }
+    if (localPaperNewspaperGeoms.length > 0) {
+      const mergedPaper = BufferGeometryUtils.mergeGeometries(localPaperNewspaperGeoms);
+      const newspaperPaperMesh = new THREE.Mesh(mergedPaper, this.newspaperPaperMat);
+      group.add(newspaperPaperMesh);
     }
   }

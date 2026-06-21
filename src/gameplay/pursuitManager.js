@@ -461,17 +461,17 @@ export class PursuitManager {
 
       cop.update(dt, world, target, targetVelSpeed, targetHeading, navGraph, allVehicles, targetTryingToMove);
 
-      // Animate cop wheels rolling
-      const cRot = (cop.speed / 0.42) * dt;
-      if (cop.wheels) {
+      // Animate cop wheels rolling (if not low LOD)
+      if (cop.wheels && !cop._lastLOD) {
+        const cRot = (cop.speed / 0.42) * dt;
         cop.wheels.forEach(w => {
           w.children[0].rotation.x += cRot;
           w.children[1].rotation.x += cRot;
         });
       }
 
-      // Flash Siren lights (red / blue flasher)
-      if (cop.meshGroup) {
+      // Flash Siren lights (red / blue flasher) (if not low LOD)
+      if (cop.meshGroup && !cop._lastLOD) {
         const sirenBlue = cop.meshGroup.getObjectByName("sirenBlue");
         const sirenRed = cop.meshGroup.getObjectByName("sirenRed");
         if (sirenBlue && sirenRed) {
@@ -631,14 +631,14 @@ export class PursuitManager {
   }
 
   spawnRoadblockAttempt(world, playerPos, playerHeading) {
-    if (this.roadblocks.length >= 2) return; // Keep max 2 active roadblocks at once
+    if (this.roadblocks.length >= 4) return; // Keep max 4 active roadblocks at once (2 junctions blocked)
 
     const pfSin = Math.sin(playerHeading);
     const pfCos = Math.cos(playerHeading);
-    const candidates = [];
+    const intersections = [];
 
+    // 1. Find candidate 4-way intersections in front of the player
     for (const [key, tile] of world.loadedTiles.entries()) {
-      // Use stored numeric tile coords — avoids key.split() string parse per tile
       const tx = tile.gridX;
       const tz = tile.gridZ;
       
@@ -647,41 +647,90 @@ export class PursuitManager {
       const isAlley = world.isAlley ? world.isAlley(tx, tz) : false;
       const isIntersection = onCol && onRow;
 
-      if (isAlley || isIntersection || (!onCol && !onRow)) continue;
+      if (!isIntersection || isAlley) continue;
 
-      // Scalar distance and dot product — no Vector3 alloc
+      // Distance check (spawn roadblocks a bit ahead: 100m to 190m)
       const tdx = tile.posX - playerPos.x;
       const tdz = tile.posZ - playerPos.z;
       const dist = Math.sqrt(tdx * tdx + tdz * tdz);
 
-      if (dist < 120.0 || dist > 180.0) continue;
+      if (dist < 100.0 || dist > 190.0) continue;
 
+      // In front check
       const dot = (tdx / dist) * pfSin + (tdz / dist) * pfCos;
-      if (dot < 0.6) continue;
+      if (dot < 0.5) continue;
 
-      let tooCloseToOther = false;
-      for (const rb of this.roadblocks) {
-        const rdx = rb.position.x - tile.posX;
-        const rdz = rb.position.z - tile.posZ;
-        if (rdx * rdx + rdz * rdz < 100.0 * 100.0) {
-          tooCloseToOther = true;
-          break;
-        }
-      }
-      if (tooCloseToOther) continue;
-
-      candidates.push({ tx, tz, posX: tile.posX, posZ: tile.posZ, isVertical: onCol });
+      intersections.push({ tx, tz, posX: tile.posX, posZ: tile.posZ });
     }
 
-    if (candidates.length > 0) {
-      const choice = candidates[Math.floor(Math.random() * candidates.length)];
-      const heading = choice.isVertical ? 0 : Math.PI / 2;
-      const rbId = Date.now() + Math.floor(Math.random() * 1000);
-      const rbPos = new THREE.Vector3(choice.posX, 0.35 + world.getBaseHeight(choice.posX, choice.posZ), choice.posZ);
-      const roadblock = new Roadblock(rbId, choice.tx, choice.tz, rbPos, heading, choice.isVertical, this.app);
+    if (intersections.length === 0) return;
+
+    // Pick the closest intersection to the player's path
+    intersections.sort((a, b) => {
+      const distA = Math.sqrt((a.posX - playerPos.x)**2 + (a.posZ - playerPos.z)**2);
+      const distB = Math.sqrt((b.posX - playerPos.x)**2 + (b.posZ - playerPos.z)**2);
+      return distA - distB;
+    });
+
+    const targetIntersection = intersections[0];
+    const tx = targetIntersection.tx;
+    const tz = targetIntersection.tz;
+
+    // 2. Determine which direction the player is entering from
+    const dx = targetIntersection.posX - playerPos.x;
+    const dz = targetIntersection.posZ - playerPos.z;
+
+    let entryDir = 'S'; // Default
+    if (Math.abs(dx) > Math.abs(dz)) {
+      entryDir = dx > 0 ? 'W' : 'E';
+    } else {
+      entryDir = dz > 0 ? 'S' : 'N';
+    }
+
+    // 3. The 3 potential exits:
+    let exits = [];
+    if (entryDir === 'S') {
+      exits = [
+        { dir: 'N', tx: tx, tz: tz + 1, isVertical: true, heading: 0 },
+        { dir: 'E', tx: tx + 1, tz: tz, isVertical: false, heading: Math.PI / 2 },
+        { dir: 'W', tx: tx - 1, tz: tz, isVertical: false, heading: Math.PI / 2 }
+      ];
+    } else if (entryDir === 'N') {
+      exits = [
+        { dir: 'S', tx: tx, tz: tz - 1, isVertical: true, heading: 0 },
+        { dir: 'E', tx: tx + 1, tz: tz, isVertical: false, heading: Math.PI / 2 },
+        { dir: 'W', tx: tx - 1, tz: tz, isVertical: false, heading: Math.PI / 2 }
+      ];
+    } else if (entryDir === 'W') {
+      exits = [
+        { dir: 'E', tx: tx + 1, tz: tz, isVertical: false, heading: Math.PI / 2 },
+        { dir: 'N', tx: tx, tz: tz + 1, isVertical: true, heading: 0 },
+        { dir: 'S', tx: tx, tz: tz - 1, isVertical: true, heading: 0 }
+      ];
+    } else if (entryDir === 'E') {
+      exits = [
+        { dir: 'W', tx: tx - 1, tz: tz, isVertical: false, heading: Math.PI / 2 },
+        { dir: 'N', tx: tx, tz: tz + 1, isVertical: true, heading: 0 },
+        { dir: 'S', tx: tx, tz: tz - 1, isVertical: true, heading: 0 }
+      ];
+    }
+
+    // Shuffle exits and pick the first 2
+    exits.sort(() => Math.random() - 0.5);
+    const blockedExits = [exits[0], exits[1]];
+
+    // 4. Spawn roadblocks on the selected two exits
+    blockedExits.forEach((exit, index) => {
+      const rbId = Date.now() + Math.floor(Math.random() * 1000) + index;
+      const rbX = exit.tx * world.tileSize;
+      const rbZ = exit.tz * world.tileSize;
+      const rbPos = new THREE.Vector3(rbX, 0.35 + world.getBaseHeight(rbX, rbZ), rbZ);
+      
+      const roadblock = new Roadblock(rbId, exit.tx, exit.tz, rbPos, exit.heading, exit.isVertical, this.app);
       this.roadblocks.push(roadblock);
-      this.app.showBanner("ROADBLOCK AHEAD", "Police blockade set up!");
-    }
+    });
+
+    this.app.showBanner("ROADBLOCK AHEAD", "Police blockade set up at the next junction!");
   }
 
   triggerBusted() {

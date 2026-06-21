@@ -121,7 +121,7 @@ export class TrafficManager {
             existingPositions.push(cop.position);
           }
         });
-        pv.recycle(playerPos, playerHeading, aiRacers, world, true, existingPositions);
+        pv.recycle(playerPos, playerHeading, aiRacers, world, true, existingPositions, frustum);
       }
     }
 

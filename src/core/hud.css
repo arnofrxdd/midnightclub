@@ -1,572 +1,763 @@
 * {
-      box-sizing: border-box;
-      user-select: none;
-    }
-    body, html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #0b0914;
-      font-family: 'Outfit', sans-serif;
-      color: #fff;
-    }
+  box-sizing: border-box;
+  user-select: none;
+}
 
-    #canvas-container {
-      width: 100%;
-      height: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
-    }
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #050608;
+  font-family: 'Barlow Condensed', 'Outfit', sans-serif;
+  color: #fff;
+}
 
-    /* Premium Realistic HUD Overlay */
-    .hud-layer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 24px;
-    }
+#canvas-container {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
 
-    /* Header Panel */
-    .hud-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+/* Premium Clean Sport HUD Overlay */
+.hud-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
+}
 
-    .brand {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 24px;
-      letter-spacing: 2px;
-      color: #e2e2e8;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
-    }
+/* Header Panel */
+.hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
 
-    .sub-brand {
-      font-size: 10px;
-      font-family: 'Orbitron', sans-serif;
-      letter-spacing: 4px;
-      color: #e5a93b; /* Amber/Orange Dashboard style */
-      text-transform: uppercase;
-      margin-top: -2px;
-    }
+.brand {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+  text-transform: uppercase;
+}
 
-    .control-info {
-      background: rgba(13, 14, 18, 0.75);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #9a99a2;
-      display: flex;
-      gap: 16px;
-    }
+.sub-brand {
+  font-size: 11px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: 3px;
+  color: #ffc600; /* Bold Racing Yellow */
+  text-transform: uppercase;
+  margin-top: -4px;
+}
 
-    .control-item span {
-      color: #e5a93b;
-      font-weight: 600;
-    }
+/* Heat Level HUD inside header */
+.heat-level-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
 
-    /* Bottom Panel */
-    .hud-bottom {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-    }
+.heat-level-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 1px;
+  color: #ff3b30;
+  margin-right: 4px;
+}
 
-    /* Speedometer */
-    .speedometer-container {
-      background: radial-gradient(circle at bottom left, rgba(13, 14, 18, 0.9) 0%, rgba(13, 14, 18, 0.5) 100%);
-      backdrop-filter: blur(12px);
-      border-left: 4px solid #e5a93b;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      border-right: 1px solid rgba(255, 255, 255, 0.03);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-      border-radius: 0 12px 12px 0;
-      padding: 16px 24px;
-      display: flex;
-      flex-direction: column;
-      min-width: 180px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    }
+.heat-bars-wrapper {
+  display: flex;
+  gap: 3px;
+}
 
-    .speed-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: #e5a93b;
-      font-weight: 700;
-    }
+.heat-bar-segment {
+  width: 8px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 0px; /* Sharp corners */
+  transition: background 0.15s;
+}
 
-    .speed-value-wrapper {
-      display: flex;
-      align-items: baseline;
-    }
+.heat-bar-segment.active {
+  background: #ff3b30;
+}
 
-    .speed-value {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 48px;
-      color: #f3f3f6;
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-    }
+/* Bottom Panel */
+.hud-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
 
-    .speed-unit {
-      font-size: 14px;
-      font-weight: 700;
-      color: #9a99a2;
-      margin-left: 6px;
-    }
+/* Speed Dial Layout (Floating, borderless) */
+.speed-dial-wrapper {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  pointer-events: none;
+  margin-bottom: 12px;
+}
 
-    /* Drift display */
-    .drift-alert {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 20px;
-      color: #e84545; /* Race red drift indicator */
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      text-shadow: 0 0 8px rgba(232, 69, 69, 0.6);
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.15s ease-out;
-    }
+.speed-dial-svg {
+  width: 100%;
+  height: 100%;
+}
 
-    .drift-alert.active {
-      opacity: 1;
-      transform: translateY(0);
-    }
+.dial-bg {
+  stroke-dashoffset: 0;
+}
 
-    /* Minimap container */
-    .minimap-wrapper {
-      width: 140px;
-      height: 140px;
-      background: rgba(13, 14, 18, 0.75);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 50%;
-      overflow: hidden;
-      position: relative;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    }
+.dial-fill {
+  transition: stroke-dasharray 0.05s ease-out, stroke 0.15s ease;
+}
 
-    #minimap-canvas {
-      width: 100%;
-      height: 100%;
-    }
+#dial-needle line {
+  transition: transform 0.05s ease-out;
+}
 
-    /* Loading screen */
-    #loader {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #090a0f;
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      transition: opacity 0.5s ease;
-    }
+.dial-speed-metrics {
+  position: absolute;
+  bottom: 16%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
 
-    .loader-title {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 36px;
-      letter-spacing: 4px;
-      color: #f3f3f6;
-      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-      margin-bottom: 8px;
-    }
+.speed-value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 46px;
+  color: #ffffff;
+  line-height: 0.85;
+}
 
-    .loader-subtitle {
-      font-size: 12px;
-      letter-spacing: 6px;
-      color: #e5a93b;
-      text-transform: uppercase;
-      margin-bottom: 40px;
-    }
+.speed-unit {
+  font-size: 13px;
+  font-weight: 800;
+  font-style: italic;
+  color: #ffc600;
+  font-family: 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.5px;
+  margin-top: -2px;
+}
 
-    .spinner {
-      width: 50px;
-      height: 50px;
-      border: 3px solid rgba(229, 169, 59, 0.15);
-      border-radius: 50%;
-      border-top-color: #e5a93b;
-      animation: spin 1s ease-in-out infinite;
-    }
+.dial-gear-container {
+  position: absolute;
+  top: 28%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  pointer-events: none;
+}
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+.gear-value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  color: #ffc600;
+  line-height: 1;
+}
 
-    /* Race Selector Panel */
-    .race-panel {
-      position: absolute;
-      top: 110px;
-      left: 24px;
-      background: rgba(13, 14, 18, 0.8);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      padding: 16px;
-      width: 220px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      pointer-events: auto;
-      z-index: 50;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-    }
+/* Nested Dial Nitro Display */
+.dial-nitro-bg {
+  animation: nitroBgPulse 2.5s ease-in-out infinite alternate;
+}
 
-    .race-panel-title {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 700;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: #e5a93b;
-      margin-bottom: 4px;
-    }
+@keyframes nitroBgPulse {
+  0% { stroke: #09131a; }
+  100% { stroke: #122533; }
+}
 
-    .race-btn {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      color: #e2e2e8;
-      font-family: 'Outfit', sans-serif;
-      font-weight: 600;
-      font-size: 13px;
-      padding: 10px 14px;
-      text-align: left;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+.dial-nitro-fill {
+  transition: stroke-dasharray 0.05s ease-out, stroke 0.15s ease;
+}
 
-    .race-btn:hover {
-      background: rgba(229, 169, 59, 0.15);
-      border-color: #e5a93b;
-      color: #fff;
-      transform: translateX(4px);
-    }
+.rpm-label {
+  font-size: 9px;
+  color: #8c909c;
+  font-family: 'Barlow Condensed', sans-serif;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
 
-    .race-btn.active-cancel {
-      background: rgba(232, 69, 69, 0.15);
-      border-color: #e84545;
-      color: #fff;
-    }
+.rpm-bar-container {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
 
-    .race-btn.active-cancel:hover {
-      background: rgba(232, 69, 69, 0.3);
-      transform: none;
-    }
+.rpm-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ffc600 70%, #ff3b30 100%);
+  transition: width 0.05s ease-out;
+}
 
-    /* Race Stats HUD */
-    .stats-container {
-      position: absolute;
-      top: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(13, 14, 18, 0.85);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 8px;
-      padding: 10px 24px;
-      display: none; /* Hidden by default, shown when race starts */
-      align-items: center;
-      gap: 24px;
-      z-index: 50;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    }
+/* Drift & Draft display (Floating at the top-center below Heat HUD) */
+.drift-alert {
+  position: absolute;
+  top: 92px; /* Right below the heat HUD */
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 24px;
+  color: #ff3b30; /* Racing Red */
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  opacity: 0;
+  transition: all 0.15s ease-out;
+  z-index: 60;
+  text-shadow: 0 0 10px rgba(255, 59, 48, 0.4), 0 2px 4px rgba(0, 0, 0, 0.9);
+}
 
-    .stats-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
+.drift-alert.active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 
-    .stats-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: #9a99a2;
-      font-weight: 600;
-    }
+.nitro-notification-bubble {
+  position: absolute;
+  bottom: 235px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 20px;
+  color: #00e5ff;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: all 0.2s ease-out;
+  pointer-events: none;
+  z-index: 60;
+  text-align: center;
+  white-space: nowrap;
+}
 
-    .stats-value {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 700;
-      font-size: 18px;
-      color: #fff;
-    }
+/* Stunt/Trick notifications */
+.stunt-notification-container {
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  pointer-events: none;
+  z-index: 60;
+  text-align: center;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
 
-    .stats-value.timer {
-      color: #e5a93b;
-    }
+.stunt-notification-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 32px;
+  letter-spacing: 1px;
+  color: #00e5ff;
+  text-transform: uppercase;
+  margin: 0;
+}
 
-    /* Race Notification Banners */
-    .race-banner {
-      position: absolute;
-      top: 35%;
-      left: 50%;
-      transform: translate(-50%, -50%) scale(0.8);
-      pointer-events: none;
-      z-index: 60;
-      text-align: center;
-      opacity: 0;
-      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
+.stunt-notification-score {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 1px;
+  color: #ffc600;
+  text-transform: uppercase;
+  margin: 0;
+}
 
-    .race-banner.show {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1.0);
-    }
+/* Minimap container (Sharp Square Gaming Frame) */
+.minimap-wrapper {
+  width: 140px;
+  height: 140px;
+  background: #0a0b0e;
+  border: 2px solid #2a2d36;
+  position: relative;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.9);
+}
 
-    .banner-title {
-      font-family: 'Orbitron', sans-serif;
-      font-weight: 900;
-      font-size: 48px;
-      letter-spacing: 4px;
-      color: #e5a93b;
-      text-shadow: 0 0 20px rgba(229, 169, 59, 0.6);
-      text-transform: uppercase;
-      margin: 0;
-    }
+#minimap-canvas {
+  width: 100%;
+  height: 100%;
+}
 
-    .banner-subtitle {
-      font-family: 'Outfit', sans-serif;
-      font-size: 16px;
-      letter-spacing: 2px;
-      color: #e2e2e8;
-      text-transform: uppercase;
-      margin-top: 8px;
-    }
+/* Loading screen */
+#loader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #060709;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.5s ease;
+}
 
-    /* Retro Look Filters */
-    #canvas-container canvas {
-      filter: contrast(1.15) saturate(1.12) brightness(0.94) hue-rotate(-3deg);
-    }
+.loader-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 42px;
+  letter-spacing: 2px;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
 
-    .vignette-grading {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 6;
-      pointer-events: none;
-      background: radial-gradient(circle, rgba(14, 18, 30, 0) 25%, rgba(9, 10, 20, 0.76) 100%);
-    }
+.loader-subtitle {
+  font-size: 13px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: 5px;
+  color: #ffc600;
+  text-transform: uppercase;
+  margin-bottom: 30px;
+}
 
-    /* Premium Animated Film Grain */
-    .noise-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 9999;
-      pointer-events: none;
-      overflow: hidden;
-    }
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 198, 0, 0.15);
+  border-top-color: #ffc600;
+  animation: spin 1s ease-in-out infinite;
+}
 
-    .noise-overlay::before {
-      content: "";
-      position: absolute;
-      top: -10%;
-      left: -10%;
-      width: 120%;
-      height: 120%;
-      background: #808080;
-      filter: url(#noiseFilter);
-      opacity: 1; /* Managed dynamically via JS container opacity */
-      pointer-events: none;
-      mix-blend-mode: overlay;
-      animation: grain 0.8s steps(10) infinite;
-    }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
-    @keyframes grain {
-      0%, 100% { transform:translate(0, 0); }
-      10% { transform:translate(-1%, -2%); }
-      20% { transform:translate(-2%, 1%); }
-      30% { transform:translate(1%, -1%); }
-      40% { transform:translate(-1%, 3%); }
-      50% { transform:translate(-2%, 2%); }
-      60% { transform:translate(2%, -1%); }
-      70% { transform:translate(3%, 1%); }
-      80% { transform:translate(-2%, -2%); }
-      90% { transform:translate(1%, 3%); }
-    }
+/* Race Selector Panel (Matte Skewed List) */
+.race-panel {
+  position: absolute;
+  top: 110px;
+  left: 24px;
+  background: #0b0c10;
+  border: 1px solid #2a2c35;
+  border-left: 4px solid #ffc600;
+  padding: 16px;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+  z-index: 50;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.85);
+  transform: skewX(-10deg);
+}
 
-    /* Cop Chase Flash Vignette (Bottom Screen Glow Only) */
-    .cop-vignette {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 6vh;
-      z-index: 9995;
-      pointer-events: none;
-      opacity: 0;
-      transition: background 0.15s ease, height 0.15s ease;
-      background: linear-gradient(to top, rgba(255, 0, 0, 0.55) 0%, rgba(255, 0, 0, 0) 100%);
-    }
-    .cop-vignette.flash-blue {
-      background: linear-gradient(to top, rgba(0, 50, 255, 0.55) 0%, rgba(0, 0, 255, 0) 100%);
-    }
+/* Unskew internal components of race panel */
+.race-panel > * {
+  transform: skewX(10deg);
+}
 
-    /* Busted Progress Meter */
-    .busted-meter-container {
-      position: absolute;
-      top: 55%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(13, 14, 18, 0.95);
-      border: 2px solid #ff3333;
-      padding: 16px 24px;
-      border-radius: 8px;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      z-index: 65;
-      box-shadow: 0 0 24px rgba(255, 51, 51, 0.5);
-      width: 250px;
-    }
-    .busted-title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 16px;
-      font-weight: 900;
-      color: #ff3333;
-      animation: pulse 1s infinite alternate;
-      letter-spacing: 2px;
-    }
-    .busted-bar-bg {
-      width: 100%;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-      overflow: hidden;
-    }
-    .busted-bar-fill {
-      width: 0%;
-      height: 100%;
-      background: #ff3333;
-    }
-    @keyframes pulse {
-      from { opacity: 0.6; }
-      to { opacity: 1; }
-    }
+.race-panel-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #ffc600;
+  margin-bottom: 6px;
+}
 
-    .heat-bar-segment {
-      width: 8px;
-      height: 14px;
-      background: rgba(255, 255, 255, 0.15);
-      border-radius: 1px;
-      transition: background 0.15s;
-    }
-    .heat-bar-segment.active {
-      background: #ff3333;
-      box-shadow: 0 0 4px #ff3333;
-    }
+.race-btn {
+  background: #14161f;
+  border: 1px solid #2e313d;
+  color: #e2e2e8;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-style: italic;
+  font-size: 14px;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-    /* Heat HUD Container */
-    .heat-hud-container {
-      position: absolute;
-      top: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(10, 11, 15, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      backdrop-filter: blur(8px);
-      padding: 12px 20px;
-      border-radius: 8px;
-      display: none;
-      flex-direction: column;
-      gap: 6px;
-      z-index: 60;
-      width: 280px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    }
-    .heat-hud-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-    }
-    .heat-hud-title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 14px;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 1px;
-    }
-    .heat-hud-title span {
-      color: #ff3333;
-      font-weight: 900;
-    }
-    .heat-hud-los {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 11px;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 4px;
-      letter-spacing: 1px;
-      transition: all 0.3s ease;
-    }
-    .heat-hud-los.spotted {
-      background: rgba(255, 51, 51, 0.25);
-      color: #ff3333;
-      border: 1px solid #ff3333;
-      box-shadow: 0 0 8px rgba(255, 51, 51, 0.4);
-      animation: pulse-los 0.6s infinite alternate;
-    }
-    .heat-hud-los.hidden {
-      background: rgba(85, 255, 85, 0.15);
-      color: #55ff55;
-      border: 1px solid #55ff55;
-      box-shadow: 0 0 8px rgba(85, 255, 85, 0.2);
-    }
-    .heat-bar-bg {
-      width: 100%;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    .heat-bar-fill {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #ff9900, #ff3333);
-      box-shadow: 0 0 6px #ff3333;
-      transition: width 0.1s linear;
-    }
-    .heat-bar-label {
-      font-family: 'Inter', sans-serif;
-      font-size: 9px;
-      color: rgba(255, 255, 255, 0.5);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    @keyframes pulse-los {
-      from { opacity: 0.7; }
-      to { opacity: 1; }
-    }
+.race-btn:hover {
+  background: #ffc600;
+  border-color: #ffc600;
+  color: #0b0c10;
+  transform: translateX(4px);
+}
+
+.race-btn.active-cancel {
+  background: #2a1215;
+  border-color: #ff3b30;
+  color: #fff;
+}
+
+.race-btn.active-cancel:hover {
+  background: #ff3b30;
+  color: #fff;
+  transform: none;
+}
+
+/* Race Stats HUD (Sleek Skewed Bar) */
+.stats-container {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%) skewX(-10deg);
+  background: #0b0c10;
+  border: 1px solid #2a2c35;
+  border-top: 3px solid #ffc600;
+  padding: 8px 24px;
+  display: none; /* Shown dynamically */
+  align-items: center;
+  gap: 28px;
+  z-index: 50;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.85);
+}
+
+/* Unskew internal components of stats container */
+.stats-container > * {
+  transform: skewX(10deg);
+}
+
+.stats-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stats-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8c909c;
+  font-weight: 700;
+  font-family: 'Barlow Condensed', sans-serif;
+}
+
+.stats-value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 20px;
+  color: #fff;
+}
+
+.stats-pos-val {
+  color: #ffc600;
+}
+
+.stats-value.timer {
+  color: #ffc600;
+}
+
+/* Race Notification Banners */
+.race-banner {
+  position: absolute;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  pointer-events: none;
+  z-index: 60;
+  text-align: center;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.race-banner.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.0);
+}
+
+.banner-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 56px;
+  letter-spacing: 1px;
+  color: #ffc600;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.banner-subtitle {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #ffffff;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* Retro Look Filters */
+#canvas-container canvas {
+  filter: contrast(1.1) saturate(1.05) brightness(0.95);
+}
+
+.vignette-grading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 6;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(14, 18, 30, 0) 35%, rgba(4, 5, 8, 0.8) 100%);
+}
+
+/* Premium Animated Film Grain */
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.noise-overlay::before {
+  content: "";
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
+  background: #808080;
+  filter: url(#noiseFilter);
+  opacity: 1;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  animation: grain 0.8s steps(10) infinite;
+}
+
+@keyframes grain {
+  0%, 100% { transform:translate(0, 0); }
+  10% { transform:translate(-1%, -2%); }
+  20% { transform:translate(-2%, 1%); }
+  30% { transform:translate(1%, -1%); }
+  40% { transform:translate(-1%, 3%); }
+  50% { transform:translate(-2%, 2%); }
+  60% { transform:translate(2%, -1%); }
+  70% { transform:translate(3%, 1%); }
+  80% { transform:translate(-2%, -2%); }
+  90% { transform:translate(1%, 3%); }
+}
+
+/* Cop Chase Flash Vignette (Bottom Screen Glow Only) */
+.cop-vignette {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 6vh;
+  z-index: 9995;
+  pointer-events: none;
+  opacity: 0;
+  transition: background 0.15s ease, height 0.15s ease;
+  background: linear-gradient(to top, rgba(255, 0, 0, 0.45) 0%, rgba(255, 0, 0, 0) 100%);
+}
+.cop-vignette.flash-blue {
+  background: linear-gradient(to top, rgba(0, 50, 255, 0.45) 0%, rgba(0, 0, 255, 0) 100%);
+}
+
+/* Busted Progress Meter (Floating Premium Minimalist style - No boxes) */
+.busted-meter-container {
+  position: absolute;
+  top: 30%; /* Shifted up away from center focus, less annoying */
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 65;
+  width: 280px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.busted-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 26px;
+  font-weight: 900;
+  font-style: italic;
+  color: #ff3b30;
+  animation: pulse 0.8s infinite alternate;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(255, 59, 48, 0.4), 0 2px 5px rgba(0, 0, 0, 0.95);
+}
+
+.busted-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.busted-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: #ff3b30;
+  box-shadow: 0 0 8px #ff3b30;
+  border-radius: 2px;
+}
+
+@keyframes pulse {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+/* Heat HUD Container (Floating Premium Minimalist - No boxes) */
+.heat-hud-container {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 60;
+  width: 320px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.heat-hud-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.heat-hud-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  color: #ffffff;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+}
+
+.heat-hud-title span {
+  color: #ff3b30;
+  font-weight: 900;
+  text-shadow: 0 0 8px rgba(255, 59, 48, 0.5);
+}
+
+.heat-hud-los {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 1px;
+  padding: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+  transition: all 0.3s ease;
+}
+
+.heat-hud-los.spotted {
+  color: #ff3b30;
+  animation: pulse-los 0.5s infinite alternate;
+}
+
+.heat-hud-los.hidden {
+  color: #4cd964;
+}
+
+.heat-bar-bg {
+  width: 200px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.heat-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ffc600, #ff3b30);
+  box-shadow: 0 0 6px rgba(255, 59, 48, 0.6);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+@keyframes pulse-los {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+/* Speedometer Dial Numbers */
+.dial-num {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  font-style: italic;
+  fill: #8c909c;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.redline-num {
+  fill: #ff3b30 !important;
+}

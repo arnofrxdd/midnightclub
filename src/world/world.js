@@ -120,11 +120,12 @@ export class World {
     
     // Loaded chunks map: key "gridX,gridZ" -> THREE.Group
     this.loadedTiles = new Map();
+    this.buildingGeoCache = new Map(); // gridKey -> geometries to avoid building generation stutter
     this.obstacles = []; // Collision bounding boxes (kept for compatibility)
     // Spatial hash grid for fast collision queries (cell size = 40 units = 1 tile)
     this.spatialCellSize = 40;
     this.obstacleGrid = new Map(); // "cx,cz" -> [obstacle, ...]
-    this.renderRadius = 11; // 440m view distance — fog hides beyond this, no quality loss
+    this.renderRadius = 6; // 240m view distance — fog hides beyond this, no quality loss
 
     // Generate diverse road materials (4 with puddles, 4 completely dry)
     this.asphaltMaterials = [];
@@ -192,7 +193,61 @@ export class World {
       transparent: true,
       opacity: 0.30,
       blending: THREE.AdditiveBlending,
-      depthWrite: false
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    // Volumetric streetlight light cone setup (procedural soft 2D cone texture)
+    const coneCanvas = document.createElement('canvas');
+    coneCanvas.width = 64;
+    coneCanvas.height = 128;
+    const coneCtx = coneCanvas.getContext('2d');
+    const imgData = coneCtx.createImageData(64, 128);
+    for (let y = 0; y < 128; y++) {
+      const py = y / 127; // 0 to 1 (top to bottom)
+      for (let x = 0; x < 64; x++) {
+        const px = x / 63; // 0 to 1 (left to right)
+        const dx = Math.abs(px - 0.5);
+        const coneWidth = 0.15 + py * 0.75; // Widened significantly to cover the road lanes
+        const horizontalFade = Math.max(0, 1.0 - (dx / coneWidth));
+        const verticalFade = Math.max(0, 1.0 - py);
+        
+        // Strong vertical fade power (3.2) to make the bottom fade out completely before intersecting the ground
+        const intensity = Math.pow(horizontalFade, 1.5) * Math.pow(verticalFade, 3.2);
+        
+        const idx = (y * 64 + x) * 4;
+        imgData.data[idx] = 255;
+        imgData.data[idx + 1] = 255;
+        imgData.data[idx + 2] = 255;
+        imgData.data[idx + 3] = Math.round(intensity * 255);
+      }
+    }
+    coneCtx.putImageData(imgData, 0, 0);
+    this.lightConeTex = new THREE.CanvasTexture(coneCanvas);
+
+    // Volumetric cross-planes (two intersecting 2D planes to form soft 3D visual from all angles, widened to 13.5m)
+    const planeGeo1 = new THREE.PlaneGeometry(13.5, 7.8, 1, 1);
+    const planeGeo2 = planeGeo1.clone();
+    planeGeo2.rotateY(Math.PI / 2);
+    this.lightConeGeo = BufferGeometryUtils.mergeGeometries([planeGeo1, planeGeo2]);
+
+    this.lightConeMatLED = new THREE.MeshBasicMaterial({
+      map: this.lightConeTex,
+      color: 0xaad4ff,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    this.lightConeMatSodium = new THREE.MeshBasicMaterial({
+      map: this.lightConeTex,
+      color: 0xffb85c,
+      transparent: true,
+      opacity: 0.26,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
     });
 
     // Alley ground light pool geometry
@@ -243,6 +298,13 @@ export class World {
     this.phoneBoothScreenMat = new THREE.MeshStandardMaterial({ color: 0x3ac3ff, emissive: 0x3ac3ff, emissiveIntensity: 3.0 });
     this.trashCanMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.7, roughness: 0.4 });
     this.trashCanLidMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
+
+    // Shared materials for fire hydrants and newspaper boxes to support geometry merging
+    this.hydrantRedMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.4, metalness: 0.6 });
+    this.hydrantCapMat = new THREE.MeshStandardMaterial({ color: 0xddaa00, roughness: 0.5, metalness: 0.7 });
+    this.newspaperBodyMat = new THREE.MeshStandardMaterial({ color: 0x1f4e79, roughness: 0.5 });
+    this.newspaperGlassMat = new THREE.MeshStandardMaterial({ color: 0xeef7ff, transparent: true, opacity: 0.4, metalness: 0.9, roughness: 0.1 });
+    this.newspaperPaperMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.9 });
 
     // Traffic light materials
     this.tlRedOnMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
@@ -370,6 +432,15 @@ export class World {
     // 1e. NEWSPAPER BOX TEMPLATE
     this.templates.newspaperBox = this.createNewspaperBoxMesh();
 
+    // 1f. BENCH TEMPLATE
+    this.templates.bench = this.createBenchMesh();
+
+    // 1g. PHONE BOOTH TEMPLATE
+    this.templates.phoneBooth = this.createPhoneBoothMesh();
+
+    // 1h. TRASH CAN TEMPLATE
+    this.templates.trashCan = this.createTrashCanMesh();
+
     // 2. STREETLIGHT MODEL TEMPLATE
     const slGroup = new THREE.Group();
     const slPole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);
@@ -387,18 +458,51 @@ export class World {
     return createNewspaperBoxMesh.call(this);
   }
 
-  update(playerX, playerZ, heading = 0, dynamicLightsList = []) {
+  getFadedMaterial(origMat, opacity) {
+    if (!this.materialOpacityPool) this.materialOpacityPool = new Map();
+    
+    if (!this.materialOpacityPool.has(origMat)) {
+      const steps = [];
+      for (let i = 0; i <= 10; i++) {
+        const cloned = origMat.clone();
+        cloned.transparent = true;
+        cloned.opacity = i / 10;
+        steps.push(cloned);
+      }
+      this.materialOpacityPool.set(origMat, steps);
+    }
+    
+    const index = Math.max(0, Math.min(10, Math.round(opacity * 10)));
+    return this.materialOpacityPool.get(origMat)[index];
+  }
+
+  update(playerX, playerZ, heading = 0, dynamicLightsList = [], dt = 0.016) {
     const pTileX = Math.round(playerX / this.tileSize);
     const pTileZ = Math.round(playerZ / this.tileSize);
 
-    // 1. Generate/Load new tiles
+    // 1. Generate/Load new tiles (Time-sliced/Queued loading: max 1 per frame, closest first)
+    let closestTileX = null;
+    let closestTileZ = null;
+    let minDistanceSq = Infinity;
+
     for (let x = pTileX - this.renderRadius; x <= pTileX + this.renderRadius; x++) {
       for (let z = pTileZ - this.renderRadius; z <= pTileZ + this.renderRadius; z++) {
         const key = `${x},${z}`;
         if (!this.loadedTiles.has(key)) {
-          this.generateTile(x, z);
+          const dx = x - pTileX;
+          const dz = z - pTileZ;
+          const distSq = dx * dx + dz * dz;
+          if (distSq < minDistanceSq) {
+            minDistanceSq = distSq;
+            closestTileX = x;
+            closestTileZ = z;
+          }
         }
       }
+    }
+
+    if (closestTileX !== null && closestTileZ !== null) {
+      this.generateTile(closestTileX, closestTileZ);
     }
 
     // 2. Unload far tiles — use stored numeric coords to avoid string split/map per tile
@@ -570,6 +674,39 @@ export class World {
         tl.greenMesh.material  = activeColor === 'green'  ? this.tlGreenOnMat  : this.tlGreenOffMat;
       }
     });
+
+    // 4b. Update tile fade-in transitions using the material pool
+    const fadeSpeed = 2.0; // Fades in over 0.5 seconds
+    for (const tile of this.loadedTiles.values()) {
+      if (tile.isFading) {
+        if (tile.fadeProgress === undefined) tile.fadeProgress = 0.0;
+        tile.fadeProgress += dt * fadeSpeed;
+        if (tile.fadeProgress >= 1.0) {
+          tile.fadeProgress = 1.0;
+          tile.isFading = false;
+          tile.group.traverse(child => {
+            if (child.isMesh && child._origMaterial) {
+              child.material = child._origMaterial;
+              child._origMaterial = undefined;
+            }
+          });
+        } else {
+          tile.group.traverse(child => {
+            if (child.isMesh && child._origMaterial) {
+              if (Array.isArray(child.material)) {
+                child.material = child.material.map((m, idx) => {
+                  const origOpacity = child._origMaterial[idx].opacity !== undefined ? child._origMaterial[idx].opacity : 1.0;
+                  return this.getFadedMaterial(child._origMaterial[idx], origOpacity * tile.fadeProgress);
+                });
+              } else {
+                const origOpacity = child._origMaterial.opacity !== undefined ? child._origMaterial.opacity : 1.0;
+                child.material = this.getFadedMaterial(child._origMaterial, origOpacity * tile.fadeProgress);
+              }
+            }
+          });
+        }
+      }
+    }
   }
 
   getRoadWidthForGrid(gridX, gridZ) {
@@ -740,6 +877,19 @@ export class World {
       this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
     }
 
+    // Initialize tile meshes to 0.0 opacity using the pool
+    tileGroup.traverse(child => {
+      if (child.isMesh && child.material) {
+        if (Array.isArray(child.material)) {
+          child._origMaterial = child.material;
+          child.material = child.material.map(m => this.getFadedMaterial(m, 0.0));
+        } else {
+          child._origMaterial = child.material;
+          child.material = this.getFadedMaterial(child.material, 0.0);
+        }
+      }
+    });
+
     this.scene.add(tileGroup);
     
     this.loadedTiles.set(key, {
@@ -750,7 +900,9 @@ export class World {
       posZ: posZ,
       gridX: gridX,   // Store numeric coords to avoid string split/map in unload loop
       gridZ: gridZ,
-      visible: true
+      visible: true,
+      fadeProgress: 0.0,
+      isFading: true
     });
 
     this.obstacles.push(...tileObstacles);
@@ -778,8 +930,15 @@ export class World {
     
     // Dispose resources
     tile.group.traverse(child => {
-      if (child.isMesh && child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo) {
-        child.geometry.dispose();
+      if (child.isMesh) {
+        if (child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo && child.geometry !== this.lightConeGeo && !child.geometry.isCached) {
+          child.geometry.dispose();
+        }
+        // Restore original material if still fading to prevent memory leaks
+        if (child._origMaterial) {
+          child.material = child._origMaterial;
+          child._origMaterial = undefined;
+        }
       }
     });
 
@@ -852,17 +1011,19 @@ export class World {
     const cz0 = Math.floor((posZ - radius) / cs);
     const cz1 = Math.floor((posZ + radius) / cs);
 
-    // Use a Set to avoid checking the same obstacle twice (can span multiple cells)
-    const checked = new Set();
+    // Use a rolling check ID stamp on obstacles to avoid checking duplicate references without allocation
+    this.checkId = (this.checkId || 0) + 1;
+    const currentCheckId = this.checkId;
     const radSq = radius * radius;
 
     for (let cx = cx0; cx <= cx1; cx++) {
       for (let cz = cz0; cz <= cz1; cz++) {
         const cell = this.obstacleGrid.get(`${cx},${cz}`);
         if (!cell) continue;
-        for (const obs of cell) {
-          if (checked.has(obs)) continue;
-          checked.add(obs);
+        for (let i = 0; i < cell.length; i++) {
+          const obs = cell[i];
+          if (obs._lastCheckId === currentCheckId) continue;
+          obs._lastCheckId = currentCheckId;
 
           if (obs.isRamp) continue; // Skip ramps for horizontal collision resolution
 

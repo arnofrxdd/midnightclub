@@ -55,7 +55,7 @@ export class TrafficVehicle {
     }
   }
 
-  findParkingSpot(playerPos, world, existingPositions = []) {
+  findParkingSpot(playerPos, world, existingPositions = [], frustum = null) {
     if (!world) return null;
     
     const playerGridX = Math.round(playerPos.x / 40);
@@ -72,6 +72,11 @@ export class TrafficVehicle {
       const tempPos = new THREE.Vector3(posX, 0.5, posZ);
       const dist = tempPos.distanceTo(playerPos);
       if (dist < 50 || dist > 220) continue;
+
+      // Prevent spawning inside the player's active camera view if close
+      if (frustum && dist < 140.0 && frustum.containsPoint(tempPos)) {
+        continue;
+      }
       
       const isCol = world.roadColumns && world.roadColumns.has(gx);
       const isRow = world.roadRows && world.roadRows.has(gz);
@@ -195,6 +200,11 @@ export class TrafficVehicle {
       const tempPos = new THREE.Vector3(posX, 0.5, posZ);
       const dist = tempPos.distanceTo(playerPos);
       if (dist < 40 || dist > 300) continue;
+
+      // Prevent spawning inside the player's active camera view if close
+      if (frustum && dist < 140.0 && frustum.containsPoint(tempPos)) {
+        continue;
+      }
       
       const isCol = world.roadColumns && world.roadColumns.has(gx);
       const isRow = world.roadRows && world.roadRows.has(gz);
@@ -304,7 +314,7 @@ export class TrafficVehicle {
     return null;
   }
 
-  recycle(playerPos, playerHeading = 0, aiRacers = [], world = null, isParked = false, existingPositions = []) {
+  recycle(playerPos, playerHeading = 0, aiRacers = [], world = null, isParked = false, existingPositions = [], frustum = null) {
     if (world) this.world = world;
     if (this.impactVelocity) this.impactVelocity.set(0, 0, 0);
     this.impactSpin = 0.0;
@@ -318,7 +328,7 @@ export class TrafficVehicle {
     let heading = 0;
 
     if (isParked && world) {
-      const spot = this.findParkingSpot(playerPos, world, existingPositions);
+      const spot = this.findParkingSpot(playerPos, world, existingPositions, frustum);
       if (spot) {
         spawnX = spot.x;
         spawnZ = spot.z;

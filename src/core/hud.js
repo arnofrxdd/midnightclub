@@ -28,12 +28,12 @@ export function showNitroNotification(text) {
     if (!this.nitroNotifEl) return;
     this.nitroNotifEl.textContent = text;
     this.nitroNotifEl.style.opacity = '1';
-    this.nitroNotifEl.style.transform = 'translateY(0)';
+    this.nitroNotifEl.style.transform = 'translateX(-50%) translateY(0)';
     
     if (this.nitroNotifTimeout) clearTimeout(this.nitroNotifTimeout);
     this.nitroNotifTimeout = setTimeout(() => {
       this.nitroNotifEl.style.opacity = '0';
-      this.nitroNotifEl.style.transform = 'translateY(-15px)';
+      this.nitroNotifEl.style.transform = 'translateX(-50%) translateY(-15px)';
     }, 1200);
   }
 
@@ -60,13 +60,28 @@ export function updateMinimap() {
     
     ctx.clearRect(0, 0, w, h);
     
-    ctx.fillStyle = '#111218';
-    ctx.beginPath();
-    ctx.arc(w/2, h/2, w/2 - 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#4e5a70';
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    // Draw solid dark radar background
+    ctx.fillStyle = '#0a0b0e';
+    ctx.fillRect(0, 0, w, h);
+    
+    // Draw thin grid border
+    ctx.strokeStyle = '#1f222b';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(1, 1, w - 2, h - 2);
+    
+    // Draw modern sport corner brackets
+    ctx.strokeStyle = '#ffc600';
+    ctx.lineWidth = 2.5;
+    const bLen = 10;
+    
+    // Top-Left
+    ctx.beginPath(); ctx.moveTo(1, bLen); ctx.lineTo(1, 1); ctx.lineTo(bLen, 1); ctx.stroke();
+    // Top-Right
+    ctx.beginPath(); ctx.moveTo(w - 1, bLen); ctx.lineTo(w - 1, 1); ctx.lineTo(w - 1 - bLen, 1); ctx.stroke();
+    // Bottom-Left
+    ctx.beginPath(); ctx.moveTo(1, h - 1 - bLen); ctx.lineTo(1, h - 1); ctx.lineTo(bLen, h - 1); ctx.stroke();
+    // Bottom-Right
+    ctx.beginPath(); ctx.moveTo(w - 1, h - 1 - bLen); ctx.lineTo(w - 1, h - 1); ctx.lineTo(w - 1 - bLen, h - 1); ctx.stroke();
     
     const scale = 0.35;
     
@@ -81,7 +96,7 @@ export function updateMinimap() {
     
     ctx.save();
     ctx.translate(w/2, h/2);
-    ctx.rotate(-heading);
+    ctx.rotate(heading + Math.PI);
     
     // Draw roads on map
     ctx.fillStyle = '#222530';
@@ -103,23 +118,56 @@ export function updateMinimap() {
 
     // Draw active checkpoints on minimap
     if (this.race.active) {
-      ctx.fillStyle = '#e5a93b';
       this.race.checkpoints.forEach((cp, index) => {
         let isVisible = false;
+        let isCurrent = false;
         if (this.race.mode === 'unordered') {
           isVisible = !this.race.unorderedCleared.has(index);
+          isCurrent = isVisible;
         } else {
-          isVisible = (index === this.race.currentIndex);
+          isVisible = (index >= this.race.currentIndex);
+          isCurrent = (index === this.race.currentIndex);
         }
 
         if (isVisible) {
           const rx = cp.x - px;
           const rz = cp.z - pz;
+          const isFinish = (index === this.race.checkpoints.length - 1);
           
-          ctx.fillStyle = (index === this.race.checkpoints.length - 1) ? '#e84545' : '#e5a93b';
-          ctx.beginPath();
-          ctx.arc(rx * scale, rz * scale, 5, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.save();
+          if (isCurrent) {
+            // Pulsing Neon Green for active target
+            const pulse = 1.0 + Math.sin(Date.now() / 150) * 0.15;
+            ctx.fillStyle = '#39ff14';
+            ctx.beginPath();
+            ctx.arc(rx * scale, rz * scale, 5.5 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(rx * scale, rz * scale, 9 * pulse, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (isFinish) {
+            // Checkered/Double Red for finish line
+            ctx.fillStyle = '#ff3b30';
+            ctx.beginPath();
+            ctx.arc(rx * scale, rz * scale, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(rx * scale, rz * scale, 9, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            // Next up: Soft Orange
+            ctx.fillStyle = '#ff9900';
+            ctx.beginPath();
+            ctx.arc(rx * scale, rz * scale, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
         }
       });
     }
@@ -138,26 +186,47 @@ export function updateMinimap() {
         ctx.stroke();
       });
     }
-    // Draw traffic cars on minimap
-    this.traffic.vehicles.forEach(v => {
-      const rx = v.position.x - px;
-      const rz = v.position.z - pz;
-      ctx.fillStyle = '#6c7182';
-      ctx.beginPath();
-      ctx.arc(rx * scale, rz * scale, 3.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
 
-    // Draw parked vehicles on minimap (smaller and darker grey)
-    if (this.traffic.parkedVehicles) {
-      this.traffic.parkedVehicles.forEach(v => {
+    // Draw Cops on minimap (Dynamic flashing red/blue blips)
+    if (this.pursuit && this.pursuit.active && this.pursuit.cops) {
+      this.pursuit.cops.forEach(cop => {
+        const rx = cop.position.x - px;
+        const rz = cop.position.z - pz;
+        
+        const isRed = (Math.floor(Date.now() / 150) % 2 === 0);
+        ctx.fillStyle = isRed ? '#ff3b30' : '#0066ff';
+        ctx.beginPath();
+        ctx.arc(rx * scale, rz * scale, 5.0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+
+    // Draw traffic cars on minimap ONLY if debug traffic flag is active
+    if (this.debugShowTrafficOnMinimap && this.traffic && this.traffic.vehicles) {
+      this.traffic.vehicles.forEach(v => {
         const rx = v.position.x - px;
         const rz = v.position.z - pz;
-        ctx.fillStyle = '#444855';
+        ctx.fillStyle = '#6c7182';
         ctx.beginPath();
-        ctx.arc(rx * scale, rz * scale, 2.4, 0, Math.PI * 2);
+        ctx.arc(rx * scale, rz * scale, 3.2, 0, Math.PI * 2);
         ctx.fill();
       });
+
+      // Draw parked vehicles on minimap (smaller and darker grey)
+      if (this.traffic.parkedVehicles) {
+        this.traffic.parkedVehicles.forEach(v => {
+          const rx = v.position.x - px;
+          const rz = v.position.z - pz;
+          ctx.fillStyle = '#444855';
+          ctx.beginPath();
+          ctx.arc(rx * scale, rz * scale, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
     }
 
     // Draw focused AI path on minimap
@@ -195,7 +264,7 @@ export function updateMinimap() {
     ctx.restore();
     
     // Draw target arrow
-    ctx.fillStyle = targetObj === this.physics ? '#e84545' : '#' + (targetObj.colorHex ? targetObj.colorHex.toString(16).padStart(6, '0') : '00f0ff');
+    ctx.fillStyle = targetObj === this.physics ? '#ffc600' : '#' + (targetObj.colorHex ? targetObj.colorHex.toString(16).padStart(6, '0') : '00f0ff');
     ctx.beginPath();
     ctx.moveTo(w/2, h/2 - 9);
     ctx.lineTo(w/2 - 6, h/2 + 7);

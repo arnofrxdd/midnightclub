@@ -15,6 +15,17 @@ import { initInput, initDebugVisuals } from './input.js';
 import { updateCamera, cycleCameraFocus } from './camera.js';
 import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
 import { formatTime, showBanner, showNitroNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
+import { checkBreakablesCollision } from '../gameplay/breakables.js';
+import { checkSlipstream, checkNearMisses, updateDriftNitro } from '../gameplay/stunts.js';
+import { handleCrashDamage } from './carMesh.js';
+
+// Global scratch variables for zero-alloc math in game loop to prevent GC stutters
+const _scratchV3_1 = new THREE.Vector3();
+const _scratchV3_2 = new THREE.Vector3();
+const _scratchV3_3 = new THREE.Vector3();
+const _scratchQuat = new THREE.Quaternion();
+const _scratchQuat2 = new THREE.Quaternion();
+const _scratchEuler = new THREE.Euler();
 
 
 
@@ -29,8 +40,9 @@ class Game {
     this.driftStatusEl = document.getElementById('drift-status');
     this.loaderEl = document.getElementById('loader');
     this.gearValEl = document.getElementById('gear-val');
-    this.rpmBarEl = document.getElementById('rpm-bar');
-    this.nitroBarEl = document.getElementById('nitro-bar');
+    this.dialNeedleEl = document.getElementById('dial-needle');
+    this.dialRpmFillEl = document.getElementById('dial-rpm-fill');
+    this.nitroBarEl = document.getElementById('dial-nitro-fill');
     this.nitroPctEl = document.getElementById('nitro-pct');
     this.nitroNotifEl = document.getElementById('nitro-notif');
     this.stuntNotifEl = document.getElementById('stunt-notif');
@@ -40,6 +52,7 @@ class Game {
     this.driftNitroGained = 0.0;
     this.prevIsDrifting = false;
     this.gearShiftPunch = 0.0;
+    this.debugShowTrafficOnMinimap = false; // Set to true only in debug to show traffic on radar
     
     // Inputs
     this.keys = {};
@@ -74,10 +87,15 @@ class Game {
     this.initSkidmarks(); // Pooled system for tire skid marks
     this.initRaceHUD();
     this.initDebugVisuals();
+    this.perf = { world: 0, physics: 0, traffic: 0, trafficUpdate: 0, trafficMesh: 0, collisions: 0, playerVisuals: 0, pursuit: 0, race: 0, particles: 0, render: 0, eyeAdaptation: 0, total: 0 };
+    this.createPerfHUD();
     
     // Traffic System
     this.traffic = new TrafficManager(this.scene, 30);
     this.traffic.init(this.physics.position, this.world);
+
+    // Precompile shaders to avoid runtime compilation stutter
+    this.precompileShaders();
     
     // Hide loader
     setTimeout(() => {
@@ -96,7 +114,7 @@ class Game {
     // Scene - NFS 2015 Style Realistic Dark Night
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x131726); // Brighter midnight indigo haze (visible under ACES Filmic Tone Mapping)
-    this.scene.fog = new THREE.FogExp2(0x131726, 0.0042); // Slightly denser fog to create a strong silhouette effect
+    this.scene.fog = new THREE.FogExp2(0x131726, 0.0072); // Increased density for cleaner silhouette and smoother depth transition
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -148,9 +166,72 @@ class Game {
     return createVoxelCarMesh(bodyColorHex, type, this.lensflareTex);
   }
 
+  updateVehicleLOD(v, dist, targetOpacity = 1.0) {
+    if (!v.meshGroup) return;
+
+    let lodFactor = 1.0;
+    if (dist > 95.0) {
+      lodFactor = 0.0;
+    } else if (dist > 80.0) {
+      lodFactor = 1.0 - (dist - 80.0) / 15.0;
+    }
+
+    const useLowLOD = lodFactor <= 0.0;
+    if (v._lastLOD !== useLowLOD) {
+      v._lastLOD = useLowLOD;
+      if (v.wheels) {
+        v.wheels.forEach(w => w.visible = !useLowLOD);
+      }
+      v.meshGroup.children.forEach(child => {
+        if (child.name !== "carBody" && child.name !== "headlightPool") {
+          child.visible = !useLowLOD;
+        }
+      });
+    }
+
+    const bodyOpacity = targetOpacity;
+    const detailOpacity = lodFactor * targetOpacity;
+
+    if (v._lastBodyOpacity !== bodyOpacity || v._lastDetailOpacity !== detailOpacity) {
+      v._lastBodyOpacity = bodyOpacity;
+      v._lastDetailOpacity = detailOpacity;
+
+      const isVisible = bodyOpacity > 0.005;
+      v.meshGroup.visible = isVisible;
+
+      if (isVisible) {
+        // Set body opacity
+        const carBody = v.meshGroup.getObjectByName("carBody");
+        if (carBody && carBody.material) {
+          carBody.material.transparent = bodyOpacity < 1.0;
+          carBody.material.opacity = bodyOpacity;
+        }
+
+        // Set detail opacity
+        if (!useLowLOD) {
+          v.meshGroup.children.forEach(child => {
+            if (child.name !== "carBody" && child.name !== "headlightPool") {
+              child.traverse(sub => {
+                if (sub.isMesh && sub.material) {
+                  sub.material.transparent = true;
+                  sub.material.opacity = detailOpacity;
+                }
+              });
+            }
+          });
+        }
+      }
+    }
+  }
+
   createCarMesh() {
     // Voxel Tuner Car for the player (Bayside Blue)
     const { carGroup, wheels } = this.createVoxelCarMesh(0x1a3d8c, 'sports');
+    const playerHeadlightPool = carGroup.getObjectByName("headlightPool");
+    if (playerHeadlightPool) {
+      playerHeadlightPool.material.opacity = 0.0;
+    }
+
     this.carGroup = carGroup;
     this.wheels = wheels;
 
@@ -297,6 +378,181 @@ class Game {
     this.minimapCanvas.height = 140;
   }
 
+  createPerfHUD() {
+    const hud = document.createElement('div');
+    hud.id = 'perf-hud';
+    hud.style.position = 'absolute';
+    hud.style.top = '10px';
+    hud.style.left = '10px';
+    hud.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+    hud.style.color = '#00ffcc';
+    hud.style.fontFamily = 'monospace';
+    hud.style.fontSize = '12px';
+    hud.style.padding = '10px';
+    hud.style.borderRadius = '5px';
+    hud.style.zIndex = '99999';
+    hud.style.border = '1px solid #00ffcc';
+    hud.style.pointerEvents = 'none';
+    hud.style.display = 'none';
+    hud.innerHTML = `
+      <div style="font-weight:bold;margin-bottom:5px;border-bottom:1px solid #00ffcc;">PERFORMANCE HUD</div>
+      <div>FPS: <span id="perf-fps">0</span></div>
+      <div>Total Frame: <span id="perf-total">0.0</span>ms</div>
+      <div>World/Chunks: <span id="perf-world">0.0</span>ms</div>
+      <div>Physics: <span id="perf-physics">0.0</span>ms</div>
+      <div>Traffic AI: <span id="perf-traffic-update">0.0</span>ms</div>
+      <div>Traffic Mesh: <span id="perf-traffic-mesh">0.0</span>ms</div>
+      <div>Collisions: <span id="perf-collisions">0.0</span>ms</div>
+      <div>Player Visuals: <span id="perf-player-visuals">0.0</span>ms</div>
+      <div>Pursuit: <span id="perf-pursuit">0.0</span>ms</div>
+      <div>Race/AI: <span id="perf-race">0.0</span>ms</div>
+      <div>Particles/Ticks: <span id="perf-particles">0.0</span>ms</div>
+      <div>Render Frame: <span id="perf-render">0.0</span>ms</div>
+      <div>Eye Adaptation: <span id="perf-eye">0.0</span>ms</div>
+      <div style="margin-top:5px;font-size:10px;color:#aaa;border-top:1px solid #444;padding-top:5px;">THREE.JS INFO</div>
+      <div>Draw Calls: <span id="perf-calls">0</span></div>
+      <div>Triangles: <span id="perf-triangles">0</span></div>
+      <div>Geometries: <span id="perf-geometries">0</span></div>
+      <div>Textures: <span id="perf-textures">0</span></div>
+      <div>Shaders: <span id="perf-shaders">0</span></div>
+      <div style="margin-top:5px;font-size:10px;color:#aaa;">Press 'P' to toggle HUD</div>
+    `;
+    document.body.appendChild(hud);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'p') {
+        hud.style.display = hud.style.display === 'none' ? 'block' : 'none';
+      }
+    });
+
+    this.perfFpsEl = document.getElementById('perf-fps');
+    this.perfTotalEl = document.getElementById('perf-total');
+    this.perfWorldEl = document.getElementById('perf-world');
+    this.perfPhysicsEl = document.getElementById('perf-physics');
+    this.perfTrafficUpdateEl = document.getElementById('perf-traffic-update');
+    this.perfTrafficMeshEl = document.getElementById('perf-traffic-mesh');
+    this.perfCollisionsEl = document.getElementById('perf-collisions');
+    this.perfPlayerVisualsEl = document.getElementById('perf-player-visuals');
+    this.perfPursuitEl = document.getElementById('perf-pursuit');
+    this.perfRaceEl = document.getElementById('perf-race');
+    this.perfParticlesEl = document.getElementById('perf-particles');
+    this.perfRenderEl = document.getElementById('perf-render');
+    this.perfEyeEl = document.getElementById('perf-eye');
+    this.perfCallsEl = document.getElementById('perf-calls');
+    this.perfTrianglesEl = document.getElementById('perf-triangles');
+    this.perfGeometriesEl = document.getElementById('perf-geometries');
+    this.perfTexturesEl = document.getElementById('perf-textures');
+    this.perfShadersEl = document.getElementById('perf-shaders');
+  }
+
+  precompileShaders() {
+    const dummyGroup = new THREE.Group();
+    this.scene.add(dummyGroup);
+    
+    // Collect all materials to compile
+    const mats = [];
+    
+    // World materials
+    if (this.world) {
+      if (this.world.asphaltMaterials) mats.push(...this.world.asphaltMaterials);
+      if (this.world.concreteMat) mats.push(this.world.concreteMat);
+      if (this.world.yellowLineMat) mats.push(this.world.yellowLineMat);
+      if (this.world.whiteLineMat) mats.push(this.world.whiteLineMat);
+      if (this.world.materials) mats.push(...this.world.materials);
+      if (this.world.windowDetailedMat) mats.push(this.world.windowDetailedMat);
+      if (this.world.doorMat) mats.push(this.world.doorMat);
+      if (this.world.accessoryMat) mats.push(this.world.accessoryMat);
+      if (this.world.trunkMat) mats.push(this.world.trunkMat);
+      if (this.world.leafMat) mats.push(this.world.leafMat);
+      if (this.world.leafCherryMat) mats.push(this.world.leafCherryMat);
+      if (this.world.leafAutumnMat) mats.push(this.world.leafAutumnMat);
+      if (this.world.streetlightPoleMat) mats.push(this.world.streetlightPoleMat);
+      if (this.world.streetlightBulbMat) mats.push(this.world.streetlightBulbMat);
+      if (this.world.ledGroundLightPoolMat) mats.push(this.world.ledGroundLightPoolMat);
+      if (this.world.sodiumGroundLightPoolMat) mats.push(this.world.sodiumGroundLightPoolMat);
+      if (this.world.storefrontGroundLightPoolMat) mats.push(this.world.storefrontGroundLightPoolMat);
+      if (this.world.lightConeMatLED) mats.push(this.world.lightConeMatLED);
+      if (this.world.lightConeMatSodium) mats.push(this.world.lightConeMatSodium);
+      if (this.world.tlRedOnMat) mats.push(this.world.tlRedOnMat);
+      if (this.world.tlRedOffMat) mats.push(this.world.tlRedOffMat);
+      if (this.world.tlYellowOnMat) mats.push(this.world.tlYellowOnMat);
+      if (this.world.tlYellowOffMat) mats.push(this.world.tlYellowOffMat);
+      if (this.world.tlGreenOnMat) mats.push(this.world.tlGreenOnMat);
+      if (this.world.tlGreenOffMat) mats.push(this.world.tlGreenOffMat);
+      if (this.world.tlHousingMat) mats.push(this.world.tlHousingMat);
+      if (this.world.benchWoodMat) mats.push(this.world.benchWoodMat);
+      if (this.world.benchIronMat) mats.push(this.world.benchIronMat);
+      if (this.world.phoneBoothFrameMat) mats.push(this.world.phoneBoothFrameMat);
+      if (this.world.phoneBoothGlassMat) mats.push(this.world.phoneBoothGlassMat);
+      if (this.world.phoneBoothScreenMat) mats.push(this.world.phoneBoothScreenMat);
+      if (this.world.trashCanMat) mats.push(this.world.trashCanMat);
+      if (this.world.trashCanLidMat) mats.push(this.world.trashCanLidMat);
+      if (this.world.dumpsterMat) mats.push(this.world.dumpsterMat);
+      if (this.world.cardboardMat) mats.push(this.world.cardboardMat);
+      if (this.world.trashBagMat) mats.push(this.world.trashBagMat);
+      if (this.world.woodPoleMat) mats.push(this.world.woodPoleMat);
+      if (this.world.hydrantRedMat) mats.push(this.world.hydrantRedMat);
+      if (this.world.hydrantCapMat) mats.push(this.world.hydrantCapMat);
+      if (this.world.newspaperBodyMat) mats.push(this.world.newspaperBodyMat);
+      if (this.world.newspaperGlassMat) mats.push(this.world.newspaperGlassMat);
+      if (this.world.newspaperPaperMat) mats.push(this.world.newspaperPaperMat);
+      
+      // Neon/billboard color variations
+      if (this.world.billboardColors) {
+        this.world.billboardColors.forEach(c => {
+          mats.push(new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            emissive: c,
+            emissiveIntensity: 4.0
+          }));
+        });
+      }
+    }
+
+    // Player and car materials
+    if (this.playerTaillightMat) mats.push(this.playerTaillightMat);
+
+    // Particle & Smoke materials
+    if (this.particlePool && this.particlePool.length > 0) {
+      mats.push(this.particlePool[0].mat);
+    }
+    if (this.smokePool && this.smokePool.length > 0) {
+      mats.push(this.smokePool[0].mat);
+    }
+    if (this.skidMaterials) {
+      mats.push(...this.skidMaterials);
+    }
+    if (this.debrisPool && this.debrisPool.length > 0) {
+      mats.push(this.debrisPool[0].material);
+    }
+
+    // Create dummy meshes for basic materials compilation
+    const geom = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    mats.forEach(mat => {
+      const mesh = new THREE.Mesh(geom, mat);
+      dummyGroup.add(mesh);
+    });
+
+    // Compile all car types to compile their specific materials (rimMat, bodyMat variations, sirenMat, lens flares)
+    const carTypes = ['sports', 'pickup', 'van', 'cop', 'sedan'];
+    carTypes.forEach(type => {
+      const { carGroup } = this.createVoxelCarMesh(0x1a3d8c, type);
+      dummyGroup.add(carGroup);
+    });
+
+    // Compile everything
+    this.renderer.compile(this.scene, this.camera);
+    
+    // Clean up dummy meshes and dispose cloned geometries to avoid memory leaks
+    dummyGroup.traverse(child => {
+      if (child.geometry) {
+        child.geometry.dispose();
+      }
+    });
+    this.scene.remove(dummyGroup);
+    geom.dispose();
+  }
+
   getParticleMaterial(color, opacity) {
     return getParticleMaterial.call(this, color, opacity);
   }
@@ -350,389 +606,23 @@ class Game {
   }
 
   checkBreakablesCollision(dt) {
-    if (!this.world || !this.world.breakables) return;
-
-    // Cache Frustum and Matrix4 as instance fields — avoid allocating every frame
-    if (!this._breakFrustum) {
-      this._breakFrustum = new THREE.Frustum();
-      this._breakProjMat  = new THREE.Matrix4();
-    }
-    this._breakProjMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-    this._breakFrustum.setFromProjectionMatrix(this._breakProjMat);
-    const frustum = this._breakFrustum;
-
-    // List of active physical entities that can break streetlights/traffic lights
-    const entities = [
-      {
-        position: this.physics.position,
-        velocity: this.physics.velocity,
-        radius: 2.2,
-        isPlayer: true
-      }
-    ];
-
-    // Add AI Racers to collision check
-    if (this.race.active) {
-      this.race.aiRacers.forEach(ai => {
-        entities.push({
-          position: ai.position,
-          velocity: ai.velocity || new THREE.Vector3(),
-          radius: 2.0,
-          isPlayer: false
-        });
-      });
-    }
-
-    // Add Cops
-    if (this.pursuit && this.pursuit.active) {
-      this.pursuit.cops.forEach(cop => {
-        if (cop.active) {
-          const copForward = new THREE.Vector3(Math.sin(cop.heading), 0, Math.cos(cop.heading));
-          const copVel = copForward.clone().multiplyScalar(cop.speed);
-          entities.push({
-            position: cop.position,
-            velocity: copVel,
-            radius: 2.0,
-            isPlayer: false
-          });
-        }
-      });
-    }
-
-    // Add Traffic
-    if (this.traffic && this.traffic.vehicles) {
-      // Preallocate scratch forward vector for traffic to avoid per-vehicle alloc
-      if (!this._trafficFwdScratch) this._trafficFwdScratch = new THREE.Vector3();
-      this.traffic.vehicles.forEach(v => {
-        this._trafficFwdScratch.set(Math.sin(v.heading), 0, Math.cos(v.heading));
-        entities.push({
-          position: v.position,
-          // Clone only when velocity is needed for breakable impulse calc
-          velocity: this._trafficFwdScratch.clone().multiplyScalar(v.speed).add(v.impactVelocity),
-          radius: 2.0,
-          isPlayer: false
-        });
-      });
-    }
-
-    // Add Parked Vehicles
-    if (this.traffic && this.traffic.parkedVehicles) {
-      this.traffic.parkedVehicles.forEach(v => {
-        entities.push({
-          position: v.position,
-          velocity: v.impactVelocity.clone(),
-          radius: 2.0,
-          isPlayer: false
-        });
-      });
-    }
-
-    // Loop through breakables and update them
-    this.world.breakables.forEach(b => {
-      if (!b.broken) {
-        // Check collision against all entities
-        for (let ent of entities) {
-          const dist = ent.position.distanceTo(b.position);
-          const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
-          if (dist < collisionDist) {
-            const speed = ent.velocity.length();
-            if (speed < 4.0) {
-              // Solid collision: push out and bounce velocity
-              const normal = ent.position.clone().sub(b.position);
-              normal.y = 0;
-              normal.normalize();
-              const overlap = collisionDist - dist;
-              ent.position.addScaledVector(normal, overlap);
-              
-              const dot = ent.velocity.dot(normal);
-              if (dot < 0) {
-                ent.velocity.addScaledVector(normal, -1.2 * dot);
-              }
-              continue;
-            }
-
-            // CRASH! Break the streetlight
-            b.broken = true;
-            b.fadeTimer = 10.0; // minimum stay time before eligible for off-camera cleanup (increased from 3.5s)
-
-            // Impulse calculation
-            const impactForceDir = ent.velocity.clone().normalize();
-            if (speed > 2.0) {
-              // Pole flies off in the direction of the impact velocity
-              b.velocity.copy(impactForceDir).multiplyScalar(speed * 0.9 + 5.0);
-              b.velocity.y = speed * 0.4 + 4.0; // upward launch speed
-              
-              // Add crazy spin
-              b.angularVelocity.set(
-                (Math.random() - 0.5) * 12.0,
-                (Math.random() - 0.5) * 6.0,
-                (Math.random() - 0.5) * 12.0
-              );
-            } else {
-              b.velocity.set((Math.random() - 0.5) * 3, 2.0, (Math.random() - 0.5) * 3);
-              b.angularVelocity.set(Math.random() * 4, Math.random() * 4, Math.random() * 4);
-            }
-
-            // Turn off light source
-            b.lights.forEach(src => {
-              src.intensity = 0.0;
-            });
-
-            // Turn off flares
-            b.flares.forEach(fl => {
-              fl.visible = false;
-            });
-
-            // Turn off baked ground light pools
-            if (b.poolMeshes) {
-              b.poolMeshes.forEach(pm => {
-                pm.visible = false;
-              });
-            }
-
-            // If it is a traffic light, also turn off the colored light bulbs visually
-            if (b.type === 'trafficlight') {
-              b.group.traverse(child => {
-                if (child.isMesh && child.material && child !== b.group.children[0]) {
-                  // Turn bulb material to off (dark black/gray housing or dark standard mat)
-                  child.material = this.world.tlHousingMat;
-                }
-              });
-            }
-
-            // Screen shake / crash feedback if player rammed it
-            if (ent.isPlayer && speed > 8.0) {
-              this.crashShake = Math.min(0.5, speed * 0.025);
-              // Deduct a little forward speed from player on impact (heavy pole resistance)
-              this.physics.velocity.multiplyScalar(0.92);
-            }
-
-            // Spawn sparks and wood/metal debris
-            const sparkPos = b.position.clone();
-            sparkPos.y = 0.8;
-            this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10);
-            this.spawnDebris(sparkPos, impactForceDir, 0x333333, 5); // metal shards
-
-            break; // Stop checking other entities for this breakable
-          }
-        }
-      } else {
-        // Update physics of falling breakable prop
-        b.velocity.y += -22.0 * dt; // strong gravity
-        b.group.position.addScaledVector(b.velocity, dt);
-
-        b.group.rotation.x += b.angularVelocity.x * dt;
-        b.group.rotation.y += b.angularVelocity.y * dt;
-        b.group.rotation.z += b.angularVelocity.z * dt;
-
-        // Bounce on ground level
-        const groundHeight = this.world.getGroundHeight(b.group.position.x, b.group.position.z);
-        const upVec = new THREE.Vector3(0, 1, 0).applyQuaternion(b.group.quaternion);
-        const tiltCos = Math.abs(upVec.dot(new THREE.Vector3(0, 1, 0))); // 1 = standing, 0 = flat
-        const comHeight = b.comHeight !== undefined ? b.comHeight : 4.25;
-        const radius = b.radius !== undefined ? b.radius : 0.22;
-        const minHeight = groundHeight + THREE.MathUtils.lerp(radius, comHeight, tiltCos);
-
-        if (b.group.position.y < minHeight) {
-          b.group.position.y = minHeight;
-          if (b.velocity.y < -1.5) {
-            b.velocity.y = -b.velocity.y * 0.22; // bounce damping
-          } else {
-            b.velocity.y = 0.0;
-          }
-          b.velocity.x *= 0.65 * Math.exp(-dt * 4.0); // slide friction
-          b.velocity.z *= 0.65 * Math.exp(-dt * 4.0);
-          b.angularVelocity.multiplyScalar(0.5 * Math.exp(-dt * 3.0));
-          
-          // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
-          let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
-          let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
-          if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
-            if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
-              targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
-            } else {
-              targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
-            }
-          }
-          b.group.rotation.x += (targetX - b.group.rotation.x) * 4.0 * dt;
-          b.group.rotation.z += (targetZ - b.group.rotation.z) * 4.0 * dt;
-        }
-
-        // Fade out/scale down only when off-camera
-        const inView = frustum.containsPoint(b.group.position);
-        
-        b.fadeTimer -= dt;
-        if (!inView && b.fadeTimer <= 0) {
-          b.group.scale.multiplyScalar(Math.max(0, 1.0 - dt * 2.5));
-          if (b.group.scale.x < 0.05) {
-            b.group.visible = false;
-            this.scene.remove(b.group);
-            b.shouldRemove = true;
-          }
-        }
-      }
-    });
-
-    // Clean up breakables that have been removed from the scene
-    this.world.breakables = this.world.breakables.filter(b => !b.shouldRemove);
+    return checkBreakablesCollision.call(this, dt);
   }
 
   handleCrashDamage(carGroup, contactPosWorld, impactSpeed, relativeVelocityVec) {
-    const bodyMesh = carGroup.getObjectByName("carBody");
-    if (bodyMesh && bodyMesh.geometry) {
-      const geo = bodyMesh.geometry;
-      const posAttr = geo.attributes.position;
-      if (!posAttr) return;
-      
-      const localContact = contactPosWorld.clone().applyMatrix4(bodyMesh.matrixWorld.clone().invert());
-      const localForceDir = relativeVelocityVec.clone().normalize().applyQuaternion(bodyMesh.quaternion.clone().invert());
-      
-      const intensity = Math.min(0.48, impactSpeed * 0.0125);
-      const radius = 1.5 + Math.random() * 0.6;
-      
-      const v = new THREE.Vector3();
-      for (let i = 0; i < posAttr.count; i++) {
-        v.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-        const dist = v.distanceTo(localContact);
-        if (dist < radius) {
-          const falloff = 1.0 - dist / radius;
-          const deform = falloff * falloff * intensity;
-          v.addScaledVector(localForceDir, deform);
-          posAttr.setXYZ(i, v.x, v.y, v.z);
-        }
-      }
-      posAttr.needsUpdate = true;
-      geo.computeVertexNormals();
-    }
+    return handleCrashDamage.call(this, carGroup, contactPosWorld, impactSpeed, relativeVelocityVec);
   }
 
   checkSlipstream(dt = 0.016) {
-    const playerPos = this.physics.position;
-    const playerHeading = this.physics.heading;
-    const playerForward = new THREE.Vector3(Math.sin(playerHeading), 0, Math.cos(playerHeading));
-    
-    let inDraft = false;
-    let targetVeh = null;
-    
-    const allVehs = [];
-    if (this.traffic && this.traffic.vehicles) allVehs.push(...this.traffic.vehicles);
-    if (this.race.active && this.race.aiRacers) allVehs.push(...this.race.aiRacers);
-    if (this.pursuit && this.pursuit.active && this.pursuit.cops) allVehs.push(...this.pursuit.cops);
-    
-    for (const v of allVehs) {
-      if (v.opacity !== undefined && v.opacity < 0.5) continue;
-      const toVeh = v.position.clone().sub(playerPos);
-      const dist = toVeh.length();
-      if (dist > 4.5 && dist < 28.0) {
-        toVeh.normalize();
-        const dot = toVeh.dot(playerForward);
-        if (dot > 0.96) {
-          const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-          if (vForward.dot(playerForward) > 0.8) {
-            inDraft = true;
-            targetVeh = v;
-            break;
-          }
-        }
-      }
-    }
-    
-    this.physics.inSlipstream = inDraft;
-    
-    if (inDraft) {
-      this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + 0.08 * dt); // NFS slipstream charge
-      this.driftStatusEl.innerText = "DRAFTING";
-      this.driftStatusEl.classList.add('active');
-      if (Math.random() < 0.35) {
-        const startOffset = new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.4 + Math.random() * 0.4, 1.8).applyMatrix4(this.carVisualContainer.matrixWorld);
-        const windDir = playerForward.clone().negate();
-        this.spawnParticles(startOffset, windDir, 0xffffff, 1);
-      }
-    } else {
-      if (!this.physics.isDrifting) {
-        this.driftStatusEl.classList.remove('active');
-        this.driftStatusEl.innerText = "DRIFT";
-      }
-    }
+    return checkSlipstream.call(this, dt);
   }
 
   checkNearMisses(dt) {
-    if (!this.nearMissCooldowns) this.nearMissCooldowns = new Map();
-
-    // Decrement cooldowns
-    for (const [id, time] of this.nearMissCooldowns.entries()) {
-      if (time <= dt) {
-        this.nearMissCooldowns.delete(id);
-      } else {
-        this.nearMissCooldowns.set(id, time - dt);
-      }
-    }
-
-    const playerSpeed = this.physics.velocity.length();
-    if (playerSpeed < 15.0) return; // Only at high speeds (33+ mph)
-
-    const playerPos = this.physics.position;
-
-    // Collect all other vehicles
-    const targets = [];
-    if (this.traffic && this.traffic.vehicles) {
-      this.traffic.vehicles.forEach(v => {
-        targets.push({ id: `traffic_${v.id}`, position: v.position, opacity: v.opacity });
-      });
-    }
-    if (this.race.active && this.race.aiRacers) {
-      this.race.aiRacers.forEach(ai => {
-        targets.push({ id: `ai_${ai.id}`, position: ai.position, opacity: 1.0 });
-      });
-    }
-    if (this.pursuit && this.pursuit.active && this.pursuit.cops) {
-      this.pursuit.cops.forEach(cop => {
-        if (cop.active) {
-          targets.push({ id: `cop_${cop.id}`, position: cop.position, opacity: 1.0 });
-        }
-      });
-    }
-
-    for (const target of targets) {
-      if (target.opacity !== undefined && target.opacity < 0.5) continue;
-      
-      const dist = playerPos.distanceTo(target.position);
-      // Near miss radius: between 2.2m (car radius sum) and 5.0m
-      if (dist > 2.2 && dist < 5.0) {
-        if (!this.nearMissCooldowns.has(target.id)) {
-          // Award Nitro!
-          this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + 0.15); // +15%
-          this.nearMissCooldowns.set(target.id, 3.0); // 3 seconds cooldown for this vehicle
-
-          // Show floating notification
-          this.showNitroNotification("NEAR MISS! +15%");
-        }
-      }
-    }
+    return checkNearMisses.call(this, dt);
   }
 
   updateDriftNitro(dt) {
-    if (this.prevIsDrifting === undefined) this.prevIsDrifting = false;
-    if (this.driftNitroGained === undefined) this.driftNitroGained = 0;
-
-    const isCurrentlyDrifting = this.physics.isDrifting;
-
-    if (isCurrentlyDrifting) {
-      // Accumulate nitro gained during drift
-      const lateralSpeed = this.physics.velocity.dot(new THREE.Vector3(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading)));
-      const driftIntensity = Math.min(2.0, Math.abs(lateralSpeed) / 8.0);
-      const gain = 0.075 * dt * driftIntensity;
-      this.driftNitroGained += gain;
-    } else {
-      // Drift just ended!
-      if (this.prevIsDrifting && this.driftNitroGained > 0.03) {
-        const pctGained = Math.round(this.driftNitroGained * 100);
-        this.showNitroNotification(`DRIFT! +${pctGained}%`);
-      }
-      this.driftNitroGained = 0;
-    }
-
-    this.prevIsDrifting = isCurrentlyDrifting;
+    return updateDriftNitro.call(this, dt);
   }
 
   showNitroNotification(text) {
@@ -874,11 +764,6 @@ class Game {
           : 0.5;
         cpGroup.position.set(cp.x, h - 0.4, cp.z);
 
-        // PointLight source at the checkpoint (warm glow matched to color)
-        const cpLight = new THREE.PointLight(color, 12.0, 80.0, 1.25);
-        cpLight.position.set(0, 4.0, 0);
-        cpGroup.add(cpLight);
-
         // Hovering Indicator Arrow pointing to the NEXT checkpoint (Midnight Club style)
         let nextCp = null;
         if (this.race.mode !== 'unordered') {
@@ -942,12 +827,15 @@ class Game {
   }
 
   animate() {
+    const startFrame = performance.now();
     requestAnimationFrame(() => this.animate());
     
     // Clamp dt to max 50ms (20fps floor). This prevents physics from running
     // in slow-motion after any heavy synchronous work (e.g. mesh creation)
     // that causes the clock to accumulate a large delta in one frame.
     const dt = Math.min(this.clock.getDelta(), 0.05);
+    
+    const tPursuitStart = performance.now();
     
     if (this.slowMoTimer === undefined) this.slowMoTimer = 0.0;
     if (this.crashShake === undefined) this.crashShake = 0.0;
@@ -970,17 +858,44 @@ class Game {
     
     // Collect dynamic lights for the lighting pool (headlamps from player and traffic)
     const dynamicLights = [];
+
+    // Active checkpoint point lights (routed to PointLight pool to keep scene light count constant)
+    if (this.race && this.race.active && this.race.checkpoints) {
+      this.race.checkpoints.forEach((cp, index) => {
+        let shouldRender = false;
+        if (this.race.mode === 'unordered') {
+          shouldRender = !this.race.unorderedCleared.has(index);
+        } else {
+          shouldRender = (index === this.race.currentIndex);
+        }
+
+        if (shouldRender) {
+          const isFinish = (index === this.race.checkpoints.length - 1);
+          const color = isFinish ? 0xe84545 : 0xffaa3a;
+          const h = (this.world && typeof this.world.getGroundHeight === 'function')
+            ? this.world.getGroundHeight(cp.x, cp.z)
+            : 0.5;
+          dynamicLights.push({
+            x: cp.x,
+            y: h + 3.6,
+            z: cp.z,
+            intensity: 12.0,
+            color: color
+          });
+        }
+      });
+    }
     
-    // Player headlights
-    const playerForward = new THREE.Vector3(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading));
-    const playerRight = new THREE.Vector3(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading));
+    // Player headlights (optimized, zero-alloc)
+    _scratchV3_1.set(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading)); // playerForward
+    _scratchV3_2.set(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading)); // playerRight
     const pPos = this.physics.position;
-    const pHeadL = pPos.clone().addScaledVector(playerForward, 2.35).addScaledVector(playerRight, -0.65);
-    const pHeadR = pPos.clone().addScaledVector(playerForward, 2.35).addScaledVector(playerRight, 0.65);
-    
-    // Update SpotLight targets in world space pointing forward
-    this.leftSpotTarget.position.copy(pHeadL).addScaledVector(playerForward, 15.0);
-    this.rightSpotTarget.position.copy(pHeadR).addScaledVector(playerForward, 15.0);
+
+    _scratchV3_3.copy(pPos).addScaledVector(_scratchV3_1, 2.35).addScaledVector(_scratchV3_2, -0.65); // pHeadL
+    this.leftSpotTarget.position.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 15.0);
+
+    _scratchV3_3.copy(pPos).addScaledVector(_scratchV3_1, 2.35).addScaledVector(_scratchV3_2, 0.65); // pHeadR
+    this.rightSpotTarget.position.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 15.0);
 
     // Update rear tail/brake light glow intensity dynamically
     const isBraking = this.keys['s'] || this.keys['arrowdown'];
@@ -992,19 +907,43 @@ class Game {
       this.playerTaillightMat.color.setHex(0xaa1111);
     }
 
-    // Traffic headlights (pushed further forward to 3.5 to prevent underglow light spill on wheels/doors)
+    // Traffic headlights (optimized, distance-gated, zero-alloc)
     this.traffic.vehicles.forEach(v => {
-      const tForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-      const headlampPos = v.position.clone().addScaledVector(tForward, 3.5);
+      const dist = v.position.distanceTo(focusTarget.position);
+      if (dist > 130.0) return; // Distance gate
+
+      _scratchV3_1.set(Math.sin(v.heading), 0, Math.cos(v.heading)); // tForward
+      _scratchV3_2.copy(v.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
       
       dynamicLights.push({
-        x: headlampPos.x,
+        x: _scratchV3_2.x,
         y: 0.4,
-        z: headlampPos.z,
+        z: _scratchV3_2.z,
         intensity: 8.5 * (v.opacity !== undefined ? v.opacity : 1.0),
         color: 0xfffcd4
       });
     });
+
+    // AI Racers headlights (optimized, distance-gated, zero-alloc)
+    if (this.race && this.race.active && this.race.aiRacers) {
+      this.race.aiRacers.forEach(ai => {
+        if (ai.meshGroup) {
+          const dist = ai.position.distanceTo(focusTarget.position);
+          if (dist > 130.0) return; // Distance gate
+
+          _scratchV3_1.set(Math.sin(ai.heading), 0, Math.cos(ai.heading)); // aiForward
+          _scratchV3_2.copy(ai.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
+          
+          dynamicLights.push({
+            x: _scratchV3_2.x,
+            y: 0.4,
+            z: _scratchV3_2.z,
+            intensity: 8.5,
+            color: 0xfffcd4
+          });
+        }
+      });
+    }
 
     // Update police pursuit manager
     if (this.pursuit) {
@@ -1151,34 +1090,47 @@ class Game {
       // Push active cop vehicle headlights and sirens to dynamic lights list
       this.pursuit.cops.forEach(cop => {
         if (cop.meshGroup) {
-          // Set mesh group materials transparency / opacity for seamless fade-in
-          cop.meshGroup.traverse(child => {
-            if (child.isMesh && child.material) {
-              child.material.transparent = true;
-              child.material.opacity = cop.opacity;
+          const dist = cop.position.distanceTo(focusTarget.position);
+          this.updateVehicleLOD(cop, dist, cop.opacity);
+
+          const headlightPool = cop.meshGroup.getObjectByName("headlightPool");
+          if (headlightPool) {
+            let baseOpacity = 0.0;
+            if (dist >= 120.0) {
+              baseOpacity = 0.35;
+            } else if (dist > 80.0) {
+              const t = (dist - 80.0) / 40.0;
+              const smoothT = t * t * (3.0 - 2.0 * t);
+              baseOpacity = 0.35 * smoothT;
             }
-          });
+            headlightPool.material.opacity = baseOpacity * cop.opacity;
+          }
 
-          const copForward = new THREE.Vector3(Math.sin(cop.heading), 0, Math.cos(cop.heading));
-          
-          // Headlights
-          const headPos = cop.position.clone().addScaledVector(copForward, 2.3);
-          dynamicLights.push({
-            x: headPos.x,
-            y: 0.4,
-            z: headPos.z,
-            intensity: 8.0 * cop.opacity, // Scale light intensity with opacity
-            color: 0xfffcd4
-          });
+          if (!cop._lastLOD) {
+            this.updateHeadlightFlares(cop.meshGroup, cop.heading);
+          }
 
-          // Sirens (pulsing bright red/blue light source)
-          dynamicLights.push({
-            x: cop.position.x,
-            y: 1.6,
-            z: cop.position.z,
-            intensity: 15.0 * cop.opacity,
-            color: cop.sirenState ? 0xff0022 : 0x0022ff
-          });
+          // Headlights and sirens (optimized, distance-gated, zero-alloc)
+          if (dist <= 130.0) {
+            _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
+            _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
+            
+            dynamicLights.push({
+              x: _scratchV3_2.x,
+              y: 0.4,
+              z: _scratchV3_2.z,
+              intensity: 8.0 * cop.opacity,
+              color: 0xfffcd4
+            });
+
+            dynamicLights.push({
+              x: cop.position.x,
+              y: 1.6,
+              z: cop.position.z,
+              intensity: 15.0 * cop.opacity,
+              color: cop.sirenState ? 0xff0022 : 0x0022ff
+            });
+          }
 
           // Cop tire smoke when sliding/skidding
           const rgtCos = Math.cos(cop.heading + Math.PI / 2);
@@ -1214,34 +1166,104 @@ class Game {
       // Parked alert headlamps
       this.pursuit.parkedCops.forEach(cop => {
         if (cop.meshGroup) {
-          // Set mesh group materials transparency / opacity for seamless fade-in
-          cop.meshGroup.traverse(child => {
-            if (child.isMesh && child.material) {
-              child.material.transparent = true;
-              child.material.opacity = cop.opacity;
-            }
-          });
+          const dist = cop.position.distanceTo(focusTarget.position);
+          this.updateVehicleLOD(cop, dist, cop.opacity);
 
-          const copForward = new THREE.Vector3(Math.sin(cop.heading), 0, Math.cos(cop.heading));
-          const headPos = cop.position.clone().addScaledVector(copForward, 2.3);
-          dynamicLights.push({
-            x: headPos.x,
-            y: 0.4,
-            z: headPos.z,
-            intensity: 8.0 * cop.opacity,
-            color: 0xfffcd4
-          });
-          if (cop.alerted) {
+          const headlightPool = cop.meshGroup.getObjectByName("headlightPool");
+          if (headlightPool) {
+            let baseOpacity = 0.0;
+            if (dist >= 120.0) {
+              baseOpacity = 0.35;
+            } else if (dist > 80.0) {
+              const t = (dist - 80.0) / 40.0;
+              const smoothT = t * t * (3.0 - 2.0 * t);
+              baseOpacity = 0.35 * smoothT;
+            }
+            headlightPool.material.opacity = baseOpacity * cop.opacity;
+          }
+
+          if (!cop._lastLOD) {
+            this.updateHeadlightFlares(cop.meshGroup, cop.heading);
+          }
+
+          // Headlights and sirens (optimized, distance-gated, zero-alloc)
+          if (dist <= 130.0) {
+            _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
+            _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
+            
             dynamicLights.push({
-              x: cop.position.x,
-              y: 1.6,
-              z: cop.position.z,
-              intensity: 15.0 * cop.opacity,
-              color: cop.sirenState ? 0xff0022 : 0x0022ff
+              x: _scratchV3_2.x,
+              y: 0.4,
+              z: _scratchV3_2.z,
+              intensity: 8.0 * cop.opacity,
+              color: 0xfffcd4
             });
+
+            if (cop.alerted) {
+              dynamicLights.push({
+                x: cop.position.x,
+                y: 1.6,
+                z: cop.position.z,
+                intensity: 15.0 * cop.opacity,
+                color: cop.sirenState ? 0xff0022 : 0x0022ff
+              });
+            }
           }
         }
       });
+
+      // Roadblock cop headlights, sirens, and flares (optimized, zero-alloc)
+      if (this.pursuit.roadblocks) {
+        this.pursuit.roadblocks.forEach(rb => {
+          if (rb.meshGroup) {
+            rb.meshGroup.traverse(child => {
+              if (child.isGroup && child.getObjectByName("leftHeadlightSprite")) {
+                child.getWorldQuaternion(_scratchQuat);
+                _scratchEuler.setFromQuaternion(_scratchQuat, 'YXZ');
+                const copHeading = _scratchEuler.y;
+                
+                this.updateHeadlightFlares(child, copHeading);
+                
+                child.getWorldPosition(_scratchV3_3); // copWorldPos
+                
+                const dist = _scratchV3_3.distanceTo(focusTarget.position);
+                let lightIntensityScale = 1.0;
+                if (dist > 120.0) {
+                  lightIntensityScale = 0.0;
+                } else if (dist > 80.0) {
+                  const t = (dist - 80.0) / 40.0;
+                  const smoothT = t * t * (3.0 - 2.0 * t);
+                  lightIntensityScale = 1.0 - smoothT;
+                }
+                
+                if (lightIntensityScale > 0.0) {
+                  _scratchV3_1.set(Math.sin(copHeading), 0, Math.cos(copHeading)); // copForward
+                  _scratchV3_2.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 2.3); // headPos
+                  
+                  // Headlights
+                  dynamicLights.push({
+                    x: _scratchV3_2.x,
+                    y: 0.4,
+                    z: _scratchV3_2.z,
+                    intensity: 8.0 * lightIntensityScale,
+                    color: 0xfffcd4
+                  });
+
+                  // Sirens (pulsing blue/red)
+                  const flashState = (Math.floor(Date.now() / 250) % 2 === 0);
+                  dynamicLights.push({
+                    x: _scratchV3_3.x,
+                    y: 1.6,
+                    z: _scratchV3_3.z,
+                    intensity: 15.0 * lightIntensityScale,
+                    color: flashState ? 0xff0022 : 0x0022ff
+                  });
+                }
+              }
+            });
+          }
+        });
+      }
     }
 
     // Push dynamic lights for wall scraping sparks and tire skid friction (optimized)
@@ -1275,15 +1297,19 @@ class Game {
         color: 0xff4400
       });
     }
+    this.perf.pursuit = performance.now() - tPursuitStart;
 
     // Dynamically load/unload infinite chunks around the car and update lights
-    this.world.update(focusTarget.position.x, focusTarget.position.z, focusTarget.heading, dynamicLights);
+    const tWorldStart = performance.now();
+    this.world.update(focusTarget.position.x, focusTarget.position.z, focusTarget.heading, dynamicLights, scaledDt);
+    this.perf.world = performance.now() - tWorldStart;
     
     // Maintain global gameTime for traffic lights synchronization
     if (window.gameTime === undefined) window.gameTime = 0;
     window.gameTime += scaledDt;
 
     // Update physics
+    const tPhysicsStart = performance.now();
     this.physics.update(scaledDt, this.keys, this.world);
 
     // Player wall collision check (applied damage, debris, slow-mo)
@@ -1311,7 +1337,10 @@ class Game {
       }
       this.physics.prevGear = this.physics.gear;
     }
+    this.perf.physics = performance.now() - tPhysicsStart;
     
+    const tTrafficStart = performance.now();
+    const tTrafficUpdateStart = performance.now();
     // Update civilian traffic (dynamically adjust density based on player speed)
     if (this.traffic) {
       const playerSpeed = this.physics.velocity.length();
@@ -1335,6 +1364,9 @@ class Game {
       this.pursuit ? this.pursuit.heatLevel : 0,
       this.pursuit ? this.pursuit.cops.concat(this.pursuit.parkedCops || []) : []
     );
+    this.perf.trafficUpdate = performance.now() - tTrafficUpdateStart;
+
+    const tTrafficMeshStart = performance.now();
     this.traffic.vehicles.forEach(v => {
       if (!v.meshGroup) {
         const { carGroup, wheels } = this.createVoxelCarMesh(v.colorHex, v.type);
@@ -1355,34 +1387,54 @@ class Game {
       }
       
       v.meshGroup.position.copy(v.position);
-      this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
-      if (v.roll || v.pitch) {
-        const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
-        const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
-        v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
+
+      const dist = v.position.distanceTo(focusTarget.position);
+
+      // Throttling distant vehicles to 1 update every 3 frames to boost performance
+      if (!v._frameCounter) v._frameCounter = 0;
+      v._frameCounter++;
+      const isDistant = dist > 90.0;
+      const shouldUpdateThisFrame = !isDistant || (v._frameCounter % 3 === 0);
+
+      if (shouldUpdateThisFrame) {
+        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
+        if (v.roll || v.pitch) {
+          _scratchQuat.setFromAxisAngle(_scratchV3_1.set(0, 0, 1), v.roll || 0); // rollQ
+          _scratchQuat2.setFromAxisAngle(_scratchV3_2.set(1, 0, 0), v.pitch || 0); // pitchQ
+          v.meshGroup.quaternion.multiply(_scratchQuat).multiply(_scratchQuat2);
+        }
+
+        const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
+        this.updateVehicleLOD(v, dist, targetOpacity);
+
+        if (!v._lastLOD) {
+          // Update traffic headlight lens flares
+          this.updateHeadlightFlares(v.meshGroup, v.heading);
+        }
       }
 
-      // Update traffic headlight lens flares
-      this.updateHeadlightFlares(v.meshGroup, v.heading);
-      
-      // Update mesh opacity smoothly — only traverse when opacity actually changed
-      const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
-      if (v._lastOpacity !== targetOpacity) {
-        v._lastOpacity = targetOpacity;
-        v.meshGroup.traverse(child => {
-          if (child.isMesh && child.material) {
-            child.material.transparent = targetOpacity < 1.0;
-            child.material.opacity = targetOpacity;
-          }
-        });
+      // Update baked headlight pool based on distance to player/focusTarget
+      const headlightPool = v.meshGroup.getObjectByName("headlightPool");
+      if (headlightPool) {
+        let baseOpacity = 0.0;
+        if (dist >= 120.0) {
+          baseOpacity = 0.35;
+        } else if (dist > 80.0) {
+          const t = (dist - 80.0) / 40.0;
+          const smoothT = t * t * (3.0 - 2.0 * t);
+          baseOpacity = 0.35 * smoothT;
+        }
+        headlightPool.material.opacity = baseOpacity * (v.opacity !== undefined ? v.opacity : 1.0);
       }
       
       // Animate civilian wheels rolling
-      const tRot = (v.speed / 0.42) * scaledDt;
-      v.wheels.forEach(w => {
-        w.children[0].rotation.x += tRot;
-        w.children[1].rotation.x += tRot;
-      });
+      if (shouldUpdateThisFrame) {
+        const tRot = (v.speed / 0.42) * scaledDt;
+        v.wheels.forEach(w => {
+          w.children[0].rotation.x += tRot;
+          w.children[1].rotation.x += tRot;
+        });
+      }
 
       // Civilian tire water splash particle effect (throttled per-vehicle to avoid pool starvation)
       const tSpeed = v.speed;
@@ -1456,6 +1508,10 @@ class Game {
           v.wheels = wheels;
         }
         
+        const dist = v.position.distanceTo(focusTarget.position);
+        const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
+        this.updateVehicleLOD(v, dist, targetOpacity);
+
         v.meshGroup.position.copy(v.position);
         this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
         if (v.roll || v.pitch) {
@@ -1463,17 +1519,10 @@ class Game {
           const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
           v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
         }
-        
-        // Update mesh opacity smoothly
-        const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
-        if (v._lastOpacity !== targetOpacity) {
-          v._lastOpacity = targetOpacity;
-          v.meshGroup.traverse(child => {
-            if (child.isMesh && child.material) {
-              child.material.transparent = targetOpacity < 1.0;
-              child.material.opacity = targetOpacity;
-            }
-          });
+
+        const headlightPool = v.meshGroup.getObjectByName("headlightPool");
+        if (headlightPool) {
+          headlightPool.material.opacity = 0.0;
         }
         
         // Parked cars don't roll wheels or make water splash unless moving from impact
@@ -1481,10 +1530,12 @@ class Game {
         if (isParkedSkidding) {
           const vSpeed = v.impactVelocity.length();
           const tRot = (vSpeed / 0.42) * scaledDt;
-          v.wheels.forEach(w => {
-            w.children[0].rotation.x += tRot;
-            w.children[1].rotation.x += tRot;
-          });
+          if (!v._lastLOD) {
+            v.wheels.forEach(w => {
+              w.children[0].rotation.x += tRot;
+              w.children[1].rotation.x += tRot;
+            });
+          }
           
           const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
           const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
@@ -1524,7 +1575,9 @@ class Game {
         if (v.splashTimer > 0) v.splashTimer -= scaledDt;
       });
     }
+    this.perf.trafficMesh = performance.now() - tTrafficMeshStart;
 
+    const tCollisionsStart = performance.now();
     // Combined Collision Checks for active & parked civilian vehicles
     const allCivilians = this.traffic.vehicles.concat(this.traffic.parkedVehicles || []);
     allCivilians.forEach(v => {
@@ -2021,7 +2074,9 @@ class Game {
         }
       }
     }
-    
+    this.perf.collisions = performance.now() - tCollisionsStart;
+
+    const tPlayerVisualsStart = performance.now();
     // Coordinate translation
     this.carVisualContainer.position.copy(this.physics.position);
     this.world.alignMeshToTerrain(
@@ -2112,9 +2167,14 @@ class Game {
       const backward = this.physics.velocity.clone().negate().normalize();
       if (!leftWet) this.spawnParticles(leftRear, backward, 0xaaaaaa, 2);
       if (!rightWet) this.spawnParticles(rightRear, backward, 0xaaaaaa, 2);
-      this.driftStatusEl.classList.add('active');
+      if (this.driftStatusEl) {
+        this.driftStatusEl.innerText = "DRIFTING";
+        this.driftStatusEl.classList.add('active');
+      }
     } else {
-      this.driftStatusEl.classList.remove('active');
+      if (this.driftStatusEl) {
+        this.driftStatusEl.classList.remove('active');
+      }
       
       // Idle exhaust smoke
       if (Math.random() < 0.15) {
@@ -2152,7 +2212,10 @@ class Game {
       this.prevLeftWheel = null;
       this.prevRightWheel = null;
     }
+    this.perf.playerVisuals = performance.now() - tPlayerVisualsStart;
+    this.perf.traffic = performance.now() - tTrafficStart;
 
+    const tRaceStart = performance.now();
     // UPDATE RACE SYSTEM
     if (this.race.active) {
       this.race.playerVelocity = this.physics.velocity;
@@ -2260,36 +2323,65 @@ class Game {
       this.race.aiRacers.forEach(ai => {
         if (ai.meshGroup) {
           ai.meshGroup.position.copy(ai.position);
-          this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
-          ai.meshGroup.updateMatrixWorld(true);
-          
-          // Update AI light trails
-          if (!ai.leftTrail) {
-            ai.leftTrail = new LightTrail(this.scene, 0xff2200, 0.24);
-            ai.rightTrail = new LightTrail(this.scene, 0xff2200, 0.24);
-          }
-          const aiLeftTail = new THREE.Vector3(-0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
-          const aiRightTail = new THREE.Vector3(0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
           const aiSpeed = ai.velocity.length();
-          ai.leftTrail.update(aiLeftTail, scaledDt, aiSpeed > 5.0);
-          ai.rightTrail.update(aiRightTail, scaledDt, aiSpeed > 5.0);
 
-          // Update AI headlight lens flares
-          this.updateHeadlightFlares(ai.meshGroup, ai.heading);
-          
-          // Animate AI wheels rolling (pure scalar — no Vector3 alloc)
-          const aiFwdSinH = Math.sin(ai.heading);
-          const aiFwdCosH = Math.cos(ai.heading);
-          const aiForwardSpeed = ai.velocity.x * aiFwdSinH + ai.velocity.z * aiFwdCosH;
-          const aiWheelRot = (aiForwardSpeed / 0.42) * scaledDt;
-          ai.wheels.forEach((w, idx) => {
-            if (idx < 2) {
-              w.children[0].rotation.y = ai.steeringAngle;
-              w.children[1].rotation.y = ai.steeringAngle;
+          if (!ai._frameCounter) ai._frameCounter = 0;
+          ai._frameCounter++;
+          const dist = ai.position.distanceTo(focusTarget.position);
+          const isDistant = dist > 90.0;
+          const shouldUpdateThisFrame = !isDistant || (ai._frameCounter % 3 === 0);
+
+          if (shouldUpdateThisFrame) {
+            this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
+            ai.meshGroup.updateMatrixWorld(true);
+            
+            // Update AI light trails (optimized, zero-alloc)
+            if (!ai.leftTrail) {
+              ai.leftTrail = new LightTrail(this.scene, 0xff2200, 0.24);
+              ai.rightTrail = new LightTrail(this.scene, 0xff2200, 0.24);
             }
-            w.children[0].rotation.x += aiWheelRot;
-            w.children[1].rotation.x += aiWheelRot;
-          });
+            _scratchV3_1.set(-0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
+            _scratchV3_2.set(0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
+            ai.leftTrail.update(_scratchV3_1, scaledDt, aiSpeed > 5.0);
+            ai.rightTrail.update(_scratchV3_2, scaledDt, aiSpeed > 5.0);
+
+            this.updateVehicleLOD(ai, dist, 1.0);
+
+            if (!ai._lastLOD) {
+              // Update AI headlight lens flares
+              this.updateHeadlightFlares(ai.meshGroup, ai.heading);
+            }
+          }
+
+          // Update baked headlight pool based on distance to player/focusTarget
+          const headlightPool = ai.meshGroup.getObjectByName("headlightPool");
+          if (headlightPool) {
+            let baseOpacity = 0.0;
+            if (dist >= 120.0) {
+              baseOpacity = 0.35;
+            } else if (dist > 80.0) {
+              const t = (dist - 80.0) / 40.0;
+              const smoothT = t * t * (3.0 - 2.0 * t);
+              baseOpacity = 0.35 * smoothT;
+            }
+            headlightPool.material.opacity = baseOpacity;
+          }
+          
+          if (shouldUpdateThisFrame && !ai._lastLOD) {
+            // Animate AI wheels rolling (pure scalar — no Vector3 alloc)
+            const aiFwdSinH = Math.sin(ai.heading);
+            const aiFwdCosH = Math.cos(ai.heading);
+            const aiForwardSpeed = ai.velocity.x * aiFwdSinH + ai.velocity.z * aiFwdCosH;
+            const aiWheelRot = (aiForwardSpeed / 0.42) * scaledDt;
+            ai.wheels.forEach((w, idx) => {
+              if (idx < 2) {
+                w.children[0].rotation.y = ai.steeringAngle;
+                w.children[1].rotation.y = ai.steeringAngle;
+              }
+              w.children[0].rotation.x += aiWheelRot;
+              w.children[1].rotation.x += aiWheelRot;
+            });
+          }
 
           // Spawn AI drift smoke or puddle splashes!
           const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(ai.meshGroup.matrixWorld);
@@ -2461,12 +2553,14 @@ class Game {
           const isFinish = (index === this.race.checkpoints.length - 1);
           const color = isFinish ? 0xe84545 : 0xffaa3a;
           if (Math.random() < 0.20) {
-            this.spawnCheckpointSmoke(cp, color, 0.45, 0.65); // Less loud: smaller size, lower opacity
+            this.spawnCheckpointSmoke(cp, color, 0.45, 0.65);
           }
         }
       });
     }
+    this.perf.race = performance.now() - tRaceStart;
 
+    const tParticlesStart = performance.now();
     // Tick systems
     this.updateParticles(scaledDt);
     this.updateCheckpointSmoke(scaledDt);
@@ -2476,7 +2570,8 @@ class Game {
     this.checkNearMisses(scaledDt);
     this.updateDriftNitro(scaledDt);
 
-    // Update debug path and lookahead visuals
+    // Update debug path and lookahead visuals (DISABLED)
+    /*
     let hasPath = false;
     if (this.debugFocusAI && this.race && this.race.aiRacers) {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
@@ -2508,6 +2603,8 @@ class Game {
       this.debugPathLine.visible = false;
       this.debugLookaheadMarker.visible = false;
     }
+    */
+
     
     // Update skidmarks (Persistent until far away - 220m)
     const px = this.physics.position.x;
@@ -2542,42 +2639,48 @@ class Game {
 
     // Speedometer UI update
     const mph = Math.round(Math.abs(forwardSpeed) * 2.23694);
-    this.speedValEl.textContent = mph;
+    if (this.speedValEl) {
+      this.speedValEl.textContent = mph.toString().padStart(3, '0');
+    }
 
     // Gear UI update
     if (this.gearValEl) {
       if (this.physics.shiftTimer > 0) {
         this.gearValEl.textContent = "—";
-        this.gearValEl.style.color = "#ffaa3a";
+        this.gearValEl.style.color = "#ff3b30";
       } else {
         this.gearValEl.textContent = this.physics.gear;
-        this.gearValEl.style.color = this.physics.gear === 'R' ? '#e84545' : '#e5a93b';
+        this.gearValEl.style.color = this.physics.gear === 'R' ? '#ff3b30' : '#ffc600';
       }
     }
 
-    // RPM UI update
-    if (this.rpmBarEl) {
-      const rpmPct = ((this.physics.rpm - 1000) / (8000 - 1000)) * 100;
-      this.rpmBarEl.style.width = `${Math.max(0, Math.min(100, rpmPct))}%`;
+    // RPM gauge needle, circular path, and shift light update
+    if (this.dialNeedleEl && this.dialRpmFillEl) {
+      const rpmPct = Math.max(0, Math.min(100, ((this.physics.rpm - 1000) / (8000 - 1000)) * 100));
+      // Needle angle goes from -135deg (idle) to +135deg (max)
+      const needleAngle = (rpmPct / 100) * 270 - 135;
+      this.dialNeedleEl.setAttribute('transform', `rotate(${needleAngle} 80 80)`);
+      
+      // Arc fill length goes from 0 (empty) to 330 (fully active)
+      const activeLength = (rpmPct / 100) * 330;
+      this.dialRpmFillEl.setAttribute('stroke-dasharray', `${activeLength} 440`);
+      
       if (this.physics.rpm > 7300) {
-        this.rpmBarEl.style.background = '#e84545';
+        this.dialRpmFillEl.style.stroke = '#ff3b30'; // Redline warning
       } else {
-        this.rpmBarEl.style.background = 'linear-gradient(90deg, #e5a93b 70%, #e84545 100%)';
+        this.dialRpmFillEl.style.stroke = '#ffc600'; // Racing yellow
       }
     }
 
-    // Nitro UI update
-    if (this.nitroBarEl && this.nitroPctEl) {
-      const nitroPct = Math.round(this.physics.nitroLevel * 100);
-      this.nitroPctEl.textContent = `${nitroPct}%`;
-      this.nitroBarEl.style.width = `${nitroPct}%`;
+    // Nitro UI circular path update
+    if (this.nitroBarEl) {
+      const activeLength = this.physics.nitroLevel * 287;
+      this.nitroBarEl.setAttribute('stroke-dasharray', `${activeLength} 400`);
       
       if (this.physics.isBoosting) {
-        this.nitroBarEl.style.background = 'linear-gradient(90deg, #00ffff 0%, #ffffff 100%)';
-        this.nitroBarEl.style.boxShadow = '0 0 12px #ffffff';
+        this.nitroBarEl.style.stroke = '#ffffff'; // White/Cyan hot when boosting
       } else {
-        this.nitroBarEl.style.background = 'linear-gradient(90deg, #0099ff 0%, #00f0ff 100%)';
-        this.nitroBarEl.style.boxShadow = '0 0 8px #00f0ff';
+        this.nitroBarEl.style.stroke = '#00e5ff'; // Standard electric cyan
       }
     }
 
@@ -2641,7 +2744,10 @@ class Game {
         }
       }
     }
+    this.perf.particles = performance.now() - tParticlesStart;
 
+    const tRenderStart = performance.now();
+    const tEyeAdaptationStart = performance.now();
     // Dynamic HDR Auto-Exposure (Eye Adaptation)
     let localBrightness = 0.04; // Base dark brightness offset
     
@@ -2669,8 +2775,60 @@ class Game {
     }
     // Eye adaptation latency interpolation
     this.renderer.toneMappingExposure += (targetExposure - this.renderer.toneMappingExposure) * dt * 2.5;
+    this.perf.eyeAdaptation = performance.now() - tEyeAdaptationStart;
 
-    this.composer.render();
+    this.renderer.render(this.scene, this.camera);
+    this.perf.render = performance.now() - tRenderStart;
+
+    const totalTime = performance.now() - startFrame;
+    this.perf.total = totalTime;
+
+    if (totalTime > 33.3) {
+      console.warn(`[Stutter Detected] Frame took ${totalTime.toFixed(1)}ms | ` +
+        `world: ${this.perf.world.toFixed(1)}ms | ` +
+        `physics: ${this.perf.physics.toFixed(1)}ms | ` +
+        `trafficAI: ${this.perf.trafficUpdate.toFixed(1)}ms | ` +
+        `trafficMesh: ${this.perf.trafficMesh.toFixed(1)}ms | ` +
+        `collisions: ${this.perf.collisions.toFixed(1)}ms | ` +
+        `playerVis: ${this.perf.playerVisuals.toFixed(1)}ms | ` +
+        `pursuit: ${this.perf.pursuit.toFixed(1)}ms | ` +
+        `race: ${this.perf.race.toFixed(1)}ms | ` +
+        `particles: ${this.perf.particles.toFixed(1)}ms | ` +
+        `render: ${this.perf.render.toFixed(1)}ms (eye: ${this.perf.eyeAdaptation.toFixed(1)}ms) | ` +
+        `DrawCalls: ${this.renderer.info.render.calls} | ` +
+        `Triangles: ${this.renderer.info.render.triangles} | ` +
+        `Geometries: ${this.renderer.info.memory.geometries} | ` +
+        `Textures: ${this.renderer.info.memory.textures} | ` +
+        `Shaders: ${this.renderer.info.programs ? this.renderer.info.programs.length : 0}`);
+    }
+
+    if (this.perfFrameCount === undefined) this.perfFrameCount = 0;
+    this.perfFrameCount++;
+
+    if (this.perfFrameCount % 10 === 0) {
+      const fps = Math.round(1000 / Math.max(1, totalTime));
+      const hudEl = document.getElementById('perf-hud');
+      if (this.perfFpsEl && hudEl && hudEl.style.display === 'block') {
+        this.perfFpsEl.textContent = fps;
+        this.perfTotalEl.textContent = totalTime.toFixed(1);
+        this.perfWorldEl.textContent = this.perf.world.toFixed(1);
+        this.perfPhysicsEl.textContent = this.perf.physics.toFixed(1);
+        this.perfTrafficUpdateEl.textContent = this.perf.trafficUpdate.toFixed(1);
+        this.perfTrafficMeshEl.textContent = this.perf.trafficMesh.toFixed(1);
+        this.perfCollisionsEl.textContent = this.perf.collisions.toFixed(1);
+        this.perfPlayerVisualsEl.textContent = this.perf.playerVisuals.toFixed(1);
+        this.perfPursuitEl.textContent = this.perf.pursuit.toFixed(1);
+        this.perfRaceEl.textContent = this.perf.race.toFixed(1);
+        this.perfParticlesEl.textContent = this.perf.particles.toFixed(1);
+        this.perfRenderEl.textContent = this.perf.render.toFixed(1);
+        this.perfEyeEl.textContent = this.perf.eyeAdaptation.toFixed(1);
+        this.perfCallsEl.textContent = this.renderer.info.render.calls;
+        this.perfTrianglesEl.textContent = this.renderer.info.render.triangles;
+        this.perfGeometriesEl.textContent = this.renderer.info.memory.geometries;
+        this.perfTexturesEl.textContent = this.renderer.info.memory.textures;
+        this.perfShadersEl.textContent = this.renderer.info.programs ? this.renderer.info.programs.length : 0;
+      }
+    }
   }
 }
 

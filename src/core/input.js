@@ -3,9 +3,10 @@ import * as THREE from 'three';
 export function initInput() {
     window.addEventListener('keydown', (e) => {
       this.keys[e.key.toLowerCase()] = true;
-      if (e.key === 'p' || e.key === 'P') {
-        this.cycleCameraFocus();
-      }
+      // if (e.key === 'p' || e.key === 'P') {
+      //   this.cycleCameraFocus();
+      // }
+
     });
     window.addEventListener('keyup', (e) => {
       this.keys[e.key.toLowerCase()] = false;

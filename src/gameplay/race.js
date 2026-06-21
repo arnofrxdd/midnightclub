@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { AICar } from './ai.js';
-import { NavGraph } from './navgraph.js';
+import { AICar } from '../ai/ai.js';
+import { NavGraph } from '../world/navgraph.js';
 
 
 export class RaceManager {

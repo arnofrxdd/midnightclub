@@ -421,14 +421,21 @@ export class AICar {
     const path = this._currentPath;
     if (!path || path.length === 0) return null;
 
-    // Find the waypoint in a small forward window that is physically closest to the car
+    // Helper for 2D distance (ignoring Y height changes on hills)
+    const dist2D = (p1, p2) => {
+      const dx = p1.x - p2.x;
+      const dz = p1.z - p2.z;
+      return Math.sqrt(dx * dx + dz * dz);
+    };
+
+    // Find the waypoint in a small forward window that is physically closest to the car (in 2D)
     let closestIdx = this._pathWptIdx;
-    let closestDist = this.position.distanceTo(path[closestIdx]);
+    let closestDist = dist2D(this.position, path[closestIdx]);
     
     // Check up to 3 waypoints ahead (window of 4 total)
     const searchLimit = Math.min(path.length, this._pathWptIdx + 4);
     for (let i = this._pathWptIdx + 1; i < searchLimit; i++) {
-      const d = this.position.distanceTo(path[i]);
+      const d = dist2D(this.position, path[i]);
       if (d < closestDist) {
         closestDist = d;
         closestIdx = i;
@@ -440,10 +447,10 @@ export class AICar {
       this._pathWptIdx = closestIdx;
     }
 
-    // Also advance if we are very close to the current target (under 10m)
+    // Also advance if we are very close to the current target (under 10m in 2D)
     while (
       this._pathWptIdx < path.length - 1 &&
-      this.position.distanceTo(path[this._pathWptIdx]) < 10
+      dist2D(this.position, path[this._pathWptIdx]) < 10
     ) {
       this._pathWptIdx++;
     }
@@ -709,7 +716,9 @@ export class AICar {
 
   _checkCheckpoints(target, raceManager, world) {
     if (!target) return;
-    const dist = this.position.distanceTo(new THREE.Vector3(target.x, 0.5, target.z));
+    const dx = this.position.x - target.x;
+    const dz = this.position.z - target.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
     const gx   = Math.round(this.position.x / world.tileSize);
     const gz   = Math.round(this.position.z / world.tileSize);
     const r    = (world.isAlley && world.isAlley(gx, gz)) ? 65 : this.triggerRadius;

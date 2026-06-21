@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Midnight Club: Voxel Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0b0914;
+      font-family: 'Outfit', sans-serif;
+      color: #fff;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Premium Realistic HUD Overlay */
+    .hud-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 24px;
+    }
+
+    /* Header Panel */
+    .hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 24px;
+      letter-spacing: 2px;
+      color: #e2e2e8;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    }
+
+    .sub-brand {
+      font-size: 10px;
+      font-family: 'Orbitron', sans-serif;
+      letter-spacing: 4px;
+      color: #e5a93b; /* Amber/Orange Dashboard style */
+      text-transform: uppercase;
+      margin-top: -2px;
+    }
+
+    .control-info {
+      background: rgba(13, 14, 18, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #9a99a2;
+      display: flex;
+      gap: 16px;
+    }
+
+    .control-item span {
+      color: #e5a93b;
+      font-weight: 600;
+    }
+
+    /* Bottom Panel */
+    .hud-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    /* Speedometer */
+    .speedometer-container {
+      background: radial-gradient(circle at bottom left, rgba(13, 14, 18, 0.9) 0%, rgba(13, 14, 18, 0.5) 100%);
+      backdrop-filter: blur(12px);
+      border-left: 4px solid #e5a93b;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      border-right: 1px solid rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      border-radius: 0 12px 12px 0;
+      padding: 16px 24px;
+      display: flex;
+      flex-direction: column;
+      min-width: 180px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+
+    .speed-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #e5a93b;
+      font-weight: 700;
+    }
+
+    .speed-value-wrapper {
+      display: flex;
+      align-items: baseline;
+    }
+
+    .speed-value {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 48px;
+      color: #f3f3f6;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+
+    .speed-unit {
+      font-size: 14px;
+      font-weight: 700;
+      color: #9a99a2;
+      margin-left: 6px;
+    }
+
+    /* Drift display */
+    .drift-alert {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 20px;
+      color: #e84545; /* Race red drift indicator */
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 0 0 8px rgba(232, 69, 69, 0.6);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.15s ease-out;
+    }
+
+    .drift-alert.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Minimap container */
+    .minimap-wrapper {
+      width: 140px;
+      height: 140px;
+      background: rgba(13, 14, 18, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+
+    #minimap-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Loading screen */
+    #loader {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #090a0f;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 0.5s ease;
+    }
+
+    .loader-title {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 36px;
+      letter-spacing: 4px;
+      color: #f3f3f6;
+      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+      margin-bottom: 8px;
+    }
+
+    .loader-subtitle {
+      font-size: 12px;
+      letter-spacing: 6px;
+      color: #e5a93b;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(229, 169, 59, 0.15);
+      border-radius: 50%;
+      border-top-color: #e5a93b;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Race Selector Panel */
+    .race-panel {
+      position: absolute;
+      top: 110px;
+      left: 24px;
+      background: rgba(13, 14, 18, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px;
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+      z-index: 50;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .race-panel-title {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #e5a93b;
+      margin-bottom: 4px;
+    }
+
+    .race-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #e2e2e8;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .race-btn:hover {
+      background: rgba(229, 169, 59, 0.15);
+      border-color: #e5a93b;
+      color: #fff;
+      transform: translateX(4px);
+    }
+
+    .race-btn.active-cancel {
+      background: rgba(232, 69, 69, 0.15);
+      border-color: #e84545;
+      color: #fff;
+    }
+
+    .race-btn.active-cancel:hover {
+      background: rgba(232, 69, 69, 0.3);
+      transform: none;
+    }
+
+    /* Race Stats HUD */
+    .stats-container {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(13, 14, 18, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 10px 24px;
+      display: none; /* Hidden by default, shown when race starts */
+      align-items: center;
+      gap: 24px;
+      z-index: 50;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    }
+
+    .stats-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stats-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #9a99a2;
+      font-weight: 600;
+    }
+
+    .stats-value {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fff;
+    }
+
+    .stats-value.timer {
+      color: #e5a93b;
+    }
+
+    /* Race Notification Banners */
+    .race-banner {
+      position: absolute;
+      top: 35%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      pointer-events: none;
+      z-index: 60;
+      text-align: center;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .race-banner.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.0);
+    }
+
+    .banner-title {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 48px;
+      letter-spacing: 4px;
+      color: #e5a93b;
+      text-shadow: 0 0 20px rgba(229, 169, 59, 0.6);
+      text-transform: uppercase;
+      margin: 0;
+    }
+
+    .banner-subtitle {
+      font-family: 'Outfit', sans-serif;
+      font-size: 16px;
+      letter-spacing: 2px;
+      color: #e2e2e8;
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    /* Retro Look Filters */
+    #canvas-container canvas {
+      filter: contrast(1.15) saturate(1.12) brightness(0.94) hue-rotate(-3deg);
+    }
+
+    .vignette-grading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 6;
+      pointer-events: none;
+      background: radial-gradient(circle, rgba(14, 18, 30, 0) 25%, rgba(9, 10, 20, 0.76) 100%);
+    }
+
+    /* Premium Animated Film Grain */
+    .noise-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .noise-overlay::before {
+      content: "";
+      position: absolute;
+      top: -10%;
+      left: -10%;
+      width: 120%;
+      height: 120%;
+      background: #808080;
+      filter: url(#noiseFilter);
+      opacity: 1; /* Managed dynamically via JS container opacity */
+      pointer-events: none;
+      mix-blend-mode: overlay;
+      animation: grain 0.8s steps(10) infinite;
+    }
+
+    @keyframes grain {
+      0%, 100% { transform:translate(0, 0); }
+      10% { transform:translate(-1%, -2%); }
+      20% { transform:translate(-2%, 1%); }
+      30% { transform:translate(1%, -1%); }
+      40% { transform:translate(-1%, 3%); }
+      50% { transform:translate(-2%, 2%); }
+      60% { transform:translate(2%, -1%); }
+      70% { transform:translate(3%, 1%); }
+      80% { transform:translate(-2%, -2%); }
+      90% { transform:translate(1%, 3%); }
+    }
+
+    /* Cop Chase Flash Vignette (Bottom Screen Glow Only) */
+    .cop-vignette {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 6vh;
+      z-index: 9995;
+      pointer-events: none;
+      opacity: 0;
+      transition: background 0.15s ease, height 0.15s ease;
+      background: linear-gradient(to top, rgba(255, 0, 0, 0.55) 0%, rgba(255, 0, 0, 0) 100%);
+    }
+    .cop-vignette.flash-blue {
+      background: linear-gradient(to top, rgba(0, 50, 255, 0.55) 0%, rgba(0, 0, 255, 0) 100%);
+    }
+
+    /* Busted Progress Meter */
+    .busted-meter-container {
+      position: absolute;
+      top: 55%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(13, 14, 18, 0.95);
+      border: 2px solid #ff3333;
+      padding: 16px 24px;
+      border-radius: 8px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 65;
+      box-shadow: 0 0 24px rgba(255, 51, 51, 0.5);
+      width: 250px;
+    }
+    .busted-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 16px;
+      font-weight: 900;
+      color: #ff3333;
+      animation: pulse 1s infinite alternate;
+      letter-spacing: 2px;
+    }
+    .busted-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .busted-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: #ff3333;
+    }
+    @keyframes pulse {
+      from { opacity: 0.6; }
+      to { opacity: 1; }
+    }
+
+    .heat-bar-segment {
+      width: 8px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 1px;
+      transition: background 0.15s;
+    }
+    .heat-bar-segment.active {
+      background: #ff3333;
+      box-shadow: 0 0 4px #ff3333;
+    }
+
+    /* Heat HUD Container */
+    .heat-hud-container {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 11, 15, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      padding: 12px 20px;
+      border-radius: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 60;
+      width: 280px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    .heat-hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .heat-hud-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 1px;
+    }
+    .heat-hud-title span {
+      color: #ff3333;
+      font-weight: 900;
+    }
+    .heat-hud-los {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+      transition: all 0.3s ease;
+    }
+    .heat-hud-los.spotted {
+      background: rgba(255, 51, 51, 0.25);
+      color: #ff3333;
+      border: 1px solid #ff3333;
+      box-shadow: 0 0 8px rgba(255, 51, 51, 0.4);
+      animation: pulse-los 0.6s infinite alternate;
+    }
+    .heat-hud-los.hidden {
+      background: rgba(85, 255, 85, 0.15);
+      color: #55ff55;
+      border: 1px solid #55ff55;
+      box-shadow: 0 0 8px rgba(85, 255, 85, 0.2);
+    }
+    .heat-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .heat-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff9900, #ff3333);
+      box-shadow: 0 0 6px #ff3333;
+      transition: width 0.1s linear;
+    }
+    .heat-bar-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    @keyframes pulse-los {
+      from { opacity: 0.7; }
+      to { opacity: 1; }
+    }
+
+  </style>
+</head>
+<body>
+  <div id="loader">
+    <div class="loader-title">MIDNIGHT CLUB</div>
+    <div class="loader-subtitle">Voxel Edition</div>
+    <div class="spinner"></div>
+  </div>
+
+  <div id="canvas-container"></div>
+  <div class="vignette-grading"></div>
+  <div id="cop-flash" class="cop-vignette"></div>
+  <div id="noise-overlay" class="noise-overlay" style="opacity: 0.05;"></div>
+
+  <!-- Busted warning HUD -->
+  <div id="busted-container" class="busted-meter-container">
+    <span class="busted-title">WARNING: BUSTING</span>
+    <div class="busted-bar-bg">
+      <div id="busted-fill" class="busted-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- Pursuit Heat HUD -->
+  <div id="heat-hud" class="heat-hud-container">
+    <div class="heat-hud-header">
+      <span class="heat-hud-title">PURSUIT HEAT: <span id="heat-hud-value">1</span></span>
+      <div id="heat-hud-los" class="heat-hud-los hidden">HIDDEN</div>
+    </div>
+    <div class="heat-bar-bg">
+      <div id="heat-fill" class="heat-bar-fill"></div>
+    </div>
+    <div class="heat-hud-header">
+      <span class="heat-bar-label">Escalation Progress</span>
+    </div>
+  </div>
+
+  <!-- SVG noise filter definition -->
+  <svg style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+    <filter id="noiseFilter">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+  </svg>
+
+  <!-- Race Notification Banner -->
+  <div id="race-banner" class="race-banner">
+    <h1 id="banner-title" class="banner-title">RACE STARTED</h1>
+    <div id="banner-subtitle" class="banner-subtitle">Go Go Go!</div>
+  </div>
+
+  <!-- Stunt/Trick Notification Display -->
+  <div id="stunt-notif" style="position: absolute; top: 25%; left: 50%; transform: translate(-50%, -50%) scale(0.8); pointer-events: none; z-index: 60; text-align: center; opacity: 0; transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; flex-direction: column; align-items: center; gap: 4px;">
+    <span id="stunt-title" style="font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 28px; letter-spacing: 2px; color: #00f0ff; text-shadow: 0 0 15px rgba(0, 240, 255, 0.8); text-transform: uppercase; margin: 0;">STUNT LANDED!</span>
+    <span id="stunt-score" style="font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1.5px; color: #e5a93b; text-transform: uppercase; text-shadow: 0 0 8px rgba(229, 169, 59, 0.6); margin: 0;">+500 PTS</span>
+  </div>
+
+  <!-- Race Selector Panel -->
+  <div class="race-panel">
+    <span class="race-panel-title">Active Races</span>
+    <button id="btn-sprint" class="race-btn">Sprint Challenge <span>→</span></button>
+    <button id="btn-circuit" class="race-btn">Circuit Laps <span>→</span></button>
+    <button id="btn-unordered" class="race-btn">Scavenger Hunt <span>→</span></button>
+    <button id="btn-autocross" class="race-btn">Autocross Slalom <span>→</span></button>
+    <button id="btn-cancel" class="race-btn active-cancel" style="display: none;">Cancel Race</button>
+  </div>
+
+  <!-- Race Stats Display -->
+  <div id="stats-hud" class="stats-container">
+    <div class="stats-item">
+      <span class="stats-label">Pos</span>
+      <span id="stats-pos" class="stats-value" style="color: #e5a93b;">1/4</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label">Mode</span>
+      <span id="stats-mode" class="stats-value">Sprint</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label" id="stats-progress-label">Checkpoint</span>
+      <span id="stats-progress" class="stats-value">1/9</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label">Timer</span>
+      <span id="stats-timer" class="stats-value timer">00:00.00</span>
+    </div>
+  </div>
+
+  <div class="hud-layer">
+    <div class="hud-header">
+      <div>
+        <div class="brand">MIDNIGHT CLUB</div>
+        <div class="sub-brand">Voxel Edition</div>
+        <!-- Heat Level HUD -->
+        <div id="heat-hud" style="display: flex; align-items: center; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity 0.3s;">
+          <span style="font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 900; letter-spacing: 1px; color: #ff3333; margin-right: 6px; text-shadow: 0 0 4px rgba(255,51,51,0.5);">HEAT LEVEL</span>
+          <div id="heat-bars" style="display: flex; gap: 3px;">
+            <div class="heat-bar-segment"></div>
+            <div class="heat-bar-segment"></div>
+            <div class="heat-bar-segment"></div>
+            <div class="heat-bar-segment"></div>
+            <div class="heat-bar-segment"></div>
+          </div>
+        </div>
+      </div>
+      <div class="control-info">
+        <div class="control-item"><span>W A S D / Arrows</span> Drive</div>
+        <div class="control-item"><span>Space</span> Handbrake / Drift</div>
+        <div class="control-item"><span>Shift</span> Nitro</div>
+        <div class="control-item"><span>R</span> Reset</div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="speedometer-container">
+        <span class="speed-label">Velocity</span>
+        <div class="speed-value-wrapper">
+          <span id="speed-val" class="speed-value">0</span>
+          <span class="speed-unit">MPH</span>
+        </div>
+        <!-- Drift/Nitro Notifications -->
+        <div id="nitro-notif" style="position: absolute; bottom: 155px; left: 24px; font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 16px; color: #00f0ff; text-transform: uppercase; text-shadow: 0 0 8px rgba(0,240,255,0.7); opacity: 0; transform: translateY(10px); transition: all 0.2s ease-out; pointer-events: none; z-index: 60;"></div>
+
+        <!-- Nitro Bar display -->
+        <div style="display: flex; flex-direction: column; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span class="speed-label" style="font-size: 8px; color: #00f0ff; font-weight: 900; letter-spacing: 1.5px; text-shadow: 0 0 3px rgba(0,240,255,0.5);">NITRO BOOST</span>
+            <span id="nitro-pct" style="font-family: 'Orbitron', sans-serif; font-size: 9px; font-weight: 700; color: #00f0ff;">50%</span>
+          </div>
+          <div style="width: 100%; height: 6px; background: rgba(0, 240, 255, 0.1); border-radius: 3px; border: 1px solid rgba(0, 240, 255, 0.2); overflow: hidden; box-shadow: inset 0 0 4px rgba(0, 240, 255, 0.2);">
+            <div id="nitro-bar" style="width: 50%; height: 100%; background: linear-gradient(90deg, #0099ff 0%, #00f0ff 100%); box-shadow: 0 0 8px #00f0ff; transition: width 0.05s ease-out;"></div>
+          </div>
+        </div>
+        <!-- Gear and RPM display -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+          <div style="display: flex; flex-direction: column;">
+            <span class="speed-label" style="font-size: 8px; color: #9a99a2;">Gear</span>
+            <span id="gear-val" style="font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 900; color: #e5a93b; line-height: 1;">1</span>
+          </div>
+          <div style="display: flex; flex-direction: column; flex-grow: 1; margin-left: 6px;">
+            <span class="speed-label" style="font-size: 8px; color: #9a99a2; margin-bottom: 2px;">RPM</span>
+            <div style="width: 100%; height: 5px; background: rgba(255, 255, 255, 0.1); border-radius: 2.5px; overflow: hidden;">
+              <div id="rpm-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #e5a93b 70%, #e84545 100%); transition: width 0.05s ease-out;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="drift-status" class="drift-alert" style="margin-top: 4px;">DRIFTING</div>
+      </div>
+
+      <div class="minimap-wrapper">
+        <canvas id="minimap-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

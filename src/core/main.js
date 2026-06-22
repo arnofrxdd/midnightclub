@@ -15,7 +15,7 @@ import { PursuitManager } from '../gameplay/pursuitManager.js';
 import { initInput, initDebugVisuals } from './input.js';
 import { updateCamera, cycleCameraFocus, cycleCameraMode, getTargetGameplayCamera } from './camera.js';
 import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
-import { formatTime, showBanner, showNitroNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
+import { formatTime, showBanner, initNotifications, showNotification, removeNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
 import { checkBreakablesCollision } from '../gameplay/breakables.js';
 import { checkSlipstream, checkNearMisses, updateDriftNitro } from '../gameplay/stunts.js';
 import { handleCrashDamage } from './carMesh.js';
@@ -46,7 +46,6 @@ class Game {
     this.dialRpmFillEl = document.getElementById('dial-rpm-fill');
     this.nitroBarEl = document.getElementById('dial-nitro-fill');
     this.nitroPctEl = document.getElementById('nitro-pct');
-    this.nitroNotifEl = document.getElementById('nitro-notif');
     this.stuntNotifEl = document.getElementById('stunt-notif');
     this.stuntTitleEl = document.getElementById('stunt-title');
     this.stuntScoreEl = document.getElementById('stunt-score');
@@ -97,6 +96,7 @@ class Game {
     this.slowMoTimer = 0.0;
     this.crashShake = 0.0;
     this.initSkidmarks(); // Pooled system for tire skid marks
+    this.initNotifications();
     this.initRaceHUD();
     this.initDebugVisuals();
     this.perf = { world: 0, physics: 0, traffic: 0, trafficUpdate: 0, trafficMesh: 0, collisions: 0, playerVisuals: 0, pursuit: 0, race: 0, particles: 0, render: 0, eyeAdaptation: 0, total: 0 };
@@ -108,6 +108,7 @@ class Game {
 
     // Dynamic World Event Start Selection
     this.race.selectNewWorldEvent(this.world, this.physics.position);
+    this.lastEventRefreshPos = this.physics.position.clone();
 
     // Create event proximity prompt dynamically
     this.eventPromptEl = document.createElement('div');
@@ -709,8 +710,16 @@ class Game {
     return updateDriftNitro.call(this, dt);
   }
 
-  showNitroNotification(text) {
-    return showNitroNotification.call(this, text);
+  initNotifications() {
+    return initNotifications.call(this);
+  }
+
+  showNotification(id, text, duration = 2000) {
+    return showNotification.call(this, id, text, duration);
+  }
+
+  removeNotification(id) {
+    return removeNotification.call(this, id);
   }
 
   showStuntNotification(title, scoreText) {
@@ -1028,6 +1037,54 @@ class Game {
     // Update cinematic manager
     if (this.cinematicManager) {
       this.cinematicManager.update(scaledDt);
+    }
+
+    // Real-time incremental event spawner (stutter-free background spawning and pruning)
+    if (!this.race.active && this.physics.position) {
+      if (this.eventSpawnTimer === undefined) this.eventSpawnTimer = 0.0;
+      this.eventSpawnTimer += dt;
+      
+      if (this.eventSpawnTimer > 0.4) {
+        this.eventSpawnTimer = 0.0;
+        const px = this.physics.position.x;
+        const pz = this.physics.position.z;
+        const maxEvents = 30;
+        
+        // 1. Prune events that are too far behind (>1200m)
+        if (this.race.worldEvents) {
+          this.race.worldEvents = this.race.worldEvents.filter(evt => {
+            const dist = Math.hypot(evt.x - px, evt.z - pz);
+            return dist <= 1200.0;
+          });
+        } else {
+          this.race.worldEvents = [];
+        }
+        
+        // 2. Incrementally spawn 1 new event nearby if below max capacity
+        if (this.race.worldEvents.length < maxEvents && this.world) {
+          const colArr = Array.from(this.world.roadColumns);
+          const rowArr = Array.from(this.world.roadRows);
+          
+          if (colArr.length > 0 && rowArr.length > 0) {
+            // Pick a random intersection candidate in O(1) time
+            const cx = colArr[Math.floor(Math.random() * colArr.length)];
+            const cz = rowArr[Math.floor(Math.random() * rowArr.length)];
+            const wx = cx * this.world.tileSize;
+            const wz = cz * this.world.tileSize;
+            
+            const dist = Math.hypot(wx - px, wz - pz);
+            // Spawn new events in the 150m to 850m radius
+            if (dist >= 150.0 && dist <= 850.0) {
+              const duplicate = this.race.worldEvents.some(evt => evt.x === wx && evt.z === wz);
+              if (!duplicate) {
+                const modes = ['sprint', 'circuit'];
+                const mode = modes[Math.floor(Math.random() * modes.length)];
+                this.race.worldEvents.push({ x: wx, z: wz, mode });
+              }
+            }
+          }
+        }
+      }
     }
 
     // Proximity check and prompt for free-roam event discovery

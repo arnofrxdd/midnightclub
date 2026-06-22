@@ -15,14 +15,17 @@ export function checkSlipstream(dt = 0.016) {
     
     for (const v of allVehs) {
       if (v.opacity !== undefined && v.opacity < 0.5) continue;
+      
       const toVeh = v.position.clone().sub(playerPos);
+      toVeh.y = 0; // Ignore height differences for slipstream detection
       const dist = toVeh.length();
-      if (dist > 4.5 && dist < 28.0) {
+      
+      if (dist > 4.5 && dist < 40.0) { // Increased draft range to 40m
         toVeh.normalize();
         const dot = toVeh.dot(playerForward);
-        if (dot > 0.96) {
+        if (dot > 0.88) { // Relaxed to ~28 degrees to allow drafting cornering/dodging AI
           const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-          if (vForward.dot(playerForward) > 0.8) {
+          if (vForward.dot(playerForward) > 0.6) { // Relaxed heading alignment to allow drafting drifting AI
             inDraft = true;
             targetVeh = v;
             break;
@@ -34,21 +37,27 @@ export function checkSlipstream(dt = 0.016) {
     this.physics.inSlipstream = inDraft;
     
     if (inDraft) {
+      if (this.draftNitroGained === undefined) this.draftNitroGained = 0;
+      this.draftNitroGained += 0.08 * dt;
       this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + 0.08 * dt); // NFS slipstream charge
-      if (this.driftStatusEl) {
-        this.driftStatusEl.innerText = "DRAFTING";
-        this.driftStatusEl.classList.add('active');
-      }
+      
+      const pctGained = Math.round(this.draftNitroGained * 100);
+      this.showNotification('draft_active', `DRAFTING +${pctGained}%`, 0);
+
       if (Math.random() < 0.35) {
         const startOffset = new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.4 + Math.random() * 0.4, 1.8).applyMatrix4(this.carVisualContainer.matrixWorld);
         const windDir = playerForward.clone().negate();
         this.spawnParticles(startOffset, windDir, 0xffffff, 1);
       }
     } else {
-      if (!this.physics.isDrifting && this.driftStatusEl) {
-        this.driftStatusEl.classList.remove('active');
-        this.driftStatusEl.innerText = "DRIFT";
+      if (this.draftNitroGained !== undefined && this.draftNitroGained > 0.03) {
+        const pctGained = Math.round(this.draftNitroGained * 100);
+        this.removeNotification('draft_active');
+        this.showNotification('draft_done', `DRAFT! +${pctGained}%`, 1500, true);
+      } else {
+        this.removeNotification('draft_active');
       }
+      this.draftNitroGained = 0;
     }
   }
 
@@ -101,7 +110,7 @@ export function checkNearMisses(dt) {
           this.nearMissCooldowns.set(target.id, 3.0); // 3 seconds cooldown for this vehicle
 
           // Show floating notification
-          this.showNitroNotification("NEAR MISS! +15%");
+          this.showNotification('nearmiss_done', "NEAR MISS! +15%", 1500, true);
         }
       }
     }
@@ -119,11 +128,17 @@ export function updateDriftNitro(dt) {
       const driftIntensity = Math.min(2.0, Math.abs(lateralSpeed) / 8.0);
       const gain = 0.075 * dt * driftIntensity;
       this.driftNitroGained += gain;
+      
+      const pctGained = Math.round(this.driftNitroGained * 100);
+      this.showNotification('drift_active', `DRIFTING +${pctGained}%`, 0);
     } else {
       // Drift just ended!
       if (this.prevIsDrifting && this.driftNitroGained > 0.03) {
         const pctGained = Math.round(this.driftNitroGained * 100);
-        this.showNitroNotification(`DRIFT! +${pctGained}%`);
+        this.removeNotification('drift_active');
+        this.showNotification('drift_done', `DRIFT! +${pctGained}%`, 1500, true);
+      } else {
+        this.removeNotification('drift_active');
       }
       this.driftNitroGained = 0;
     }

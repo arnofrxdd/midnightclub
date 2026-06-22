@@ -24,18 +24,69 @@ export function showBanner(title, subtitle, duration = 2000) {
     }, duration);
   }
 
-export function showNitroNotification(text) {
-    if (!this.nitroNotifEl) return;
-    this.nitroNotifEl.textContent = text;
-    this.nitroNotifEl.style.opacity = '1';
-    this.nitroNotifEl.style.transform = 'translateX(-50%) translateY(0)';
+export function initNotifications() {
+  this.notifStackEl = document.getElementById('notification-stack');
+  this.activeNotifs = new Map();
+}
+
+export function showNotification(id, text, duration = 2000, increment = false) {
+  if (!this.notifStackEl) return;
+  
+  if (this.activeNotifs.has(id)) {
+    const notif = this.activeNotifs.get(id);
+    if (increment) {
+      notif.count = (notif.count || 1) + 1;
+      notif.el.textContent = `${text} (${notif.count}x)`;
+      
+      // trigger re-animation pop
+      notif.el.style.animation = 'none';
+      notif.el.offsetHeight; // force reflow
+      notif.el.style.animation = 'notifSlideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
+    } else {
+      notif.el.textContent = text;
+    }
     
-    if (this.nitroNotifTimeout) clearTimeout(this.nitroNotifTimeout);
-    this.nitroNotifTimeout = setTimeout(() => {
-      this.nitroNotifEl.style.opacity = '0';
-      this.nitroNotifEl.style.transform = 'translateX(-50%) translateY(-15px)';
-    }, 1200);
+    if (notif.timeout) clearTimeout(notif.timeout);
+    if (duration > 0) {
+       notif.timeout = setTimeout(() => this.removeNotification(id), duration);
+    }
+  } else {
+    const el = document.createElement('div');
+    el.className = 'notification-item';
+    el.textContent = text;
+    
+    if (text.includes("NEAR MISS")) el.style.color = "#ffc600";
+    else if (text.includes("DRIFT")) el.style.color = "#00e5ff";
+    else if (text.includes("DRAFT")) el.style.color = "#39ff14";
+    
+    this.notifStackEl.appendChild(el);
+    
+    const notif = { el, timeout: null, count: 1 };
+    this.activeNotifs.set(id, notif);
+    
+    if (duration > 0) {
+       notif.timeout = setTimeout(() => this.removeNotification(id), duration);
+    }
+    
+    while (this.notifStackEl.children.length > 5) {
+      const firstId = this.activeNotifs.keys().next().value;
+      this.removeNotification(firstId);
+    }
   }
+}
+
+export function removeNotification(id) {
+  if (!this.activeNotifs.has(id)) return;
+  const notif = this.activeNotifs.get(id);
+  if (notif.timeout) clearTimeout(notif.timeout);
+  
+  notif.el.classList.add('fade-out');
+  setTimeout(() => {
+    if (notif.el.parentNode) notif.el.parentNode.removeChild(notif.el);
+  }, 300);
+  
+  this.activeNotifs.delete(id);
+}
 
 export function showStuntNotification(title, scoreText) {
     if (!this.stuntNotifEl) return;

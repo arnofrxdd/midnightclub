@@ -86,6 +86,7 @@ class Game {
     });
     this.initThree();
     this.world = new World(this.scene);
+    this.isInitialLoad = true;
     
     // Pick a random axis (X or Z) and direction to ensure the camera is always on the same
     // straight road as the player (who starts at 0,0). This guarantees the transition swoop
@@ -1974,6 +1975,27 @@ class Game {
     this.world.update(focusTarget.position.x, focusTarget.position.z, focusTarget.heading, dynamicLights, scaledDt);
     this.perf.world = performance.now() - tWorldStart;
     
+    if (this.isInitialLoad) {
+      // 144 target tiles covers roughly a 12x12 area initially loading around the player
+      const targetTiles = 140; 
+      const loaded = this.world.loadedTiles.size;
+      const progress = Math.min(100, Math.floor((loaded / targetTiles) * 100));
+      
+      const bar = document.getElementById('loading-bar');
+      if (bar) bar.style.width = `${progress}%`;
+
+      if (loaded >= targetTiles || progress === 100) {
+        this.isInitialLoad = false;
+        const loader = document.getElementById('loading-screen');
+        if (loader) {
+          loader.style.opacity = '0';
+          setTimeout(() => {
+            loader.style.display = 'none';
+          }, 1000);
+        }
+      }
+    }
+
     // Maintain global gameTime for traffic lights synchronization
     if (window.gameTime === undefined) window.gameTime = 0;
     window.gameTime += scaledDt;

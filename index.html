@@ -34,6 +34,16 @@
     </div>
   </div>
 
+  <!-- Initial Loading Screen -->
+  <div id="loading-screen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#05050a; z-index:99999; display:flex; justify-content:center; align-items:center; color:#fff; font-family:'Barlow Condensed', sans-serif; font-size:48px; font-style:italic; font-weight:900; transition:opacity 1s ease-out;">
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <div style="letter-spacing: 4px; text-shadow: 0 0 20px #00e5ff;">MIDNIGHT CLUB</div>
+      <div style="margin-top: 20px; width: 300px; height: 4px; background: rgba(255,255,255,0.1); overflow: hidden; position: relative; border-radius: 2px;">
+        <div id="loading-bar" style="position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: #00e5ff; box-shadow: 0 0 10px #00e5ff; transition: width 0.1s ease-out;"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="canvas-container"></div>
   <div class="vignette-grading"></div>
   <div id="cop-flash" class="cop-vignette"></div>

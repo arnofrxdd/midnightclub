@@ -280,14 +280,39 @@ export class RaceManager {
     this.completed = false;
     this.unorderedCleared.clear();
     
-    // Spawn AI Racers in grid pattern behind starting line (facing forward along +Z)
+    // Spawn AI Racers in grid pattern behind starting line.
+    // Snap their Y position to the terrain so they don't float or sink.
     const pX = playerPos ? playerPos.x : 0;
     const pZ = playerPos ? playerPos.z : 0;
-    this.aiRacers = [
-      new AICar(1, "Voxel Racer A", 0x39ff14, new THREE.Vector3(pX - 6, 0.5, pZ - 8), 1.05), // Toxic Green, fast!
-      new AICar(2, "Voxel Racer B", 0xff007f, new THREE.Vector3(pX + 6, 0.5, pZ - 8), 1.15),  // Neon Magenta, very fast!
-      new AICar(3, "Voxel Racer C", 0x7f00ff, new THREE.Vector3(pX, 0.5, pZ - 16), 1.25) // Neon Violet, extreme!
+    
+    // Calculate heading toward the first checkpoint so AI faces the right direction at start
+    let startHeading = 0;
+    if (this.checkpoints && this.checkpoints.length > 0) {
+      const cp0 = this.checkpoints[0];
+      startHeading = Math.atan2(cp0.x - pX, cp0.z - pZ);
+    }
+
+    const getY = (x, z) => {
+      if (world && typeof world.getGroundHeight === 'function') {
+        return world.getGroundHeight(x, z);
+      }
+      return 0.5;
+    };
+
+    const spawns = [
+      { x: pX - 6, z: pZ - 8 },
+      { x: pX + 6, z: pZ - 8 },
+      { x: pX,     z: pZ - 16 },
     ];
+
+    this.aiRacers = [
+      new AICar(1, "Voxel Racer A", 0x39ff14, new THREE.Vector3(spawns[0].x, getY(spawns[0].x, spawns[0].z), spawns[0].z), 1.05),
+      new AICar(2, "Voxel Racer B", 0xff007f, new THREE.Vector3(spawns[1].x, getY(spawns[1].x, spawns[1].z), spawns[1].z), 1.15),
+      new AICar(3, "Voxel Racer C", 0x7f00ff, new THREE.Vector3(spawns[2].x, getY(spawns[2].x, spawns[2].z), spawns[2].z), 1.25),
+    ];
+
+    // Point all AI cars toward the first checkpoint at spawn
+    this.aiRacers.forEach(ai => { ai.heading = startHeading; });
 
     // Build the road-intersection navigation graph (used by AI for A* pathfinding)
     // Must be built AFTER checkpoints are snapped to intersections.
@@ -526,7 +551,8 @@ export class RaceManager {
     });
 
     this.worldEvents = [];
-    const modes = ['sprint', 'circuit', 'unordered'];
+    // Only sprint and circuit are valid race modes for world events
+    const modes = ['sprint', 'circuit'];
 
     if (intersections.length > 0) {
       // Shuffle and pick up to 12 events for high event density

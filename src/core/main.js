@@ -783,17 +783,63 @@ class Game {
     this.aiMeshes = [];
   }
 
-  startRace(mode) {
-    // Generate a new random intersection for the race start
-    const gridSize = this.world.tileSize * 4; // 160
-    const rx = (Math.floor(Math.random() * 11) - 5) * gridSize;
-    const rz = (Math.floor(Math.random() * 11) - 5) * gridSize;
+  startRace(mode, eventX, eventZ) {
+    // Pick a DIFFERENT intersection as the race grid — must be at least 200m from the
+    // event the player triggered so the camera always has somewhere to fly to.
+    let rx, rz;
+
+    if (eventX !== undefined && eventZ !== undefined) {
+      const MIN_DIST = 200; // minimum distance from the event intersection
+      
+      // Collect all valid intersections from the world road graph
+      const cols = Array.from(this.world.roadColumns);
+      const rows = Array.from(this.world.roadRows);
+      const candidates = [];
+      cols.forEach(cx => {
+        rows.forEach(cz => {
+          const wx = cx * this.world.tileSize;
+          const wz = cz * this.world.tileSize;
+          const dist = Math.hypot(wx - eventX, wz - eventZ);
+          // Must be far enough from event, and within a reasonable city range (≤800m)
+          if (dist >= MIN_DIST && dist <= 800) {
+            candidates.push({ x: wx, z: wz, dist });
+          }
+        });
+      });
+
+      if (candidates.length > 0) {
+        // Pick a random one from the valid candidates
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        rx = pick.x;
+        rz = pick.z;
+      } else {
+        // Fallback: just offset by ~300m in a random direction
+        const angle = Math.random() * Math.PI * 2;
+        rx = eventX + Math.cos(angle) * 320;
+        rz = eventZ + Math.sin(angle) * 320;
+      }
+    } else {
+      // Called from debug menu — use a grid-snapped random point
+      const gridSize = this.world.tileSize * 4;
+      rx = (Math.floor(Math.random() * 11) - 5) * gridSize;
+      rz = (Math.floor(Math.random() * 11) - 5) * gridSize;
+    }
+
+    // Y will be snapped at teleport time when the world chunk is loaded
     const raceStartPos = new THREE.Vector3(rx, 0, rz);
-    
-    // We will start the race from this new random position
-    const playerHeading = 0; // Fixed heading for now
+
+    // Store so the cinematic manager can retrieve it via this.app._raceStartX/Z
+    this._raceStartX = rx;
+    this._raceStartZ = rz;
+
+    const playerHeading = 0;
     this.race.startRace(mode, this.world, raceStartPos, playerHeading);
     if (this.pursuit) this.pursuit.cancelPursuit();
+
+    // Set nitro to maximum when starting a race
+    if (this.physics) {
+      this.physics.nitroLevel = this.physics.maxNitro;
+    }
     
     // Show stats immediately
     this.hudStatsEl.style.display = 'flex';
@@ -807,21 +853,16 @@ class Game {
       this.cinematicManager.start(mode);
     }
 
-    // Defer heavy mesh creation & traffic reinit to next frames to avoid
-    // a huge dt spike (slow-motion effect) on the first frame after race start.
+    // Defer clock flush to avoid a large dt spike on the first frame after race start.
+    // NOTE: buildAIMeshes() is now called by CinematicManager mid-flight (at 50% pan_route)
+    // so AI cars appear seamlessly at the destination before the camera arrives.
     setTimeout(() => {
-      // Build AI car meshes (heavy: mergeGeometries x3)
-      this.buildAIMeshes();
-
-      // Only initialize traffic if cinematic manager is not running (cinematic manages traffic on complete)
+      // Only init traffic if cinematic is not running (it manages traffic on complete)
       if (this.traffic && (!this.cinematicManager || this.cinematicManager.state === 'none')) {
         this.traffic.clear();
         this.traffic.maxVehicles = 18;
         this.traffic.init(this.physics.position, this.world);
       }
-
-      // Reset the clock so the elapsed time during setup doesn't
-      // become a giant dt on the next animation frame.
       this.clock.getDelta(); // flush accumulated time
     }, 0);
   }
@@ -1014,7 +1055,7 @@ class Game {
         if (this.keys['f']) {
           this.keys['f'] = false; // Consume key press
           if (this.eventPromptEl) this.eventPromptEl.style.display = 'none';
-          this.startRace(closestEvent.mode);
+          this.startRace(closestEvent.mode, closestEvent.x, closestEvent.z);
         }
       }
     }
@@ -2335,17 +2376,29 @@ class Game {
     }
     this.perf.collisions = performance.now() - tCollisionsStart;
 
+    const isCinematicActive = this.cinematicManager && this.cinematicManager.state !== 'none';
+
     const tPlayerVisualsStart = performance.now();
-    // Coordinate translation
-    this.carVisualContainer.position.copy(this.renderPhysicsPosition);
-    this.world.alignMeshToTerrain(
-      this.carVisualContainer,
-      this.renderPhysicsPosition,
-      this.renderPhysicsHeading,
-      (this.physics.isAirborne && this.physics.airTime > 0.2) || this.physics.rolloverTimer > 0,
-      scaledDt
-    );
-    this.carVisualContainer.updateMatrixWorld(true);
+    if (isCinematicActive) {
+      // During cinematic: lock visual car with correct quaternion.
+      // Must use quaternion directly — alignMeshToTerrain uses mesh.quaternion.slerp()
+      // which overwrites rotation.set(). Setting quaternion directly wins.
+      this.carVisualContainer.position.copy(this.physics.position);
+      _scratchQuat.setFromAxisAngle(new THREE.Vector3(0,1,0), this.physics.heading);
+      this.carVisualContainer.quaternion.copy(_scratchQuat);
+      this.carVisualContainer.updateMatrixWorld(true);
+    } else {
+      // Normal gameplay: full terrain-aligned update
+      this.carVisualContainer.position.copy(this.renderPhysicsPosition);
+      this.world.alignMeshToTerrain(
+        this.carVisualContainer,
+        this.renderPhysicsPosition,
+        this.renderPhysicsHeading,
+        (this.physics.isAirborne && this.physics.airTime > 0.2) || this.physics.rolloverTimer > 0,
+        scaledDt
+      );
+      this.carVisualContainer.updateMatrixWorld(true);
+    }
 
 
     
@@ -2462,8 +2515,8 @@ class Game {
     this.perf.traffic = performance.now() - tTrafficStart;
 
     const tRaceStart = performance.now();
-    // UPDATE RACE SYSTEM
-    if (this.race.active) {
+    // UPDATE RACE SYSTEM — skip entirely during cinematic to prevent AI A* from overwriting headings
+    if (this.race.active && !isCinematicActive) {
       this.race.playerVelocity = this.physics.velocity;
       const raceResult = this.race.update(this.physics.position, scaledDt, this.world, this.traffic);
 
@@ -2572,7 +2625,8 @@ class Game {
           const aiSpeed = ai.velocity.length();
 
           // Animate hovering indicator arrow above AI
-          if (ai.indicatorMesh) {
+          // Pause indicator arrow spin during cinematic
+          if (ai.indicatorMesh && !isCinematicActive) {
             ai.indicatorMesh.rotation.y += 2.0 * scaledDt;
             ai.indicatorMesh.position.y = 1.9 + Math.sin(Date.now() * 0.005) * 0.12;
           }
@@ -2584,7 +2638,16 @@ class Game {
           const shouldUpdateThisFrame = !isDistant || (ai._frameCounter % 3 === 0);
 
           if (shouldUpdateThisFrame) {
-            this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
+            if (isCinematicActive) {
+              // During cinematic: use quaternion directly.
+              // rotation.set() is overridden by the slerp in alignMeshToTerrain on next frame.
+              ai.meshGroup.position.copy(ai.spawnPos);
+              const _q = new THREE.Quaternion();
+              _q.setFromAxisAngle(new THREE.Vector3(0,1,0), ai.heading);
+              ai.meshGroup.quaternion.copy(_q);
+            } else {
+              this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
+            }
             ai.meshGroup.updateMatrixWorld(true);
             
 

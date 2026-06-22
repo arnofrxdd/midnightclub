@@ -698,12 +698,6 @@ class Game {
       const container = new THREE.Group();
       const { carGroup, wheels } = this.createVoxelCarMesh(ai.colorHex, 'sports');
       
-      // Nitro realtime glow and flare sprites for AI
-      const aiNitroLight = new THREE.PointLight(0x00f0ff, 0.0, 15, 1.4);
-      aiNitroLight.position.set(0, 0.3, -2.15);
-      carGroup.add(aiNitroLight);
-      ai.nitroLight = aiNitroLight;
-
       const aiNitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
       aiNitroLeftSprite.position.set(-0.6, 0.2, -2.1);
       aiNitroLeftSprite.scale.set(0.001, 0.001, 0.001);
@@ -1011,13 +1005,14 @@ class Game {
       });
     });
 
-    // AI Racers headlights (optimized, distance-gated, zero-alloc)
+    // AI Racers headlights and nitro glows (optimized, distance-gated, zero-alloc)
     if (this.race && this.race.active && this.race.aiRacers) {
       this.race.aiRacers.forEach(ai => {
         if (ai.meshGroup) {
           const dist = ai.position.distanceTo(focusTarget.position);
           if (dist > 130.0) return; // Distance gate
 
+          // AI Headlights
           _scratchV3_1.set(Math.sin(ai.heading), 0, Math.cos(ai.heading)); // aiForward
           _scratchV3_2.copy(ai.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
           
@@ -1025,15 +1020,27 @@ class Game {
           _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
           const dot = _scratchV3_1.dot(_scratchV3_3);
           const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
-          if (dirFactor <= 0.01) return;
+          if (dirFactor > 0.01) {
+            dynamicLights.push({
+              x: _scratchV3_2.x,
+              y: 0.4,
+              z: _scratchV3_2.z,
+              intensity: 8.5 * dirFactor,
+              color: 0xfffcd4
+            });
+          }
 
-          dynamicLights.push({
-            x: _scratchV3_2.x,
-            y: 0.4,
-            z: _scratchV3_2.z,
-            intensity: 8.5 * dirFactor,
-            color: 0xfffcd4
-          });
+          // AI Nitro Glow
+          if (ai.isBoosting) {
+            _scratchV3_2.set(0, 0.3, -2.15).applyMatrix4(ai.meshGroup.matrixWorld);
+            dynamicLights.push({
+              x: _scratchV3_2.x,
+              y: _scratchV3_2.y,
+              z: _scratchV3_2.z,
+              intensity: 6.0 + Math.random() * 2.0,
+              color: 0x00f0ff
+            });
+          }
         }
       });
     }
@@ -2339,7 +2346,7 @@ class Game {
           if (velAlongNormal < 0) {
             const restitution = 0.55;
             const m1 = 1350;
-            const m2 = 1350;
+            const m2 = 900; // AI (physically lighter)
             const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
             const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
             
@@ -2505,16 +2512,14 @@ class Game {
             ai.prevRightWheel = null;
           }
 
-          // Update AI Nitro visual effects (sprite flare + PointLight)
+          // Update AI Nitro visual effects (sprite flare)
           if (ai.isBoosting) {
             const scaleVal = 1.3 + Math.random() * 0.45;
             if (ai.nitroLeftSprite) ai.nitroLeftSprite.scale.set(scaleVal, scaleVal, scaleVal);
             if (ai.nitroRightSprite) ai.nitroRightSprite.scale.set(scaleVal, scaleVal, scaleVal);
-            if (ai.nitroLight) ai.nitroLight.intensity = 6.0 + Math.random() * 2.0;
           } else {
             if (ai.nitroLeftSprite) ai.nitroLeftSprite.scale.set(0.001, 0.001, 0.001);
             if (ai.nitroRightSprite) ai.nitroRightSprite.scale.set(0.001, 0.001, 0.001);
-            if (ai.nitroLight) ai.nitroLight.intensity = 0.0;
           }
         }
       });

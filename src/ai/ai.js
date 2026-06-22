@@ -92,6 +92,10 @@ export class AICar {
     this._stuckAnchorPos  = new THREE.Vector3(startPos.x, startPos.y, startPos.z);
     this._stuckCheckTimer = 2.0;
     this._isTrapped       = false;
+
+    // ── Nitro System ─────────────────────────────────────────────────────────
+    this.nitroLevel = 0.5 + Math.random() * 0.5;
+    this.isNitroBoosting = false;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -257,15 +261,62 @@ export class AICar {
       targetSpeed   = Math.min(targetSpeed, safeTop);
     }
 
-    // Extra close: hard brake
+    // Extra close: hard brake for walls
     const veryClose = this.position.clone().addScaledVector(fwd, inAlley ? 4 : 6);
     if (world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.6 : 2.2).collision) {
       targetSpeed = 0;
     }
 
-    // Recovery boost
+    // Slow down / brake for dynamic obstacles (player, other AI, traffic) in front of us
+    let obstacleInFrontDist = Infinity;
+    const obstacles = [];
+    if (raceManager.playerPos) obstacles.push(raceManager.playerPos);
+    raceManager.aiRacers.forEach(o => {
+      if (o.id !== this.id) obstacles.push(o.position);
+    });
+    if (traffic && traffic.vehicles) {
+      traffic.vehicles.forEach(v => obstacles.push(v.position));
+    }
+
+    for (const ob of obstacles) {
+      const toOb = ob.clone().sub(this.position);
+      const dist = toOb.length();
+      if (dist < 20.0) {
+        const fwdDot = toOb.normalize().dot(fwd);
+        if (fwdDot > 0.82) { // Within ~35 degrees in front
+          if (dist < obstacleInFrontDist) {
+            obstacleInFrontDist = dist;
+          }
+        }
+      }
+    }
+
+    if (obstacleInFrontDist < 12.0) {
+      // Linearly brake to a halt
+      const speedLimit = obstacleInFrontDist < 5.0 ? 0.0 : (obstacleInFrontDist - 5.0) * 3.5;
+      targetSpeed = Math.min(targetSpeed, speedLimit);
+    }
+
+    // Nitro system update & activation
+    if (this.isNitroBoosting) {
+      this.nitroLevel = Math.max(0.0, this.nitroLevel - 0.25 * dt);
+      if (this.nitroLevel <= 0.0 || absErr > 0.35 || this.speed < 5.0) {
+        this.isNitroBoosting = false;
+      }
+    } else {
+      this.nitroLevel = Math.min(1.0, this.nitroLevel + (this.isDrifting ? 0.15 : 0.04) * dt);
+      if (absErr < 0.12 && this.speed > 15.0 && this.nitroLevel > 0.25 && !this._escapeTimer && Math.random() < 0.03) {
+        this.isNitroBoosting = true;
+      }
+    }
+
+    // Recovery boost or Nitro boost
     const boost = this.recoveryBoostTimer > 0 && this.speed < 35;
-    const effAccel = boost ? this.accel * 2.8 : this.accel;
+    const isBoosting = boost || this.isNitroBoosting;
+    const effAccel = isBoosting ? (boost ? this.accel * 2.8 : this.accel * 1.85) : this.accel;
+    if (this.isNitroBoosting) {
+      targetSpeed *= 1.25;
+    }
 
     if (this.speed < targetSpeed) {
       this.speed += effAccel * dt;
@@ -339,7 +390,7 @@ export class AICar {
     this._checkCheckpoints(target, raceManager, world);
 
     // ── 16. Visual flags ─────────────────────────────────────────────────────
-    this.isBoosting = boost;
+    this.isBoosting = boost || this.isNitroBoosting;
     this.isDrifting = absErr > 0.45 && this.speed > 12;
 
     // ── 17. Mesh sync ────────────────────────────────────────────────────────

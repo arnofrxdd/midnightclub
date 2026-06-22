@@ -613,7 +613,7 @@ export class AICar {
 
     this._escapeTimer = inAlley ? 0.85 : 1.35;
     this._stuckTimer  = 0;
-    this.recoveryBoostTimer = 4.0;
+    this.recoveryBoostTimer = 1.5;
 
     this._isTrapped = false;
     this._stuckCheckTimer = 2.0;
@@ -727,7 +727,7 @@ export class AICar {
     this._stuckTimer = 0;
     this._escapeTimer = 0;
     this._longStuck   = 0;
-    this.recoveryBoostTimer = 4.0;
+    this.recoveryBoostTimer = 1.5;
 
     this._isTrapped = false;
     this._stuckCheckTimer = 2.0;

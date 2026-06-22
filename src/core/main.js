@@ -1155,11 +1155,13 @@ class Game {
       if (this.eventSpawnTimer === undefined) this.eventSpawnTimer = 0.0;
       this.eventSpawnTimer += dt;
       
-      if (this.eventSpawnTimer > 0.4) {
+      if (this.eventSpawnTimer > 0.16) {
         this.eventSpawnTimer = 0.0;
         const px = this.physics.position.x;
         const pz = this.physics.position.z;
-        const maxEvents = 30;
+        const maxEvents = 90;
+        const playerGridX = Math.round(px / this.world.tileSize);
+        const playerGridZ = Math.round(pz / this.world.tileSize);
         
         // 1. Prune events that are too far behind (>1200m)
         if (this.race.worldEvents) {
@@ -1171,24 +1173,31 @@ class Game {
           this.race.worldEvents = [];
         }
         
-        // 2. Incrementally spawn 1 new event nearby if below max capacity
+        // 2. Incrementally spawn several new events around the player's current intersection bubble
         if (this.race.worldEvents.length < maxEvents && this.world) {
-          const colArr = Array.from(this.world.roadColumns);
-          const rowArr = Array.from(this.world.roadRows);
-          
-          if (colArr.length > 0 && rowArr.length > 0) {
-            // Pick a random intersection candidate in O(1) time
-            const cx = colArr[Math.floor(Math.random() * colArr.length)];
-            const cz = rowArr[Math.floor(Math.random() * rowArr.length)];
-            const wx = cx * this.world.tileSize;
-            const wz = cz * this.world.tileSize;
-            
+          const modes = ['sprint', 'circuit'];
+          const spawnAttempts = 20;
+
+          for (let i = 0; i < spawnAttempts && this.race.worldEvents.length < maxEvents; i++) {
+            const ring = 6 + Math.floor(Math.random() * 20);
+            const ox = Math.floor(Math.random() * (ring * 2 + 1)) - ring;
+            const oz = Math.floor(Math.random() * (ring * 2 + 1)) - ring;
+            if (ox === 0 && oz === 0) continue;
+
+            const nx = playerGridX + ox;
+            const nz = playerGridZ + oz;
+            const wx = nx * this.world.tileSize;
+            const wz = nz * this.world.tileSize;
             const dist = Math.hypot(wx - px, wz - pz);
-            // Spawn new events in the 150m to 850m radius
-            if (dist >= 150.0 && dist <= 850.0) {
+            const isRoadCell = (
+              (this.world.roadColumns && this.world.roadColumns.has(nx)) ||
+              (this.world.roadRows && this.world.roadRows.has(nz))
+            );
+
+            // Keep events seeded around the player's current intersection bubble, on roads only
+            if (isRoadCell && dist >= 120.0 && dist <= 1800.0) {
               const duplicate = this.race.worldEvents.some(evt => evt.x === wx && evt.z === wz);
               if (!duplicate) {
-                const modes = ['sprint', 'circuit'];
                 const mode = modes[Math.floor(Math.random() * modes.length)];
                 this.race.worldEvents.push({ x: wx, z: wz, mode });
               }

@@ -689,6 +689,39 @@ class Game {
     return getSmokeMaterial.call(this, color, opacity);
   }
 
+  getEventTextMaterial(text) {
+    if (!this._eventTextMaterials) this._eventTextMaterials = {};
+    if (this._eventTextMaterials[text]) return this._eventTextMaterials[text];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.font = 'italic 900 130px "Barlow Condensed", "Outfit", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(255, 30, 30, 0.9)';
+    ctx.shadowBlur = 20;
+    
+    ctx.fillText(text.toUpperCase(), canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const material = new THREE.SpriteMaterial({ 
+      map: texture, 
+      transparent: true,
+      depthTest: true,
+      depthWrite: false 
+    });
+    
+    this._eventTextMaterials[text] = material;
+    return material;
+  }
+
   initParticles() {
     return initParticles.call(this);
   }
@@ -1273,12 +1306,16 @@ class Game {
     const dynamicLights = [];
 
     // Spawn red smoke columns for active free-roam event beacons
+    if (!this._eventSprites) this._eventSprites = [];
+    
     if (!this.race.active && this.race.worldEvents) {
       this.race.worldEvents.forEach(evt => {
         const dx = evt.x - focusTarget.position.x;
         const dz = evt.z - focusTarget.position.z;
         const distSq = dx * dx + dz * dz;
         
+        let spriteObj = this._eventSprites.find(s => s.evt === evt);
+
         // Render within 260 meters
         if (distSq < 260 * 260) {
           if (Math.random() < 0.55) {
@@ -1288,6 +1325,23 @@ class Game {
           const h = (this.world && typeof this.world.getGroundHeight === 'function')
             ? this.world.getGroundHeight(evt.x, evt.z)
             : 0.5;
+
+          if (!spriteObj) {
+            const text = evt.mode ? evt.mode + " event" : "event";
+            const sprite = new THREE.Sprite(this.getEventTextMaterial(text));
+            this.scene.add(sprite);
+            spriteObj = { evt, sprite };
+            this._eventSprites.push(spriteObj);
+          } else if (!spriteObj.sprite.parent) {
+            this.scene.add(spriteObj.sprite);
+          }
+          
+          const dist = Math.sqrt(distSq);
+          const scaleFactor = 0.4 + 0.6 * Math.min(1.0, Math.pow(dist / 200.0, 0.7));
+          spriteObj.sprite.scale.set(64 * scaleFactor, 8 * scaleFactor, 1);
+          spriteObj.sprite.position.set(evt.x, h + 5.0, evt.z);
+          spriteObj.sprite.visible = true;
+
           dynamicLights.push({
             x: evt.x,
             y: h + 3.6,
@@ -1295,7 +1349,21 @@ class Game {
             intensity: 15.0,
             color: 0xff1e1e
           });
+        } else if (spriteObj) {
+          spriteObj.sprite.visible = false;
         }
+      });
+    }
+
+    // Prune sprites whose events no longer exist or race is active
+    if (this._eventSprites.length > 0) {
+      this._eventSprites = this._eventSprites.filter(spriteObj => {
+        const stillExists = this.race.worldEvents && this.race.worldEvents.includes(spriteObj.evt);
+        if (!stillExists || this.race.active) {
+          if (spriteObj.sprite.parent) this.scene.remove(spriteObj.sprite);
+          return false;
+        }
+        return true;
       });
     }
 

@@ -199,8 +199,8 @@ export function updateMinimap() {
           isVisible = !this.race.unorderedCleared.has(index);
           isCurrent = isVisible;
         } else {
-          isVisible = (index >= this.race.currentIndex);
           isCurrent = (index === this.race.currentIndex);
+          isVisible = isCurrent;
         }
 
         if (isVisible) {

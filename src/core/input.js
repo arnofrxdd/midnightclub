@@ -5,6 +5,8 @@ export function initInput() {
       const key = e.key.toLowerCase();
       this.keys[key] = true;
       
+      if (this.inMainMenu) return;
+      
       if (key === 'c') {
         this.cycleCameraMode();
       }

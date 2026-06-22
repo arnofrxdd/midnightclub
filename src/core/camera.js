@@ -11,8 +11,13 @@ export function updateCamera(dt = 0.016) {
         this.camera.fov = this.cameraOverride.fov;
         this.camera.updateProjectionMatrix();
       }
-      this.dirLight.position.set(this.physics.position.x + 30, 60, this.physics.position.z + 30);
-      this.dirLight.target = this.carVisualContainer;
+      this.dirLight.position.set(this.cameraOverride.pos.x + 30, 60, this.cameraOverride.pos.z + 30);
+      if (!this.dirLightTargetOverride) {
+         this.dirLightTargetOverride = new THREE.Object3D();
+         this.scene.add(this.dirLightTargetOverride);
+      }
+      this.dirLightTargetOverride.position.copy(this.cameraOverride.lookAt);
+      this.dirLight.target = this.dirLightTargetOverride;
       return;
     }
 

@@ -86,6 +86,19 @@ class Game {
     });
     this.initThree();
     this.world = new World(this.scene);
+    
+    // Pick a random axis (X or Z) and direction to ensure the camera is always on the same
+    // straight road as the player (who starts at 0,0). This guarantees the transition swoop
+    // travels cleanly down the road instead of cutting diagonally through buildings!
+    const axes = ['x', 'z'];
+    this.menuCameraAxis = axes[Math.floor(Math.random() * axes.length)];
+    this.menuCameraDir = Math.random() > 0.5 ? 1 : -1;
+    this.menuCameraBaseOffset = 180 + Math.random() * 80;
+    
+    // Snap player to the dynamically generated ground height at spawn so they don't fall/clip
+    const startY = this.world.getGroundHeight(this.physics.position.x, this.physics.position.z);
+    this.physics.position.y = startY + 0.5; // suspension clearance
+    
     this.createCarMesh();
     this.createNavigationArrow();
     this.initInput();
@@ -126,6 +139,36 @@ class Game {
     // Precompile shaders to avoid runtime compilation stutter
     this.precompileShaders();
     
+    // Main Menu State Initialization
+    this.inMainMenu = true;
+    this.menuTransitionTime = 0.0;
+    this.menuTransitionDuration = 2.0; // 2 seconds swoop
+    
+    this.mainMenuEl = document.getElementById('main-menu');
+    this.hudLayerEl = document.querySelector('.hud-layer');
+    if (this.hudLayerEl) {
+      this.hudLayerEl.style.display = 'none';
+    }
+    this.racePanelEl = document.querySelector('.race-panel');
+    if (this.racePanelEl) {
+      this.racePanelEl.style.display = 'none';
+    }
+
+    const btnPlay = document.getElementById('btn-play');
+    if (btnPlay) {
+      btnPlay.onclick = () => {
+        if (this.inMainMenu && this.menuTransitionTime === 0.0) {
+          this.menuTransitionTime = 0.001; // trigger transition
+          if (this.mainMenuEl) {
+            this.mainMenuEl.classList.add('fade-out');
+            setTimeout(() => {
+              this.mainMenuEl.remove();
+            }, 600);
+          }
+        }
+      };
+    }
+
     // Hide loader
     setTimeout(() => {
       if (this.loaderEl) {
@@ -1039,8 +1082,76 @@ class Game {
       this.cinematicManager.update(scaledDt);
     }
 
+    // Main Menu Camera Orbit / Swoop Transition
+    if (this.inMainMenu) {
+      if (this.menuTransitionTime > 0.0) {
+        this.menuTransitionTime += dt;
+        const t = Math.min(1.0, this.menuTransitionTime / this.menuTransitionDuration);
+        const easeT = t * t * (3.0 - 2.0 * t); // smoothstep
+        
+        if (!this.menuTransitionStartPos) {
+          this.menuTransitionStartPos = this.camera.position.clone();
+          const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+          this.menuTransitionStartLookAt = this.menuTransitionStartPos.clone().addScaledVector(dir, 20.0);
+        }
+        
+        const gameplayCam = this.getTargetGameplayCamera();
+        
+        const currentPos = this.menuTransitionStartPos.clone().lerp(gameplayCam.pos, easeT);
+        const currentLookAt = this.menuTransitionStartLookAt.clone().lerp(gameplayCam.lookAt, easeT);
+        const currentFov = 50 + (gameplayCam.fov - 50) * easeT;
+        
+        this.cameraOverride = {
+          pos: currentPos,
+          lookAt: currentLookAt,
+          fov: currentFov
+        };
+        
+        if (t >= 1.0) {
+          this.inMainMenu = false;
+          this.cameraOverride = null;
+          this.menuTransitionStartPos = null;
+          this.menuTransitionStartLookAt = null;
+          if (this.hudLayerEl) {
+            this.hudLayerEl.style.display = 'flex';
+          }
+          if (this.debugMenuEnabled && this.racePanelEl) {
+            this.racePanelEl.style.display = 'flex';
+          }
+          this.clock.getDelta(); // flush delta
+        }
+      } else {
+        // High angled-down view looking down a street at a 45-degree angle (away from player car)
+        const time = Date.now() * 0.0001;
+        
+        // Slow linear pan forward along the street
+        const panDist = (this.menuCameraBaseOffset - (time % 40)) * this.menuCameraDir;
+        const camY = 80;
+        const lookY = 0.5;
+        let camX = 0, camZ = 0, lookX = 0, lookZ = 0;
+        
+        if (this.menuCameraAxis === 'z') {
+          camX = 0;
+          camZ = panDist;
+          lookX = 0;
+          lookZ = camZ - 80 * this.menuCameraDir;
+        } else {
+          camZ = 0;
+          camX = panDist;
+          lookX = camX - 80 * this.menuCameraDir;
+          lookZ = 0;
+        }
+        
+        this.cameraOverride = {
+          pos: new THREE.Vector3(camX, camY, camZ),
+          lookAt: new THREE.Vector3(lookX, lookY, lookZ),
+          fov: 48
+        };
+      }
+    }
+
     // Real-time incremental event spawner (stutter-free background spawning and pruning)
-    if (!this.race.active && this.physics.position) {
+    if (!this.inMainMenu && !this.race.active && this.physics.position) {
       if (this.eventSpawnTimer === undefined) this.eventSpawnTimer = 0.0;
       this.eventSpawnTimer += dt;
       
@@ -1091,7 +1202,7 @@ class Game {
     let nearEvent = false;
     let closestEvent = null;
     let closestDist = Infinity;
-    if (!this.race.active && this.race.worldEvents && this.race.worldEvents.length > 0) {
+    if (!this.inMainMenu && !this.race.active && this.race.worldEvents && this.race.worldEvents.length > 0) {
       this.race.worldEvents.forEach(evt => {
         const dx = this.physics.position.x - evt.x;
         const dz = this.physics.position.z - evt.z;
@@ -1127,12 +1238,22 @@ class Game {
 
     let focusTarget = this.physics;
     
-    // If cinematic is active, the rendering anchor follows the camera so the world loads
-    // smoothly underneath it as it flies to the new random intersection.
-    if (this.cinematicManager && this.cinematicManager.state !== 'none') {
+    // If cinematic is active or in main menu, the rendering anchor follows the camera so the world loads
+    // smoothly underneath it.
+    if (this.inMainMenu || (this.cinematicManager && this.cinematicManager.state !== 'none')) {
+      let overrideHeading = this.camHeading || 0;
+      let overridePos = this.camera.position;
+      
+      if (this.cameraOverride) {
+        overridePos = this.cameraOverride.pos;
+        const dx = this.cameraOverride.lookAt.x - this.cameraOverride.pos.x;
+        const dz = this.cameraOverride.lookAt.z - this.cameraOverride.pos.z;
+        overrideHeading = Math.atan2(dx, dz);
+      }
+
       focusTarget = {
-        position: this.camera.position,
-        heading: this.camHeading || 0
+        position: overridePos,
+        heading: overrideHeading
       };
     } else if (this.debugFocusAI && this.race && this.race.aiRacers) {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
@@ -1281,7 +1402,7 @@ class Game {
     }
 
     // Update police pursuit manager
-    if (this.pursuit && (!this.cinematicManager || this.cinematicManager.state === 'none')) {
+    if (!this.inMainMenu && this.pursuit && (!this.cinematicManager || this.cinematicManager.state === 'none')) {
       const playerSpeed = this.physics.velocity.length();
       const isPlayerTryingToMove = !!(
         this.keys['w'] || this.keys['arrowup'] ||
@@ -1658,7 +1779,7 @@ class Game {
     while (this.physicsAccumulator >= physicsStep && physicsSteps < maxPhysicsSubsteps) {
       this.prevPhysicsPosition.copy(this.physics.position);
       this.prevPhysicsHeading = this.physics.heading || 0;
-      if (isCinematic) {
+      if (this.inMainMenu || isCinematic) {
         this.physics.speed = 0;
         this.physics.velocity.set(0, 0, 0);
         this.physics.angularVelocity = 0;

@@ -68,7 +68,7 @@ export function showNotification(id, text, duration = 2000, increment = false) {
        notif.timeout = setTimeout(() => this.removeNotification(id), duration);
     }
     
-    while (this.notifStackEl.children.length > 5) {
+    while (this.activeNotifs.size > 5) {
       const firstId = this.activeNotifs.keys().next().value;
       this.removeNotification(firstId);
     }

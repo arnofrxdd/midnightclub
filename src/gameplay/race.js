@@ -67,7 +67,7 @@ export class RaceManager {
     };
   }
 
-  generateRandomSprint(playerPos, playerHeading) {
+  generateRandomSprint(playerPos, playerHeading, targetLength = null) {
     // Compute forward direction from the player's actual heading
     const fwdX = Math.sin(playerHeading);
     const fwdZ = Math.cos(playerHeading);
@@ -92,7 +92,7 @@ export class RaceManager {
     let prevStep = { x: stepX, z: stepZ };
     const startDistBoost = 0.18;
 
-    const length = 15 + Math.floor(Math.random() * 6); // 15–21 checkpoints
+    const length = targetLength || (15 + Math.floor(Math.random() * 6)); // 15–21 checkpoints
     const pickJumpCount = () => {
       const r = Math.random();
       if (r < 0.5) return 2;
@@ -216,12 +216,13 @@ export class RaceManager {
     return select();
   }
 
-  generateRandomUnordered() {
+  generateRandomUnordered(targetCount = null) {
     const path = [];
     const visited = new Set();
     visited.add("0,0");
+    const count = targetCount || 5;
     
-    while (path.length < 5) {
+    while (path.length < count) {
       const rx = (Math.floor(Math.random() * 5) - 2) * 160;
       const rz = (Math.floor(Math.random() * 5) - 2) * 160;
       // Prefer spawning in front where possible or scattered around center
@@ -246,18 +247,22 @@ export class RaceManager {
     return path;
   }
 
-  startRace(mode, world, playerPos, playerHeading) {
+  startRace(mode, world, playerPos, playerHeading, eventData) {
     this.active = true;
     this.mode = mode;
+    
+    const expectedCheckpoints = (eventData && eventData.checkpoints) ? eventData.checkpoints : null;
+    const expectedRacers = (eventData && eventData.racers) ? eventData.racers : 3;
+    this.lapTotal = (eventData && eventData.laps) ? eventData.laps : (mode === 'circuit' ? 3 : 1);
     
     // Dynamically generate random paths for all races!
     if (mode === 'sprint') {
       // Pass real player position + heading so all checkpoints spawn in FRONT of the player
       const pPos = playerPos || new THREE.Vector3(0, 0, 0);
       const pHead = playerHeading !== undefined ? playerHeading : 0;
-      this.checkpoints = this.generateRandomSprint(pPos, pHead);
+      this.checkpoints = this.generateRandomSprint(pPos, pHead, expectedCheckpoints);
     } else if (mode === 'circuit') {
-      this.checkpoints = this.generateRandomCircuit();
+      this.checkpoints = this.generateRandomCircuit(expectedCheckpoints);
     } else if (mode === 'unordered') {
       this.checkpoints = this.generateRandomUnordered();
     } else if (mode === 'autocross') {
@@ -299,17 +304,20 @@ export class RaceManager {
       return 0.5;
     };
 
-    const spawns = [
-      { x: pX - 6, z: pZ - 8 },
-      { x: pX + 6, z: pZ - 8 },
-      { x: pX,     z: pZ - 16 },
-    ];
+    const spawns = [];
+    for(let i=0; i<expectedRacers; i++) {
+        const row = Math.floor(i / 2);
+        const col = (i % 2 === 0) ? -1 : 1;
+        const offset = (i === 2 && expectedRacers === 3) ? 0 : col * 6; // Center the 3rd if there's only 3
+        spawns.push({ x: pX + offset, z: pZ - 8 - row * 8 });
+    }
 
-    this.aiRacers = [
-      new AICar(1, "Voxel Racer A", 0x39ff14, new THREE.Vector3(spawns[0].x, getY(spawns[0].x, spawns[0].z), spawns[0].z), 1.05),
-      new AICar(2, "Voxel Racer B", 0xff007f, new THREE.Vector3(spawns[1].x, getY(spawns[1].x, spawns[1].z), spawns[1].z), 1.15),
-      new AICar(3, "Voxel Racer C", 0x7f00ff, new THREE.Vector3(spawns[2].x, getY(spawns[2].x, spawns[2].z), spawns[2].z), 1.25),
-    ];
+    const colors = [0x39ff14, 0xff007f, 0x7f00ff, 0xffa500, 0x00ffff, 0xffd700, 0xff0000, 0xffffff];
+    this.aiRacers = [];
+    for(let i=0; i<expectedRacers; i++) {
+        const skill = 1.0 + Math.random() * 0.25;
+        this.aiRacers.push(new AICar(i+1, `Racer ${i+1}`, colors[i%colors.length], new THREE.Vector3(spawns[i].x, getY(spawns[i].x, spawns[i].z), spawns[i].z), skill));
+    }
 
     // Point all AI cars toward the first checkpoint at spawn
     this.aiRacers.forEach(ai => { ai.heading = startHeading; });
@@ -563,7 +571,10 @@ export class RaceManager {
         this.worldEvents.push({
           x: shuffled[i].x,
           z: shuffled[i].z,
-          mode: mode
+          mode: mode,
+          laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
+          checkpoints: Math.floor(Math.random() * 15) + 10,
+          racers: Math.floor(Math.random() * 5) + 3
         });
       }
     } else {
@@ -573,11 +584,14 @@ export class RaceManager {
       if (colArr.length > 0 && rowArr.length > 0) {
         for (let i = 0; i < 5; i++) {
           const cx = colArr[Math.floor(Math.random() * colArr.length)];
-          const cz = rowArr[Math.floor(Math.random() * rowArr.length)];
+          const mode = modes[i % modes.length];
           this.worldEvents.push({
             x: cx * world.tileSize,
             z: cz * world.tileSize,
-            mode: modes[i % modes.length]
+            mode: mode,
+            laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
+            checkpoints: Math.floor(Math.random() * 15) + 10,
+            racers: Math.floor(Math.random() * 5) + 3
           });
         }
       }

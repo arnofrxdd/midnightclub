@@ -127,14 +127,13 @@ class Game {
     this.eventPromptEl = document.createElement('div');
     this.eventPromptEl.className = 'event-prompt-container';
     this.eventPromptEl.innerHTML = `
-      <div class="event-prompt-key-wrapper">
-        <span class="event-prompt-key">F</span>
-        <span class="event-prompt-action">Start Race</span>
-      </div>
-      <div id="event-prompt-mode" class="event-prompt-mode">SPRINT CHALLENGE</div>
+      <div id="event-prompt-stats" class="event-prompt-stats"></div>
+      <div id="event-prompt-mode" class="event-prompt-title">CIRCUIT EVENT</div>
+      <div class="event-prompt-action">PRESS [F] TO START</div>
     `;
     document.body.appendChild(this.eventPromptEl);
     this.eventPromptModeEl = document.getElementById('event-prompt-mode');
+    this.eventPromptStatsEl = document.getElementById('event-prompt-stats');
 
     // Precompile shaders to avoid runtime compilation stutter
     this.precompileShaders();
@@ -872,7 +871,7 @@ class Game {
     this.aiMeshes = [];
   }
 
-  startRace(mode, eventX, eventZ) {
+  startRace(mode, eventX, eventZ, eventData) {
     // Pick a DIFFERENT intersection as the race grid — must be at least 200m from the
     // event the player triggered so the camera always has somewhere to fly to.
     let rx, rz;
@@ -922,7 +921,7 @@ class Game {
     this._raceStartZ = rz;
 
     const playerHeading = 0;
-    this.race.startRace(mode, this.world, raceStartPos, playerHeading);
+    this.race.startRace(mode, this.world, raceStartPos, playerHeading, eventData);
     if (this.pursuit) this.pursuit.cancelPursuit();
 
     // Set nitro to maximum when starting a race
@@ -1231,8 +1230,15 @@ class Game {
             if (isRoadCell && dist >= 120.0 && dist <= 1800.0) {
               const duplicate = this.race.worldEvents.some(evt => evt.x === wx && evt.z === wz);
               if (!duplicate) {
-                const mode = modes[Math.floor(Math.random() * modes.length)];
-                this.race.worldEvents.push({ x: wx, z: wz, mode });
+                const mode = ['sprint', 'circuit'][Math.floor(Math.random() * 2)];
+                this.race.worldEvents.push({ 
+                  x: wx, 
+                  z: wz, 
+                  mode: mode,
+                  laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
+                  checkpoints: Math.floor(Math.random() * 15) + 10,
+                  racers: Math.floor(Math.random() * 5) + 3
+                });
               }
             }
           }
@@ -1259,9 +1265,43 @@ class Game {
       
       if (nearEvent && closestEvent) {
         if (this.eventPromptEl) {
-          this.eventPromptEl.style.display = 'flex';
+          if (!this.eventPromptActive) {
+            this.eventPromptActive = true;
+            // First frame: set to the projected 3D position
+            const h = (this.world && typeof this.world.getGroundHeight === 'function')
+              ? this.world.getGroundHeight(closestEvent.x, closestEvent.z)
+              : 0.5;
+            const targetPos = new THREE.Vector3(closestEvent.x, h + 5.0, closestEvent.z);
+            targetPos.project(this.camera);
+
+            let startX = window.innerWidth / 2;
+            let startY = window.innerHeight / 2;
+            if (targetPos.z < 1) {
+              startX = (targetPos.x * 0.5 + 0.5) * window.innerWidth;
+              startY = (-(targetPos.y * 0.5) + 0.5) * window.innerHeight;
+            }
+            
+            this.eventPromptEl.style.transition = 'none';
+            this.eventPromptEl.style.left = `${startX}px`;
+            this.eventPromptEl.style.top = `${startY}px`;
+            this.eventPromptEl.classList.remove('docked', 'fade-out');
+            this.eventPromptEl.style.display = 'flex';
+            
+            // Next frame: transition to HUD position
+            setTimeout(() => {
+              this.eventPromptEl.style.transition = 'left 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.5s ease-out';
+              this.eventPromptEl.style.left = '50%';
+              this.eventPromptEl.style.top = '72%';
+              this.eventPromptEl.classList.add('docked');
+            }, 10);
+          }
+          
           if (this.eventPromptModeEl) {
-            this.eventPromptModeEl.textContent = `${closestEvent.mode.toUpperCase()} CHALLENGE`;
+            this.eventPromptModeEl.textContent = `${closestEvent.mode.toUpperCase()} EVENT`;
+          }
+          if (this.eventPromptStatsEl) {
+            const lapsText = closestEvent.laps > 1 ? `LAPS: ${closestEvent.laps} • ` : '';
+            this.eventPromptStatsEl.textContent = `${lapsText}CHECKPOINTS: ${closestEvent.checkpoints} • OPPONENTS: ${closestEvent.racers}`;
           }
         }
         
@@ -1269,13 +1309,20 @@ class Game {
         if (this.keys['f']) {
           this.keys['f'] = false; // Consume key press
           if (this.eventPromptEl) this.eventPromptEl.style.display = 'none';
-          this.startRace(closestEvent.mode, closestEvent.x, closestEvent.z);
+          this.eventPromptActive = false;
+          this.startRace(closestEvent.mode, closestEvent.x, closestEvent.z, closestEvent);
         }
       }
     }
     
-    if (!nearEvent && this.eventPromptEl && this.eventPromptEl.style.display !== 'none') {
-      this.eventPromptEl.style.display = 'none';
+    if (!nearEvent && this.eventPromptEl && this.eventPromptEl.style.display !== 'none' && !this.eventPromptEl.classList.contains('fade-out')) {
+      this.eventPromptEl.classList.add('fade-out');
+      this.eventPromptActive = false;
+      setTimeout(() => {
+        if (!this.eventPromptActive && this.eventPromptEl) {
+          this.eventPromptEl.style.display = 'none';
+        }
+      }, 500); // Wait for fade-out CSS animation (0.5s) to finish
     }
 
     let focusTarget = this.physics;
@@ -1328,7 +1375,8 @@ class Game {
 
           if (!spriteObj) {
             const text = evt.mode ? evt.mode + " event" : "event";
-            const sprite = new THREE.Sprite(this.getEventTextMaterial(text));
+            const material = this.getEventTextMaterial(text).clone(); // Clone material so opacity changes don't affect all sprites
+            const sprite = new THREE.Sprite(material);
             this.scene.add(sprite);
             spriteObj = { evt, sprite };
             this._eventSprites.push(spriteObj);
@@ -1340,7 +1388,18 @@ class Game {
           const scaleFactor = 0.4 + 0.6 * Math.min(1.0, Math.pow(dist / 200.0, 0.7));
           spriteObj.sprite.scale.set(64 * scaleFactor, 8 * scaleFactor, 1);
           spriteObj.sprite.position.set(evt.x, h + 5.0, evt.z);
-          spriteObj.sprite.visible = true;
+          
+          // Smooth fade out logic if player drives past the event
+          const toEvent = new THREE.Vector3(evt.x - this.camera.position.x, (h + 5.0) - this.camera.position.y, evt.z - this.camera.position.z).normalize();
+          const camForward = new THREE.Vector3();
+          this.camera.getWorldDirection(camForward);
+          const dot = toEvent.dot(camForward);
+          
+          // Fade out as dot goes from 0.1 to -0.2 (leaving screen/going behind)
+          const angleFade = Math.min(1.0, Math.max(0.0, (dot + 0.2) / 0.3));
+          
+          spriteObj.sprite.material.opacity = angleFade;
+          spriteObj.sprite.visible = !(nearEvent && closestEvent === evt) && angleFade > 0;
 
           dynamicLights.push({
             x: evt.x,

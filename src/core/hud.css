@@ -995,6 +995,201 @@ body, html {
 
 .mobile-blocker-content p {
   font-size: 1.5em;
+font-family: 'Barlow Condensed', 'Outfit', sans-serif;
+  font-style: italic;
+  font-weight: 900;
+  font-size: 80px;
+  color: #ffffff;
+  text-shadow: 0px 0px 15px rgba(255, 30, 30, 0.9);
+  text-align: center;
+  line-height: 1;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.event-prompt-stats {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #a0a5b5;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: -5px; /* Pull it closer to the title */
+  text-shadow: 0 2px 5px rgba(0,0,0,0.8);
+  opacity: 0;
+  transform: translateY(15px);
+  transition: opacity 0.4s ease-out 0.3s, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.3s;
+}
+
+.event-prompt-container.docked .event-prompt-stats {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.event-prompt-action {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 24px;
+  color: #ffc600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 4px 10px rgba(0,0,0,0.8);
+  opacity: 0;
+  transition: opacity 0.3s ease-in 0.3s;
+}
+
+.event-prompt-container.docked .event-prompt-action {
+  opacity: 1;
+}
+
+.event-prompt-container.docked {
+  transform: translate(-50%, -50%) scale(0.85);
+}
+
+@keyframes keyFlash {
+  0% { background: #ff1e1e; box-shadow: 0 0 10px rgba(255, 30, 30, 0.6); }
+  100% { background: #ff4545; box-shadow: 0 0 18px rgba(255, 30, 30, 0.9); }
+}
+
+/* Main Menu Overlay styles */
+.main-menu-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 95;
+  background: radial-gradient(circle, rgba(16, 20, 35, 0.2) 0%, rgba(5, 6, 10, 0.9) 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.6s;
+  pointer-events: auto;
+}
+
+.main-menu-container.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.menu-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  animation: menuContentFadeIn 1s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.menu-logo {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 72px;
+  letter-spacing: 4px;
+  color: #ffffff;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.6), 0 0 30px rgba(255, 198, 0, 0.8), 0 4px 8px rgba(0, 0, 0, 0.9);
+  margin: 0;
+  text-transform: uppercase;
+  transform: skewX(-10deg);
+}
+
+.menu-sublogo {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 24px;
+  letter-spacing: 12px;
+  color: #ffc600;
+  text-shadow: 0 0 10px rgba(255, 198, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.9);
+  margin: 0;
+  text-transform: uppercase;
+  transform: skewX(-10deg);
+  margin-top: -5px;
+}
+
+.menu-hint {
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #8c909c;
+  text-transform: uppercase;
+  margin-top: 15px;
+  margin-bottom: 25px;
+  opacity: 0.8;
+  animation: hintBlink 1.5s infinite alternate;
+}
+
+.menu-play-btn {
+  background: rgba(255, 198, 0, 0.1);
+  border: 2px solid #ffc600;
+  color: #ffc600;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 22px;
+  letter-spacing: 2px;
+  padding: 14px 44px;
+  cursor: pointer;
+  border-radius: 4px;
+  transform: skewX(-10deg);
+  box-shadow: 0 0 15px rgba(255, 198, 0, 0.2), inset 0 0 10px rgba(255, 198, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  text-transform: uppercase;
+}
+
+.menu-play-btn:hover {
+  background: #ffc600;
+  color: #0b0c10;
+  box-shadow: 0 0 30px rgba(255, 198, 0, 0.6), 0 5px 15px rgba(0, 0, 0, 0.4);
+  transform: skewX(-10deg) scale(1.05);
+}
+
+.menu-play-btn:active {
+  transform: skewX(-10deg) scale(0.98);
+}
+
+@keyframes menuContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hintBlink {
+  0% { opacity: 0.3; }
+  100% { opacity: 0.9; }
+}
+
+#mobile-blocker {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #000000;
+  color: #fff;
+  z-index: 999999;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  padding: 20px;
+}
+
+.mobile-blocker-content h2 {
+  color: #ff3b30;
+  font-size: 4em;
+  margin-bottom: 10px;
+}
+
+.mobile-blocker-content p {
+  font-size: 1.5em;
   color: #ccc;
 }
 

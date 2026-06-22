@@ -102,8 +102,17 @@ export class AICar {
   update(dt, world, raceManager, traffic, navGraph) {
     this.debugLookahead = null;
     if (this.completed || !raceManager.active) {
-      this.speed = 0;
-      this.velocity.set(0, 0, 0);
+      // Smoothly coast and brake to a stop instead of freezing instantly
+      this.speed = Math.max(0, this.speed - this.braking * 0.4 * dt);
+      
+      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      this.velocity.copy(fwd).multiplyScalar(this.speed);
+      
+      this.position.addScaledVector(this.velocity, dt);
+      
+      const targetY = (world && typeof world.getGroundHeight === 'function') 
+          ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
       return;
     }
 

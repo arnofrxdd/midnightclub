@@ -89,10 +89,9 @@ export class RaceManager {
     const visited = new Set();
     visited.add(`${startX},${startZ}`);
     visited.add(`${firstX},${firstZ}`);
-    let prevStep = { x: stepX, z: stepZ };
     const startDistBoost = 0.18;
 
-    const length = targetLength || (15 + Math.floor(Math.random() * 6)); // 15–21 checkpoints
+    const length = targetLength || (5 + Math.floor(Math.random() * 8)); // 5–12 checkpoints
     const pickJumpCount = () => {
       const r = Math.random();
       if (r < 0.5) return 2;
@@ -167,53 +166,69 @@ export class RaceManager {
     return path;
   }
 
-  generateRandomCircuit() {
-    const shapes = [
-      // Shape 1: Simple rectangle (force dz positive)
-      () => {
-        const dx = (Math.random() > 0.5 ? 160 : -160) * (1 + Math.floor(Math.random() * 2));
-        const dz = 160 * (1 + Math.floor(Math.random() * 2)); // Always in front
-        return [
-          { x: 0, z: dz },
-          { x: dx, z: dz },
-          { x: dx, z: 0 },
-          { x: 0, z: 0 }
-        ];
-      },
-      // Shape 2: L-shape (force dirZ positive)
-      () => {
-        const dirX = Math.random() > 0.5 ? 1 : -1;
-        const x1 = dirX * 160;
-        const z1 = 160;
-        const x2 = dirX * 320;
-        const z2 = 320;
-        return [
-          { x: 0, z: z1 },
-          { x: x1, z: z1 },
-          { x: x1, z: z2 },
-          { x: x2, z: z2 },
-          { x: x2, z: 0 },
-          { x: 0, z: 0 }
-        ];
-      },
-      // Shape 3: Step-shape (force dz1 and dz2 positive)
-      () => {
-        const dx1 = (Math.random() > 0.5 ? 160 : -160);
-        const dz1 = 160;
-        const dx2 = dx1 + (Math.random() > 0.5 ? 160 : -160);
-        const dz2 = dz1 + 160;
-        return [
-          { x: 0, z: dz1 },
-          { x: dx1, z: dz1 },
-          { x: dx1, z: dz2 },
-          { x: dx2, z: dz2 },
-          { x: dx2, z: 0 },
-          { x: 0, z: 0 }
-        ];
+  generateRandomCircuit(targetCount = null) {
+    const count = targetCount || (Math.floor(Math.random() * 8) + 6); // 6-13 checkpoints
+    const path = [];
+    let current = { x: 0, z: 0 };
+    path.push(current);
+    
+    let prevStep = { x: 0, z: 160 }; // Assume starting forward
+    const visited = new Set(["0,0"]);
+    const half = Math.floor(count / 2);
+    
+    for (let i = 1; i < count; i++) {
+      const candidates = [];
+      const directionOptions = [
+        { x: 160, z: 0 }, { x: -160, z: 0 },
+        { x: 0, z: 160 }, { x: 0, z: -160 }
+      ];
+      
+      for (const dir of directionOptions) {
+        const n = { x: current.x + dir.x, z: current.z + dir.z };
+        if (visited.has(`${n.x},${n.z}`)) continue;
+        
+        const reversing = (dir.x === -prevStep.x && dir.z === -prevStep.z);
+        if (reversing) continue;
+        
+        // Outward phase vs Inward phase
+        const distFromOrigin = Math.hypot(n.x, n.z);
+        let score = 0;
+        
+        if (i < half) {
+            // Outward phase: reward going further from origin
+            score += distFromOrigin;
+        } else {
+            // Inward phase: reward going closer to origin
+            score -= distFromOrigin;
+        }
+        
+        // Prevent U-turns (dot product < 0)
+        const dot = (dir.x * prevStep.x) + (dir.z * prevStep.z);
+        if (dot < 0) score -= 1000; // Penalize heavy U-turns
+        if (dot > 0) score += 500;  // Reward going straight
+        
+        candidates.push({ n, step: dir, score });
       }
-    ];
-    const select = shapes[Math.floor(Math.random() * shapes.length)];
-    return select();
+      
+      if (candidates.length === 0) {
+         // Fallback if stuck
+         const fallback = { x: current.x + prevStep.x, z: current.z + prevStep.z };
+         path.push(fallback);
+         current = fallback;
+         continue;
+      }
+      
+      candidates.sort((a, b) => b.score - a.score);
+      // Pick randomly from top 2
+      const pick = candidates[Math.floor(Math.random() * Math.min(2, candidates.length))];
+      
+      path.push(pick.n);
+      visited.add(`${pick.n.x},${pick.n.z}`);
+      prevStep = pick.step;
+      current = pick.n;
+    }
+    
+    return path;
   }
 
   generateRandomUnordered(targetCount = null) {
@@ -382,6 +397,12 @@ export class RaceManager {
     else {
       // Ordered, Circuit, or Autocross modes
       const cp = this.checkpoints[this.currentIndex];
+      if (!cp) {
+        console.warn(`Race error: Checkpoint at index ${this.currentIndex} is undefined. Ending race.`);
+        this.completed = true;
+        this.active = false;
+        return null;
+      }
       const dx = cp.x - playerX;
       const dz = cp.z - playerZ;
       const distSq = dx * dx + dz * dz;
@@ -402,7 +423,7 @@ export class RaceManager {
         if (this.mode === 'circuit') {
           // Lap logic
           if (this.currentIndex === this.checkpoints.length - 1) {
-            if (this.lapCurrent < this.lapsTotal) {
+            if (this.lapCurrent < this.lapTotal) {
               this.lapCurrent++;
               this.currentIndex = 0; // Reset loop
               console.log(`Lap ${this.lapCurrent} started.`);
@@ -449,7 +470,7 @@ export class RaceManager {
   }
 
   calculateRankings(playerPos) {
-    if (!this.active) return [];
+    if (!this.active && !this.completed) return [];
 
     const drivers = [];
     
@@ -573,7 +594,7 @@ export class RaceManager {
           z: shuffled[i].z,
           mode: mode,
           laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
-          checkpoints: Math.floor(Math.random() * 15) + 10,
+          checkpoints: Math.floor(Math.random() * 8) + 5, // 5 to 12 checkpoints
           racers: Math.floor(Math.random() * 5) + 3
         });
       }
@@ -590,7 +611,7 @@ export class RaceManager {
             z: cz * world.tileSize,
             mode: mode,
             laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
-            checkpoints: Math.floor(Math.random() * 15) + 10,
+            checkpoints: Math.floor(Math.random() * 8) + 5, // 5 to 12 checkpoints
             racers: Math.floor(Math.random() * 5) + 3
           });
         }

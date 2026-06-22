@@ -173,10 +173,11 @@ export function updateMinimap() {
         const rx = evt.x - px;
         const rz = evt.z - pz;
         
-        // Pulsing bright red blip for the race start event
+        // Pulsing bright blip for the race start event
         const pulse = 1.0 + Math.sin(Date.now() / 200) * 0.15;
+        const color = this.getModeColor ? this.getModeColor(evt.mode).css : '#ff1e1e';
         ctx.save();
-        ctx.fillStyle = '#ff1e1e';
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(rx * scale, rz * scale, 5.0 * pulse, 0, Math.PI * 2);
         ctx.fill();
@@ -210,9 +211,10 @@ export function updateMinimap() {
           
           ctx.save();
           if (isCurrent) {
-            // Pulsing Neon Green for active target
+            // Pulsing color for active target based on race mode
             const pulse = 1.0 + Math.sin(Date.now() / 150) * 0.15;
-            ctx.fillStyle = '#39ff14';
+            const targetColor = this.getModeColor ? this.getModeColor(this.race.mode).css : '#39ff14';
+            ctx.fillStyle = targetColor;
             ctx.beginPath();
             ctx.arc(rx * scale, rz * scale, 5.5 * pulse, 0, Math.PI * 2);
             ctx.fill();

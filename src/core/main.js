@@ -688,9 +688,20 @@ class Game {
     return getSmokeMaterial.call(this, color, opacity);
   }
 
-  getEventTextMaterial(text) {
+  getModeColor(mode) {
+    switch(mode) {
+      case 'sprint': return { hex: 0xc026ff, css: '#c026ff', glow: 'rgba(192, 38, 255, 0.9)' }; // Purple
+      case 'circuit': return { hex: 0xff1e1e, css: '#ff1e1e', glow: 'rgba(255, 30, 30, 0.9)' }; // Red
+      case 'autocross': return { hex: 0x00e5ff, css: '#00e5ff', glow: 'rgba(0, 229, 255, 0.9)' }; // Cyan
+      case 'unordered': return { hex: 0xffc600, css: '#ffc600', glow: 'rgba(255, 198, 0, 0.9)' }; // Orange
+      default: return { hex: 0xff1e1e, css: '#ff1e1e', glow: 'rgba(255, 30, 30, 0.9)' };
+    }
+  }
+
+  getEventTextMaterial(text, mode) {
+    const key = text + '_' + mode;
     if (!this._eventTextMaterials) this._eventTextMaterials = {};
-    if (this._eventTextMaterials[text]) return this._eventTextMaterials[text];
+    if (this._eventTextMaterials[key]) return this._eventTextMaterials[key];
 
     const canvas = document.createElement('canvas');
     canvas.width = 2048;
@@ -703,7 +714,8 @@ class Game {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(255, 30, 30, 0.9)';
+    const colors = this.getModeColor(mode);
+    ctx.shadowColor = colors.glow;
     ctx.shadowBlur = 20;
     
     ctx.fillText(text.toUpperCase(), canvas.width / 2, canvas.height / 2);
@@ -717,7 +729,7 @@ class Game {
       depthWrite: false 
     });
     
-    this._eventTextMaterials[text] = material;
+    this._eventTextMaterials[key] = material;
     return material;
   }
 
@@ -1010,7 +1022,7 @@ class Game {
 
       if (shouldRender) {
         const isFinish = (index === this.race.checkpoints.length - 1);
-        const color = isFinish ? 0xe84545 : 0xffaa3a; // Red for finish, amber standard
+        const color = isFinish ? 0xe84545 : this.getModeColor(this.race.mode).hex; // Red for finish, mode color for standard
 
         const cpGroup = new THREE.Group();
         const h = (this.world && typeof this.world.getGroundHeight === 'function')
@@ -1301,6 +1313,9 @@ class Game {
           
           if (this.eventPromptModeEl) {
             this.eventPromptModeEl.textContent = `${closestEvent.mode.toUpperCase()} EVENT`;
+            const cssColor = this.getModeColor(closestEvent.mode).css;
+            this.eventPromptModeEl.style.color = '#ffffff'; // Revert text to white
+            this.eventPromptEl.style.borderLeftColor = cssColor;
           }
           if (this.eventPromptStatsEl) {
             const lapsText = closestEvent.laps > 1 ? `LAPS: ${closestEvent.laps} • ` : '';
@@ -1369,16 +1384,24 @@ class Game {
         // Render within 260 meters
         if (distSq < 260 * 260) {
           if (Math.random() < 0.55) {
-            this.spawnCheckpointSmoke(evt, 0xff1e1e, 1.2, 1.2);
+            this.spawnCheckpointSmoke(evt, this.getModeColor(evt.mode).hex, 1.2, 1.2);
           }
           
           const h = (this.world && typeof this.world.getGroundHeight === 'function')
             ? this.world.getGroundHeight(evt.x, evt.z)
             : 0.5;
 
+          dynamicLights.push({
+            x: evt.x,
+            y: h + 3.6,
+            z: evt.z,
+            intensity: 12.0,
+            color: this.getModeColor(evt.mode).hex
+          });
+
           if (!spriteObj) {
             const text = evt.mode ? evt.mode + " event" : "event";
-            const material = this.getEventTextMaterial(text).clone(); // Clone material so opacity changes don't affect all sprites
+            const material = this.getEventTextMaterial(text, evt.mode).clone(); // Clone material so opacity changes don't affect all sprites
             const sprite = new THREE.Sprite(material);
             this.scene.add(sprite);
             spriteObj = { evt, sprite };
@@ -1441,7 +1464,7 @@ class Game {
 
         if (shouldRender) {
           const isFinish = (index === this.race.checkpoints.length - 1);
-          const color = isFinish ? 0xe84545 : 0xffaa3a;
+          const color = isFinish ? 0xe84545 : this.getModeColor(this.race.mode).hex;
           const h = (this.world && typeof this.world.getGroundHeight === 'function')
             ? this.world.getGroundHeight(cp.x, cp.z)
             : 0.5;
@@ -3073,14 +3096,35 @@ class Game {
         else if (raceResult.event === 'finish') {
           const finalRankings = this.race.calculateRankings(this.physics.position);
           const finalPlayerRank = finalRankings.findIndex(r => r.isPlayer) + 1;
-          const posSuffix = ["th", "st", "nd", "rd"][finalPlayerRank] || "th";
+          
+          let posSuffix = "TH";
+          if (finalPlayerRank === 1) posSuffix = "ST";
+          else if (finalPlayerRank === 2) posSuffix = "ND";
+          else if (finalPlayerRank === 3) posSuffix = "RD";
 
-          this.showBanner("RACE FINISHED!", `Standing: ${finalPlayerRank}${posSuffix} | Time: ${this.formatTime(raceResult.time)}`, 5000);
+          const resultsContainer = document.getElementById('race-results');
+          const resultsPos = document.getElementById('results-pos');
+          const resultsTime = document.getElementById('results-time');
+
+          if (resultsContainer) {
+            resultsPos.textContent = `${finalPlayerRank}${posSuffix}`;
+            resultsTime.textContent = this.formatTime(raceResult.time);
+            resultsContainer.classList.add('show');
+            
+            setTimeout(() => {
+              if (resultsContainer) resultsContainer.classList.remove('show');
+            }, 6000);
+          }
+
           this.hudStatsEl.style.display = 'none';
           this.cancelBtnEl.style.display = 'none';
           this.navArrow.visible = false;
           this.clearCheckpointBeacons();
-          this.clearAIMeshes();
+          
+          // Delay clearing AI so they can brake and coast to a stop
+          setTimeout(() => {
+            this.clearAIMeshes();
+          }, 8000);
 
           // Restore full traffic density in free roam
           if (this.traffic) {

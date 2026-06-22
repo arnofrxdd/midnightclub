@@ -674,7 +674,7 @@ function getHeadlightPoolTex() {
 
 function getHeadlightPoolGeo() {
   if (!sharedHeadlightPoolGeo) {
-    sharedHeadlightPoolGeo = new THREE.PlaneGeometry(12.0, 24.0);
+    sharedHeadlightPoolGeo = new THREE.PlaneGeometry(12.0, 24.0, 2, 8);
     sharedHeadlightPoolGeo.rotateX(-Math.PI / 2);
     // Center it 12m in front of the car
     sharedHeadlightPoolGeo.translate(0, 0.02, 12.0);

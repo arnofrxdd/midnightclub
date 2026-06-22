@@ -305,7 +305,7 @@ export class CarPhysics {
       const gravityAcc = 18.0;
       
       // If braking/holding handbrake and speed is very low, resist slope sliding
-      const isBraking = wantsBrake || wantsHandbrake;
+      const isBraking = (wantsBrake && this.gear !== 'R') || wantsHandbrake;
       const currentFwdSpeed = this.velocity.dot(forwardVec);
       
       if (isBraking && Math.abs(currentFwdSpeed) < 0.5) {

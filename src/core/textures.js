@@ -29,31 +29,40 @@ export function createLensflareTexture() {
 
 export function createSkidmarkTexture() {
   const canvas = document.createElement('canvas');
-  canvas.width = 32;
-  canvas.height = 32;
+  canvas.width = 64;
+  canvas.height = 64;
   const ctx = canvas.getContext('2d');
   
   // Base transparent
-  ctx.clearRect(0, 0, 32, 32);
+  ctx.clearRect(0, 0, 64, 64);
   
-  // Draw a blocky voxel tire tread print
-  ctx.fillStyle = '#0a0a0f';
+  // Draw realistic soft tire tracks with double-shoulder profile
+  const grad = ctx.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, 'rgba(10, 10, 12, 0.0)');
+  grad.addColorStop(0.18, 'rgba(10, 10, 12, 0.85)'); // Left shoulder
+  grad.addColorStop(0.35, 'rgba(10, 10, 12, 0.50)'); // Center groove
+  grad.addColorStop(0.52, 'rgba(10, 10, 12, 0.85)'); // Right shoulder
+  grad.addColorStop(0.82, 'rgba(10, 10, 12, 0.0)');
   
-  // Alternate blocky treads for a distinct pixelated/voxel style print
-  for (let y = 0; y < 32; y += 4) {
-    // Left tread
-    ctx.fillRect(2, y, 8, 2);
-    // Right tread
-    ctx.fillRect(22, y, 8, 2);
-    // Center double rib
-    ctx.fillRect(13, y + 2, 6, 2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  
+  // Add some realistic noise texture (rubber residue on asphalt)
+  const imgData = ctx.getImageData(0, 0, 64, 64);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    if (imgData.data[i + 3] > 0) {
+      // Add fine grain noise to the opacity channel
+      const noise = (Math.random() - 0.5) * 55;
+      imgData.data[i + 3] = Math.max(0, Math.min(255, imgData.data[i + 3] + noise));
+    }
   }
+  ctx.putImageData(imgData, 0, 0);
   
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 4); // Repeat texture along the segment
-  texture.minFilter = THREE.NearestFilter;
-  texture.magFilter = THREE.NearestFilter; // Sharp pixelated edges
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   return texture;
 }

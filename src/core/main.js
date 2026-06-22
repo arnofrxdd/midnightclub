@@ -23,6 +23,7 @@ import { handleCrashDamage } from './carMesh.js';
 const _scratchV3_1 = new THREE.Vector3();
 const _scratchV3_2 = new THREE.Vector3();
 const _scratchV3_3 = new THREE.Vector3();
+const _scratchV3_4 = new THREE.Vector3();
 const _scratchQuat = new THREE.Quaternion();
 const _scratchQuat2 = new THREE.Quaternion();
 const _scratchEuler = new THREE.Euler();
@@ -272,9 +273,7 @@ class Game {
     this.carVisualContainer.add(this.carGroup);
     this.scene.add(this.carVisualContainer);
 
-    // PS2 Taillight Trails
-    this.playerLeftTrail = new LightTrail(this.scene, 0xff0033, 0.24);
-    this.playerRightTrail = new LightTrail(this.scene, 0xff0033, 0.24);
+
   }
 
   updateHeadlightFlares(meshGroup, heading) {
@@ -327,6 +326,35 @@ class Game {
     
     rightSprite.material.opacity = intensityR * 0.95;
     rightSprite.scale.set(3.4 * (0.3 + intensityR * 1.5), 0.7 * (0.3 + intensityR * 1.5), 1.0);
+  }
+
+  deformHeadlightPoolToTerrain(meshGroup) {
+    const headlightPool = meshGroup.getObjectByName("headlightPool");
+    if (!headlightPool || !headlightPool.visible || headlightPool.material.opacity <= 0.01) return;
+
+    headlightPool.updateMatrixWorld(true);
+    const invMat = new THREE.Matrix4().copy(headlightPool.matrixWorld).invert();
+
+    const posAttr = headlightPool.geometry.attributes.position;
+    const tempV = new THREE.Vector3();
+
+    for (let i = 0; i < posAttr.count; i++) {
+      const localX = posAttr.getX(i);
+      const localZ = posAttr.getZ(i);
+
+      // World position of the vertex on the X-Z plane
+      tempV.set(localX, 0, localZ).applyMatrix4(headlightPool.matrixWorld);
+      
+      // Get ground height at this world coordinate
+      const groundY = this.world.getGroundHeight(tempV.x, tempV.z);
+
+      // Convert world target back to local space
+      tempV.set(tempV.x, groundY + 0.05, tempV.z).applyMatrix4(invMat);
+
+      posAttr.setY(i, tempV.y);
+    }
+
+    posAttr.needsUpdate = true;
   }
 
   createNavigationArrow() {
@@ -922,11 +950,17 @@ class Game {
       _scratchV3_1.set(Math.sin(v.heading), 0, Math.cos(v.heading)); // tForward
       _scratchV3_2.copy(v.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
       
+      // Directional gating: headlights should only shine forward relative to camera/player view
+      _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
+      const dot = _scratchV3_1.dot(_scratchV3_3);
+      const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
+      if (dirFactor <= 0.01) return;
+
       dynamicLights.push({
         x: _scratchV3_2.x,
         y: 0.4,
         z: _scratchV3_2.z,
-        intensity: 8.5 * (v.opacity !== undefined ? v.opacity : 1.0),
+        intensity: 8.5 * (v.opacity !== undefined ? v.opacity : 1.0) * dirFactor,
         color: 0xfffcd4
       });
     });
@@ -941,11 +975,17 @@ class Game {
           _scratchV3_1.set(Math.sin(ai.heading), 0, Math.cos(ai.heading)); // aiForward
           _scratchV3_2.copy(ai.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
           
+          // Directional gating: headlights should only shine forward relative to camera/player view
+          _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
+          const dot = _scratchV3_1.dot(_scratchV3_3);
+          const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
+          if (dirFactor <= 0.01) return;
+
           dynamicLights.push({
             x: _scratchV3_2.x,
             y: 0.4,
             z: _scratchV3_2.z,
-            intensity: 8.5,
+            intensity: 8.5 * dirFactor,
             color: 0xfffcd4
           });
         }
@@ -1102,19 +1142,12 @@ class Game {
 
           const headlightPool = cop.meshGroup.getObjectByName("headlightPool");
           if (headlightPool) {
-            let baseOpacity = 0.0;
-            if (dist >= 120.0) {
-              baseOpacity = 0.35;
-            } else if (dist > 80.0) {
-              const t = (dist - 80.0) / 40.0;
-              const smoothT = t * t * (3.0 - 2.0 * t);
-              baseOpacity = 0.35 * smoothT;
-            }
-            headlightPool.material.opacity = baseOpacity * cop.opacity;
+            headlightPool.material.opacity = 0.35 * cop.opacity;
           }
 
           if (!cop._lastLOD) {
             this.updateHeadlightFlares(cop.meshGroup, cop.heading);
+            this.deformHeadlightPoolToTerrain(cop.meshGroup);
           }
 
           // Headlights and sirens (optimized, distance-gated, zero-alloc)
@@ -1122,13 +1155,20 @@ class Game {
             _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
             _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
             
-            dynamicLights.push({
-              x: _scratchV3_2.x,
-              y: 0.4,
-              z: _scratchV3_2.z,
-              intensity: 8.0 * cop.opacity,
-              color: 0xfffcd4
-            });
+            // Directional gating: headlights should only shine forward relative to camera/player view
+            _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
+            const dot = _scratchV3_1.dot(_scratchV3_3);
+            const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
+
+            if (dirFactor > 0.01) {
+              dynamicLights.push({
+                x: _scratchV3_2.x,
+                y: 0.4,
+                z: _scratchV3_2.z,
+                intensity: 8.0 * cop.opacity * dirFactor,
+                color: 0xfffcd4
+              });
+            }
 
             dynamicLights.push({
               x: cop.position.x,
@@ -1178,19 +1218,12 @@ class Game {
 
           const headlightPool = cop.meshGroup.getObjectByName("headlightPool");
           if (headlightPool) {
-            let baseOpacity = 0.0;
-            if (dist >= 120.0) {
-              baseOpacity = 0.35;
-            } else if (dist > 80.0) {
-              const t = (dist - 80.0) / 40.0;
-              const smoothT = t * t * (3.0 - 2.0 * t);
-              baseOpacity = 0.35 * smoothT;
-            }
-            headlightPool.material.opacity = baseOpacity * cop.opacity;
+            headlightPool.material.opacity = 0.35 * cop.opacity;
           }
 
           if (!cop._lastLOD) {
             this.updateHeadlightFlares(cop.meshGroup, cop.heading);
+            this.deformHeadlightPoolToTerrain(cop.meshGroup);
           }
 
           // Headlights and sirens (optimized, distance-gated, zero-alloc)
@@ -1198,13 +1231,20 @@ class Game {
             _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
             _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
             
-            dynamicLights.push({
-              x: _scratchV3_2.x,
-              y: 0.4,
-              z: _scratchV3_2.z,
-              intensity: 8.0 * cop.opacity,
-              color: 0xfffcd4
-            });
+            // Directional gating: headlights should only shine forward relative to camera/player view
+            _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
+            const dot = _scratchV3_1.dot(_scratchV3_3);
+            const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
+
+            if (dirFactor > 0.01) {
+              dynamicLights.push({
+                x: _scratchV3_2.x,
+                y: 0.4,
+                z: _scratchV3_2.z,
+                intensity: 8.0 * cop.opacity * dirFactor,
+                color: 0xfffcd4
+              });
+            }
 
             if (cop.alerted) {
               dynamicLights.push({
@@ -1247,14 +1287,21 @@ class Game {
                   _scratchV3_1.set(Math.sin(copHeading), 0, Math.cos(copHeading)); // copForward
                   _scratchV3_2.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 2.3); // headPos
                   
+                  // Directional gating: headlights should only shine forward relative to camera/player view
+                  _scratchV3_4.copy(this.camera.position).sub(_scratchV3_2).normalize();
+                  const dot = _scratchV3_1.dot(_scratchV3_4);
+                  const dirFactor = Math.pow(Math.max(0.0, dot), 2.5);
+
                   // Headlights
-                  dynamicLights.push({
-                    x: _scratchV3_2.x,
-                    y: 0.4,
-                    z: _scratchV3_2.z,
-                    intensity: 8.0 * lightIntensityScale,
-                    color: 0xfffcd4
-                  });
+                  if (dirFactor > 0.01) {
+                    dynamicLights.push({
+                      x: _scratchV3_2.x,
+                      y: 0.4,
+                      z: _scratchV3_2.z,
+                      intensity: 8.0 * lightIntensityScale * dirFactor,
+                      color: 0xfffcd4
+                    });
+                  }
 
                   // Sirens (pulsing blue/red)
                   const flashState = (Math.floor(Date.now() / 250) % 2 === 0);
@@ -1436,21 +1483,14 @@ class Game {
         if (!v._lastLOD) {
           // Update traffic headlight lens flares
           this.updateHeadlightFlares(v.meshGroup, v.heading);
+          this.deformHeadlightPoolToTerrain(v.meshGroup);
         }
       }
 
       // Update baked headlight pool based on distance to player/focusTarget
       const headlightPool = v.meshGroup.getObjectByName("headlightPool");
       if (headlightPool) {
-        let baseOpacity = 0.0;
-        if (dist >= 120.0) {
-          baseOpacity = 0.35;
-        } else if (dist > 80.0) {
-          const t = (dist - 80.0) / 40.0;
-          const smoothT = t * t * (3.0 - 2.0 * t);
-          baseOpacity = 0.35 * smoothT;
-        }
-        headlightPool.material.opacity = baseOpacity * (v.opacity !== undefined ? v.opacity : 1.0);
+        headlightPool.material.opacity = 0.35 * (v.opacity !== undefined ? v.opacity : 1.0);
       }
       
       // Animate civilian wheels rolling
@@ -2114,15 +2154,7 @@ class Game {
     );
     this.carVisualContainer.updateMatrixWorld(true);
 
-    // Update player light trails
-    if (this.playerLeftTrail && this.playerRightTrail) {
-      const leftTailPos = new THREE.Vector3(-0.65, 0.42, -2.11).applyMatrix4(this.carVisualContainer.matrixWorld);
-      const rightTailPos = new THREE.Vector3(0.65, 0.42, -2.11).applyMatrix4(this.carVisualContainer.matrixWorld);
-      const playerSpeed = this.physics.velocity.length();
-      const trailsActive = playerSpeed > 5.0;
-      this.playerLeftTrail.update(leftTailPos, scaledDt, trailsActive);
-      this.playerRightTrail.update(rightTailPos, scaledDt, trailsActive);
-    }
+
     
     // Update player headlight lens flares
     this.updateHeadlightFlares(this.carVisualContainer, this.physics.heading);
@@ -2361,36 +2393,21 @@ class Game {
             this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
             ai.meshGroup.updateMatrixWorld(true);
             
-            // Update AI light trails (optimized, zero-alloc)
-            if (!ai.leftTrail) {
-              ai.leftTrail = new LightTrail(this.scene, 0xff2200, 0.24);
-              ai.rightTrail = new LightTrail(this.scene, 0xff2200, 0.24);
-            }
-            _scratchV3_1.set(-0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
-            _scratchV3_2.set(0.65, 0.42, -2.11).applyMatrix4(ai.meshGroup.matrixWorld);
-            ai.leftTrail.update(_scratchV3_1, scaledDt, aiSpeed > 5.0);
-            ai.rightTrail.update(_scratchV3_2, scaledDt, aiSpeed > 5.0);
+
 
             this.updateVehicleLOD(ai, dist, 1.0);
 
             if (!ai._lastLOD) {
               // Update AI headlight lens flares
               this.updateHeadlightFlares(ai.meshGroup, ai.heading);
+              this.deformHeadlightPoolToTerrain(ai.meshGroup);
             }
           }
 
           // Update baked headlight pool based on distance to player/focusTarget
           const headlightPool = ai.meshGroup.getObjectByName("headlightPool");
           if (headlightPool) {
-            let baseOpacity = 0.0;
-            if (dist >= 120.0) {
-              baseOpacity = 0.35;
-            } else if (dist > 80.0) {
-              const t = (dist - 80.0) / 40.0;
-              const smoothT = t * t * (3.0 - 2.0 * t);
-              baseOpacity = 0.35 * smoothT;
-            }
-            headlightPool.material.opacity = baseOpacity;
+            headlightPool.material.opacity = 0.35;
           }
           
           if (shouldUpdateThisFrame && !ai._lastLOD) {

@@ -90,6 +90,7 @@ export class RaceManager {
     visited.add(`${startX},${startZ}`);
     visited.add(`${firstX},${firstZ}`);
     const startDistBoost = 0.18;
+    let prevStep = { x: stepX, z: stepZ };
 
     const length = targetLength || (5 + Math.floor(Math.random() * 8)); // 5–12 checkpoints
     const pickJumpCount = () => {

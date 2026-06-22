@@ -276,7 +276,12 @@ export class CarPhysics {
           this.driftTraction = Math.max(0.3, this.driftTraction - 2.0 * dt);
         }
       } else if (this.gear === 'R') {
-        force -= this.engineForce * 0.8;
+        // High initial torque kick to launch backwards quickly from a standstill
+        if (forwardSpeed > -8.0 && forwardSpeed < 2.0) {
+          force -= this.engineForce * 4.0;
+        } else {
+          force -= this.engineForce * 1.5; 
+        }
       }
     }
     

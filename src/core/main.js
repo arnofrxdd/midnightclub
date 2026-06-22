@@ -323,6 +323,23 @@ class Game {
     this.nitroLight.position.set(0, 0.3, -2.15);
     this.carGroup.add(this.nitroLight);
 
+    // Reverse Lights (White)
+    this.reverseLightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.reverseLightPoint = new THREE.PointLight(0xffffff, 0.0, 8, 1.5);
+    this.reverseLightPoint.position.set(0, 0.42, -2.4);
+    this.carGroup.add(this.reverseLightPoint);
+    
+    const reverseLightGeo = new THREE.BoxGeometry(0.25, 0.1, 0.1);
+    this.reverseLightL = new THREE.Mesh(reverseLightGeo, this.reverseLightMat);
+    this.reverseLightL.position.set(-0.55, 0.42, -2.36);
+    this.reverseLightL.visible = false;
+    this.carGroup.add(this.reverseLightL);
+
+    this.reverseLightR = new THREE.Mesh(reverseLightGeo, this.reverseLightMat);
+    this.reverseLightR.position.set(0.55, 0.42, -2.36);
+    this.reverseLightR.visible = false;
+    this.carGroup.add(this.reverseLightR);
+
     this.nitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
     this.nitroLeftSprite.position.set(-0.6, 0.2, -2.1);
     this.nitroLeftSprite.scale.set(0.001, 0.001, 0.001);
@@ -447,8 +464,12 @@ class Game {
     this.navArrow = new THREE.Group();
     this.navArrow.renderOrder = 9999;
     
-    const arrowMat = new THREE.MeshBasicMaterial({
+    const arrowMat = new THREE.MeshStandardMaterial({
       color: 0xe5a93b,
+      emissive: 0xe5a93b,
+      emissiveIntensity: 0.6,
+      roughness: 0.6,
+      metalness: 0.3,
       depthTest: false, // Renders on top of building geometry for visibility!
       depthWrite: false,
       transparent: true
@@ -458,6 +479,8 @@ class Game {
     const shaftGeo = new THREE.BoxGeometry(0.3, 0.15, 1.2);
     const shaft = new THREE.Mesh(shaftGeo, arrowMat);
     shaft.position.z = -0.4;
+    shaft.castShadow = true;
+    shaft.receiveShadow = true;
     shaft.renderOrder = 9999;
     this.navArrow.add(shaft);
 
@@ -466,6 +489,8 @@ class Game {
     tipGeo.rotateX(Math.PI / 2);
     const tip = new THREE.Mesh(tipGeo, arrowMat);
     tip.position.z = 0.5;
+    tip.castShadow = true;
+    tip.receiveShadow = true;
     tip.renderOrder = 9999;
     this.navArrow.add(tip);
 
@@ -1046,14 +1071,20 @@ class Game {
           cpArrow.name = "nextCPArrow";
 
           const arrowColor = 0xffb31a;
-          const arrowMat = new THREE.MeshBasicMaterial({
+          const arrowMat = new THREE.MeshStandardMaterial({
             color: arrowColor,
+            emissive: arrowColor,
+            emissiveIntensity: 0.6,
+            roughness: 0.6,
+            metalness: 0.3,
             depthTest: true
           });
 
           // Voxel arrow shaft
           const arrowShaft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 3.2), arrowMat);
           arrowShaft.position.z = -1.0;
+          arrowShaft.castShadow = true;
+          arrowShaft.receiveShadow = true;
           cpArrow.add(arrowShaft);
 
           // Voxel arrow tip pointing towards next checkpoint
@@ -1061,6 +1092,8 @@ class Game {
           arrowTipGeo.rotateX(Math.PI / 2);
           const arrowTip = new THREE.Mesh(arrowTipGeo, arrowMat);
           arrowTip.position.z = 1.2;
+          arrowTip.castShadow = true;
+          arrowTip.receiveShadow = true;
           cpArrow.add(arrowTip);
 
           // Calculate angle from current checkpoint to next checkpoint
@@ -1498,6 +1531,18 @@ class Game {
     } else {
       this.tailLight.intensity = 1.2; // Standard running taillight
       this.playerTaillightMat.color.setHex(0xaa1111);
+    }
+
+    // Reverse lights toggle
+    const isReversing = this.physics.gear === 'R';
+    if (isReversing) {
+      this.reverseLightPoint.intensity = 3.0;
+      this.reverseLightL.visible = true;
+      this.reverseLightR.visible = true;
+    } else {
+      this.reverseLightPoint.intensity = 0.0;
+      this.reverseLightL.visible = false;
+      this.reverseLightR.visible = false;
     }
 
     // Traffic headlights (optimized, distance-gated, zero-alloc)

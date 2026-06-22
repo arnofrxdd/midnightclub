@@ -56,32 +56,46 @@ export function getSmokeMaterial(color, opacity) {
   }
 
 export function initParticles() {
-    // Particle pool for realistic white/grey tire smoke, exhaust fumes, and water splashes
+    // Particle pool: 180 for smoke/exhaust, 100 for water splashes
     this.particlePool = [];
     this.maxParticles = 280;
     
     const pGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
 
     for (let i = 0; i < this.maxParticles; i++) {
-      // Each particle gets its OWN material so we can mutate opacity in-place
-      // without triggering a material reference swap (avoids GPU re-upload every frame)
-      const pMat = new THREE.MeshBasicMaterial({
-        color: 0xcccccc,
-        transparent: true,
-        opacity: 0.5,
-        depthWrite: false
-      });
+      const isWater = (i >= 180);
+      
+      let pMat;
+      if (isWater) {
+        pMat = new THREE.MeshStandardMaterial({
+          color: 0xaaddff,
+          transparent: true,
+          opacity: 0.4,
+          roughness: 0.1,
+          metalness: 0.8,
+          depthWrite: false
+        });
+      } else {
+        pMat = new THREE.MeshBasicMaterial({
+          color: 0xcccccc,
+          transparent: true,
+          opacity: 0.5,
+          depthWrite: false
+        });
+      }
+
       const mesh = new THREE.Mesh(pGeo, pMat);
       mesh.visible = false;
       this.scene.add(mesh);
+      
       this.particlePool.push({
         mesh: mesh,
         mat: pMat,   // direct reference — no lookup needed per frame
         life: 0,
         maxLife: 1.0,
         velocity: new THREE.Vector3(),
-        isWater: false,
-        color: 0xcccccc
+        isWater: isWater,
+        color: isWater ? 0xaaddff : 0xcccccc
       });
     }
   }
@@ -211,7 +225,7 @@ export function spawnSkidmarkSegment(p1, p2) {
 export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false) {
     let spawned = 0;
     for (const p of this.particlePool) {
-      if (p.life <= 0) {
+      if (p.life <= 0 && p.isWater === isWater) {
         p.mesh.position.copy(pos);
         p.mesh.visible = true;
         // Mutate the per-particle material color in-place (no material swap)
@@ -219,18 +233,18 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
           p.color = color;
           p.mat.color.setHex(color);
         }
-        p.mat.opacity = isWater ? 0.6 : 0.4;
-        p.life = isWater ? (0.4 + Math.random() * 0.4) : (0.5 + Math.random() * 0.5);
+        p.mat.opacity = isWater ? 0.45 : 0.4;
+        p.life = isWater ? (0.35 + Math.random() * 0.35) : (0.5 + Math.random() * 0.5);
         p.maxLife = p.life;
         p.isWater = isWater;
         
         if (isWater) {
           p.velocity.set(
-            (Math.random() - 0.5) * 6 + dir.x * 5,
-            Math.random() * 5 + 4.5,
-            (Math.random() - 0.5) * 6 + dir.z * 5
+            (Math.random() - 0.5) * 5.2 + dir.x * 4.2,
+            Math.random() * 4.8 + 4.0,
+            (Math.random() - 0.5) * 5.2 + dir.z * 4.2
           );
-          p.mesh.scale.setScalar(0.7 + Math.random() * 0.7);
+          p.mesh.scale.setScalar(0.6 + Math.random() * 0.6);
         } else {
           p.velocity.set(
             (Math.random() - 0.5) * 3 + dir.x * 1.5,
@@ -291,10 +305,14 @@ export function updateParticles(dt) {
         
         if (p.isWater) {
           p.velocity.y -= 14.5 * dt;
-          const factor = p.life / p.maxLife;
-          p.mesh.scale.setScalar((0.8 + (1.0 - factor) * 1.5) * (p.maxLife / 0.8));
-          // Mutate opacity on the owned material — no material swap
-          p.mat.opacity = factor * 0.6;
+          const factor = p.life / p.maxLife; // 1.0 at birth, 0.0 at death
+          
+          // Realistic splash animation: scale up to peak, then shrink/fade out
+          const currentScale = p.maxLife * (0.6 + Math.sin(factor * Math.PI) * 1.1);
+          p.mesh.scale.setScalar(currentScale);
+          
+          // Smooth fade in and out:
+          p.mat.opacity = Math.sin(factor * Math.PI) * 0.45;
           
           // Floor check to prevent clipping through terrain
           const baseHeight = this.world.getBaseHeight(p.mesh.position.x, p.mesh.position.z);

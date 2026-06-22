@@ -929,16 +929,19 @@ class Game {
       this.physics.nitroLevel = this.physics.maxNitro;
     }
     
-    // Show stats immediately
-    this.hudStatsEl.style.display = 'flex';
-    this.cancelBtnEl.style.display = 'block';
+    // Hide stats initially until cinematic finishes
+    this.hudStatsEl.style.display = 'none';
+    this.cancelBtnEl.style.display = 'none';
     this.statsModeEl.textContent = mode.toUpperCase();
-    this.showBanner("RACE STARTED", "Follow the arrow!");
-    this.rebuildCheckpointBeacons();
 
     // Trigger cinematic sequence
     if (this.cinematicManager) {
       this.cinematicManager.start(mode);
+    } else {
+      this.hudStatsEl.style.display = 'flex';
+      this.cancelBtnEl.style.display = 'block';
+      this.showBanner("RACE STARTED", "Follow the arrow!");
+      this.rebuildCheckpointBeacons();
     }
 
     // Defer clock flush to avoid a large dt spike on the first frame after race start.

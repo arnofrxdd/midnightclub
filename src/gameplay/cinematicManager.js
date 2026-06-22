@@ -240,6 +240,12 @@ export class CinematicManager {
       this.hudElement.style.display = 'none';
       this.app.clock.getDelta(); // flush accumulated time
 
+      // Show race HUD and banner now that the countdown is finished
+      if (this.app.hudStatsEl) this.app.hudStatsEl.style.display = 'flex';
+      if (this.app.cancelBtnEl) this.app.cancelBtnEl.style.display = 'block';
+      this.app.showBanner("RACE STARTED", "Follow the arrow!");
+      this.app.rebuildCheckpointBeacons();
+
       // Always start race with full nitro when countdown finishes
       if (this.app.physics) {
         this.app.physics.nitroLevel = this.app.physics.maxNitro;

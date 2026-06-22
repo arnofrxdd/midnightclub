@@ -198,7 +198,7 @@ export function checkBreakablesCollision(dt) {
               this.spawnParticles(sparkPos, impactForceDir, 0xaaddff, 18, true);
               this.spawnDebris(sparkPos, impactForceDir, 0xdd2222, 5); // red metal shards
             } else {
-              this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10);
+              this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10, false, true);
               this.spawnDebris(sparkPos, impactForceDir, 0x333333, 5); // metal shards
             }
 

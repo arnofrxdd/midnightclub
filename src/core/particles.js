@@ -56,14 +56,15 @@ export function getSmokeMaterial(color, opacity) {
   }
 
 export function initParticles() {
-    // Particle pool: 180 for smoke/exhaust, 100 for water splashes
+    // Particle pool: 140 for smoke, 80 for water, 60 for sparks
     this.particlePool = [];
     this.maxParticles = 280;
     
     const pGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
 
     for (let i = 0; i < this.maxParticles; i++) {
-      const isWater = (i >= 180);
+      const isWater = (i >= 140 && i < 220);
+      const isSpark = (i >= 220);
       
       let pMat;
       if (isWater) {
@@ -73,6 +74,14 @@ export function initParticles() {
           opacity: 0.4,
           roughness: 0.1,
           metalness: 0.8,
+          depthWrite: false
+        });
+      } else if (isSpark) {
+        pMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 1.0,
+          blending: THREE.AdditiveBlending,
           depthWrite: false
         });
       } else {
@@ -95,7 +104,8 @@ export function initParticles() {
         maxLife: 1.0,
         velocity: new THREE.Vector3(),
         isWater: isWater,
-        color: isWater ? 0xaaddff : 0xcccccc
+        isSpark: isSpark,
+        color: isWater ? 0xaaddff : (isSpark ? 0xffffff : 0xcccccc)
       });
     }
   }
@@ -222,10 +232,10 @@ export function spawnSkidmarkSegment(p1, p2) {
     this.skidIndex = (this.skidIndex + 1) % this.maxSkidmarks;
   }
 
-export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false) {
+export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false, isSpark = false) {
     let spawned = 0;
     for (const p of this.particlePool) {
-      if (p.life <= 0 && p.isWater === isWater) {
+      if (p.life <= 0 && p.isWater === isWater && p.isSpark === isSpark) {
         p.mesh.position.copy(pos);
         p.mesh.visible = true;
         // Mutate the per-particle material color in-place (no material swap)
@@ -233,10 +243,11 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
           p.color = color;
           p.mat.color.setHex(color);
         }
-        p.mat.opacity = isWater ? 0.45 : 0.4;
-        p.life = isWater ? (0.35 + Math.random() * 0.35) : (0.5 + Math.random() * 0.5);
+        p.mat.opacity = isWater ? 0.45 : (isSpark ? 1.0 : 0.4);
+        p.life = isWater ? (0.35 + Math.random() * 0.35) : (isSpark ? (0.15 + Math.random() * 0.15) : (0.5 + Math.random() * 0.5));
         p.maxLife = p.life;
         p.isWater = isWater;
+        p.isSpark = isSpark;
         
         if (isWater) {
           p.velocity.set(
@@ -245,6 +256,17 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
             (Math.random() - 0.5) * 5.2 + dir.z * 4.2
           );
           p.mesh.scale.setScalar(0.6 + Math.random() * 0.6);
+        } else if (isSpark) {
+          // Sparks are high speed streaks of light
+          p.velocity.set(
+            (Math.random() - 0.5) * 4.5 + dir.x * (10.0 + Math.random() * 6.0),
+            Math.random() * 5.0 + 3.0 + dir.y * (6.0 + Math.random() * 4.0),
+            (Math.random() - 0.5) * 4.5 + dir.z * (10.0 + Math.random() * 6.0)
+          );
+          p.mesh.scale.set(0.04, 0.04, 0.35);
+          
+          _skidTarget.copy(pos).add(p.velocity);
+          p.mesh.lookAt(_skidTarget);
         } else {
           p.velocity.set(
             (Math.random() - 0.5) * 3 + dir.x * 1.5,

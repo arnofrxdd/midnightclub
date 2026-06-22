@@ -4,7 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { LightTrail } from './lighttrail.js';
-import { createLensflareTexture, createSkidmarkTexture } from './textures.js';
+import { createLensflareTexture, createSkidmarkTexture, createNitroFlareTexture } from './textures.js';
 import { createVoxelCarMesh } from './carMesh.js';
 import { World } from '../world/world.js';
 import { CarPhysics } from './physics.js';
@@ -74,6 +74,14 @@ class Game {
     this.noiseOverlayEl = document.getElementById('noise-overlay');
     
     this.lensflareTex = createLensflareTexture();
+    this.nitroFlareTex = createNitroFlareTexture();
+    this.nitroSpriteMat = new THREE.SpriteMaterial({
+      map: this.nitroFlareTex,
+      color: 0xffffff,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false
+    });
     this.initThree();
     this.world = new World(this.scene);
     this.createCarMesh();
@@ -247,6 +255,21 @@ class Game {
     this.tailLight = new THREE.PointLight(0xff0000, 1.2, 12, 1.3);
     this.tailLight.position.set(0, 0.42, -2.35);
     this.carGroup.add(this.tailLight);
+
+    // Nitro realtime glow and flare sprites
+    this.nitroLight = new THREE.PointLight(0x00f0ff, 0.0, 15, 1.4);
+    this.nitroLight.position.set(0, 0.3, -2.15);
+    this.carGroup.add(this.nitroLight);
+
+    this.nitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
+    this.nitroLeftSprite.position.set(-0.6, 0.2, -2.1);
+    this.nitroLeftSprite.scale.set(0.001, 0.001, 0.001);
+    this.carGroup.add(this.nitroLeftSprite);
+
+    this.nitroRightSprite = new THREE.Sprite(this.nitroSpriteMat);
+    this.nitroRightSprite.position.set(0.6, 0.2, -2.1);
+    this.nitroRightSprite.scale.set(0.001, 0.001, 0.001);
+    this.carGroup.add(this.nitroRightSprite);
 
     // Dynamic Headlight Spotlights (casting actual light beams forward!)
     // Narrowed angle (Math.PI/14) and high penumbra (0.85) to create two distinct headlight pools
@@ -605,8 +628,8 @@ class Game {
     return spawnSkidmarkSegment.call(this, p1, p2);
   }
 
-  spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false) {
-    return spawnParticles.call(this, pos, dir, color, count, isWater);
+  spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false, isSpark = false) {
+    return spawnParticles.call(this, pos, dir, color, count, isWater, isSpark);
   }
 
   spawnCheckpointSmoke(pos, color = 0xffaa3a, opacityScale = 1.0, sizeScale = 1.0) {
@@ -670,6 +693,25 @@ class Game {
     this.race.aiRacers.forEach(ai => {
       const container = new THREE.Group();
       const { carGroup, wheels } = this.createVoxelCarMesh(ai.colorHex, 'sports');
+      
+      // Nitro realtime glow and flare sprites for AI
+      const aiNitroLight = new THREE.PointLight(0x00f0ff, 0.0, 15, 1.4);
+      aiNitroLight.position.set(0, 0.3, -2.15);
+      carGroup.add(aiNitroLight);
+      ai.nitroLight = aiNitroLight;
+
+      const aiNitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
+      aiNitroLeftSprite.position.set(-0.6, 0.2, -2.1);
+      aiNitroLeftSprite.scale.set(0.001, 0.001, 0.001);
+      carGroup.add(aiNitroLeftSprite);
+      ai.nitroLeftSprite = aiNitroLeftSprite;
+
+      const aiNitroRightSprite = new THREE.Sprite(this.nitroSpriteMat);
+      aiNitroRightSprite.position.set(0.6, 0.2, -2.1);
+      aiNitroRightSprite.scale.set(0.001, 0.001, 0.001);
+      carGroup.add(aiNitroRightSprite);
+      ai.nitroRightSprite = aiNitroRightSprite;
+
       container.add(carGroup);
       this.scene.add(container);
       ai.meshGroup = container;
@@ -1711,7 +1753,7 @@ class Game {
         // Spawn bright crash sparks and debris
         const contactPos = this.physics.position.clone().add(v.position).multiplyScalar(0.5);
         contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-        this.spawnParticles(contactPos, pushDir, 0xffaa00, 16);
+        this.spawnParticles(contactPos, pushDir, 0xffaa00, 16, false, true);
 
         // Crash physics: vertex dent damage and 3D bouncing debris particles
         const relativeVelVec = this.physics.velocity.clone().sub(tForward.clone().multiplyScalar(v.speed).add(v.impactVelocity));
@@ -1785,7 +1827,7 @@ class Game {
 
             const contactPos = ai.position.clone().add(v.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8);
+            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
 
             // Crash physics: vertex damage and 3D debris
             const relativeVelVec = ai.velocity.clone().sub(tForward.clone().multiplyScalar(v.speed).add(v.impactVelocity));
@@ -1889,7 +1931,7 @@ class Game {
           // Spawn sparks and crash damage
           const contactPos = v1.position.clone().add(v2.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 8);
+          this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
 
           const relativeVelVec = vel1.clone().sub(vel2);
           const relSpeed = relativeVelVec.length();
@@ -1959,7 +2001,7 @@ class Game {
 
           const contactPos = this.physics.position.clone().add(cop.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 16);
+          this.spawnParticles(contactPos, pushDir, 0xffaa00, 16, false, true);
 
           // Crash damage and debris
           const relativeVelVec = this.physics.velocity.clone().sub(copForward.clone().multiplyScalar(cop.speed));
@@ -2010,7 +2052,7 @@ class Game {
 
               const contactPos = ai.position.clone().add(cop.position).multiplyScalar(0.5);
               contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-              this.spawnParticles(contactPos, pushDir, 0xffaa00, 12);
+              this.spawnParticles(contactPos, pushDir, 0xffaa00, 12, false, true);
 
               // Crash damage and debris
               const relativeVelVec = ai.velocity.clone().sub(copForward.clone().multiplyScalar(cop.speed));
@@ -2061,7 +2103,7 @@ class Game {
                 
                 const contactPos = v.position.clone().add(cop.position).multiplyScalar(0.5);
                 contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-                this.spawnParticles(contactPos, pushDir, 0xffaa00, 10);
+                this.spawnParticles(contactPos, pushDir, 0xffaa00, 10, false, true);
 
                 // Crash damage and debris
                 const relativeVelVec = trafficVel.clone().sub(copVel);
@@ -2126,7 +2168,7 @@ class Game {
             // Spawn sparks and crash damage/debris
             const contactPos = cop1.position.clone().add(cop2.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8);
+            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
 
             const relativeVelVec = v1.clone().sub(v2);
             const relSpeed = relativeVelVec.length();
@@ -2171,7 +2213,7 @@ class Game {
 
       const sparkDir = this.physics.velocity.clone().negate().normalize();
       sparkDir.addScaledVector(new THREE.Vector3(Math.random() - 0.5, 0.4, Math.random() - 0.5), 0.45).normalize();
-      this.spawnParticles(contactPos, sparkDir, 0xffaa00, 3);
+      this.spawnParticles(contactPos, sparkDir, 0xffaa00, 3, false, true);
     }
     
     // Rotate wheels
@@ -2242,21 +2284,16 @@ class Game {
       }
     }
 
-    // Spawn player Nitro Exhaust particles if boosting!
+    // Update player Nitro visual effects (sprite flare + PointLight)
     if (this.physics.isBoosting) {
-      if (Math.random() < 0.65) {
-        const exhaustL = new THREE.Vector3(-0.6, 0.2, -2.1).applyMatrix4(this.carVisualContainer.matrixWorld);
-        const exhaustR = new THREE.Vector3(0.6, 0.2, -2.1).applyMatrix4(this.carVisualContainer.matrixWorld);
-        const backDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0.1, -Math.cos(this.physics.heading)).normalize();
-        
-        // Neon cyan/blue fire particles for nitro!
-        this.spawnParticles(exhaustL, backDir, 0x00f0ff, 3);
-        this.spawnParticles(exhaustR, backDir, 0x00f0ff, 3);
-        if (Math.random() < 0.3) {
-          this.spawnParticles(exhaustL, backDir, 0xffbb00, 1);
-          this.spawnParticles(exhaustR, backDir, 0xffbb00, 1);
-        }
-      }
+      const scaleVal = 1.3 + Math.random() * 0.45;
+      this.nitroLeftSprite.scale.set(scaleVal, scaleVal, scaleVal);
+      this.nitroRightSprite.scale.set(scaleVal, scaleVal, scaleVal);
+      this.nitroLight.intensity = 6.0 + Math.random() * 2.0;
+    } else {
+      this.nitroLeftSprite.scale.set(0.001, 0.001, 0.001);
+      this.nitroRightSprite.scale.set(0.001, 0.001, 0.001);
+      this.nitroLight.intensity = 0.0;
     }
 
     // Spawn player tire skid marks on drift or hard brake
@@ -2310,7 +2347,7 @@ class Game {
 
           const contactPos = this.physics.position.clone().add(ai.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 10);
+          this.spawnParticles(contactPos, pushDir, 0xffaa00, 10, false, true);
 
           // Crash damage and debris
           const relativeVelVec = this.physics.velocity.clone().sub(ai.velocity);
@@ -2362,7 +2399,7 @@ class Game {
 
             const contactPos = ai1.position.clone().add(ai2.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 6);
+            this.spawnParticles(contactPos, pushDir, 0xffaa00, 6, false, true);
 
             // Crash damage and debris
             const relativeVelVec = ai1.velocity.clone().sub(ai2.velocity);
@@ -2464,15 +2501,16 @@ class Game {
             ai.prevRightWheel = null;
           }
 
-          // Spawn AI Nitro Exhaust particles if boosting!
-          if (ai.isBoosting && Math.random() < 0.45) {
-            const exhaustL = new THREE.Vector3(-0.6, 0.2, -2.1).applyMatrix4(ai.meshGroup.matrixWorld);
-            const exhaustR = new THREE.Vector3(0.6, 0.2, -2.1).applyMatrix4(ai.meshGroup.matrixWorld);
-            const backDir = new THREE.Vector3(-Math.sin(ai.heading), 0.1, -Math.cos(ai.heading));
-            
-            // Neon cyan/blue fire particles for nitro!
-            this.spawnParticles(exhaustL, backDir, 0x00f0ff, 2);
-            this.spawnParticles(exhaustR, backDir, 0x00f0ff, 2);
+          // Update AI Nitro visual effects (sprite flare + PointLight)
+          if (ai.isBoosting) {
+            const scaleVal = 1.3 + Math.random() * 0.45;
+            if (ai.nitroLeftSprite) ai.nitroLeftSprite.scale.set(scaleVal, scaleVal, scaleVal);
+            if (ai.nitroRightSprite) ai.nitroRightSprite.scale.set(scaleVal, scaleVal, scaleVal);
+            if (ai.nitroLight) ai.nitroLight.intensity = 6.0 + Math.random() * 2.0;
+          } else {
+            if (ai.nitroLeftSprite) ai.nitroLeftSprite.scale.set(0.001, 0.001, 0.001);
+            if (ai.nitroRightSprite) ai.nitroRightSprite.scale.set(0.001, 0.001, 0.001);
+            if (ai.nitroLight) ai.nitroLight.intensity = 0.0;
           }
         }
       });

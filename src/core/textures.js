@@ -66,3 +66,38 @@ export function createSkidmarkTexture() {
   texture.generateMipmaps = true;
   return texture;
 }
+
+export function createNitroFlareTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  
+  // Radial gradient for hot core and neon blue outer glow
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1)');      // Hot white core
+  grad.addColorStop(0.12, 'rgba(0, 240, 255, 1)');     // Intense cyan/neon blue
+  grad.addColorStop(0.4, 'rgba(0, 80, 255, 0.45)');    // Deep blue outer glow
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  
+  // Bright cross shape starburst lines for the glare
+  ctx.strokeStyle = 'rgba(150, 230, 255, 0.8)';
+  ctx.lineWidth = 2.0;
+  ctx.beginPath();
+  
+  // Horizontal line
+  ctx.moveTo(12, 32);
+  ctx.lineTo(52, 32);
+  
+  // Vertical line
+  ctx.moveTo(32, 12);
+  ctx.lineTo(32, 52);
+  
+  ctx.stroke();
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}

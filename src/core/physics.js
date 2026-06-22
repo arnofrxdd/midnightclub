@@ -151,7 +151,8 @@ export class CarPhysics {
     }
 
     // Nitro activation (Shift key or 'n' or 'f' keys)
-    const wantsBoost = (keys['shift'] || keys['n'] || keys['f']) && this.nitroLevel > 0.01 && forwardSpeed > 3.0 && this.gear !== 'R';
+    const canActivate = this.isBoosting ? (this.nitroLevel > 0.0) : (this.nitroLevel >= 0.10);
+    const wantsBoost = (keys['shift'] || keys['n'] || keys['f']) && canActivate && forwardSpeed > 3.0 && this.gear !== 'R';
     this.isBoosting = wantsBoost;
     if (this.isBoosting) {
       this.nitroLevel = Math.max(0.0, this.nitroLevel - 0.28 * dt); // depletes in ~3.5 seconds

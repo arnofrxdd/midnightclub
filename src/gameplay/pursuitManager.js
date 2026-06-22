@@ -488,7 +488,26 @@ export class PursuitManager {
         this.parkedCops.splice(idx, 1);
         this.triggerPursuit(1);
       } else {
-        cop.update(dt, world, playerPos, playerSpeed, this.app.physics.heading, navGraph, allVehicles);
+        // Find closest target for parked cop too (player or AI racer)
+        let target = playerPos;
+        let targetVelSpeed = playerSpeed;
+        let targetHeading = this.app.physics.heading;
+        let targetTryingToMove = isPlayerTryingToMove;
+        
+        let minTargetDist = cop.position.distanceTo(playerPos);
+        
+        aiRacers.forEach(ai => {
+          const d = cop.position.distanceTo(ai.position);
+          if (d < minTargetDist) {
+            minTargetDist = d;
+            target = ai.position;
+            targetVelSpeed = ai.speed;
+            targetHeading = ai.heading;
+            targetTryingToMove = true; // AI racers are always trying to move
+          }
+        });
+
+        cop.update(dt, world, target, targetVelSpeed, targetHeading, navGraph, allVehicles, targetTryingToMove);
       }
     });
 

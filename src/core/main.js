@@ -383,16 +383,20 @@ class Game {
   createNavigationArrow() {
     // 3D voxel pointer arrow floating above the car roof
     this.navArrow = new THREE.Group();
+    this.navArrow.renderOrder = 9999;
     
     const arrowMat = new THREE.MeshBasicMaterial({
       color: 0xe5a93b,
-      depthTest: false // Renders on top of building geometry for visibility!
+      depthTest: false, // Renders on top of building geometry for visibility!
+      depthWrite: false,
+      transparent: true
     });
     
     // Arrow Shaft
     const shaftGeo = new THREE.BoxGeometry(0.3, 0.15, 1.2);
     const shaft = new THREE.Mesh(shaftGeo, arrowMat);
     shaft.position.z = -0.4;
+    shaft.renderOrder = 9999;
     this.navArrow.add(shaft);
 
     // Arrow Tip (cone/pyramid shape)
@@ -400,10 +404,12 @@ class Game {
     tipGeo.rotateX(Math.PI / 2);
     const tip = new THREE.Mesh(tipGeo, arrowMat);
     tip.position.z = 0.5;
+    tip.renderOrder = 9999;
     this.navArrow.add(tip);
 
     // Position above cabin roof (cabin height=0.8 + 0.5/2 + offset)
     this.navArrow.position.set(0, 1.7, -0.3);
+    this.navArrow.rotation.x = -0.32; // Tilt upward (pitch) like Midnight Club
     this.navArrow.visible = false;
     
     // Add to car group so it moves & rotates with the car automatically
@@ -710,6 +716,22 @@ class Game {
       carGroup.add(aiNitroRightSprite);
       ai.nitroRightSprite = aiNitroRightSprite;
 
+      // Hovering downward indicator cone above AI racer
+      const indicatorMat = new THREE.MeshBasicMaterial({
+        color: ai.colorHex,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.6
+      });
+      const indicatorGeo = new THREE.ConeGeometry(0.35, 0.7, 4);
+      indicatorGeo.rotateX(Math.PI); // Point down
+      const indicatorMesh = new THREE.Mesh(indicatorGeo, indicatorMat);
+      indicatorMesh.position.set(0, 1.9, 0);
+      indicatorMesh.renderOrder = 999;
+      carGroup.add(indicatorMesh);
+      ai.indicatorMesh = indicatorMesh;
+
       container.add(carGroup);
       this.scene.add(container);
       ai.meshGroup = container;
@@ -869,6 +891,7 @@ class Game {
           const dx = nextCp.x - cp.x;
           const dz = nextCp.z - cp.z;
           cpArrow.rotation.y = Math.atan2(dx, dz);
+          cpArrow.rotation.x = -0.32; // Tilt upward (pitch) like Midnight Club
 
           cpGroup.add(cpArrow);
         }
@@ -2430,6 +2453,12 @@ class Game {
         if (ai.meshGroup) {
           ai.meshGroup.position.copy(ai.position);
           const aiSpeed = ai.velocity.length();
+
+          // Animate hovering indicator arrow above AI
+          if (ai.indicatorMesh) {
+            ai.indicatorMesh.rotation.y += 2.0 * scaledDt;
+            ai.indicatorMesh.position.y = 1.9 + Math.sin(Date.now() * 0.005) * 0.12;
+          }
 
           if (!ai._frameCounter) ai._frameCounter = 0;
           ai._frameCounter++;

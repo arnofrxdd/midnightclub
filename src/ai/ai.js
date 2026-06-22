@@ -193,7 +193,8 @@ export class AICar {
     this._dodgeTimer -= dt;
 
     if (this._dodgeTimer <= 0 && this.speed > 4) {
-      this._dodgeTimer = 0.10; // re-evaluate every 100 ms
+      // Evaluate dodge faster at high speeds to avoid obstacles in time
+      this._dodgeTimer = this.isNitroBoosting ? 0.05 : 0.10;
       this._dodgeSide  = this._evaluateDodge(raceManager, traffic, fwd, right, world);
     }
 
@@ -300,7 +301,8 @@ export class AICar {
     // Nitro system update & activation
     if (this.isNitroBoosting) {
       this.nitroLevel = Math.max(0.0, this.nitroLevel - 0.25 * dt);
-      if (this.nitroLevel <= 0.0 || absErr > 0.35 || this.speed < 5.0) {
+      // Immediately cancel nitro if there is an obstacle directly in front of us
+      if (this.nitroLevel <= 0.0 || absErr > 0.35 || this.speed < 5.0 || obstacleInFrontDist < 18.0) {
         this.isNitroBoosting = false;
       }
     } else {
@@ -548,8 +550,9 @@ export class AICar {
       if (traffic.parkedVehicles) traffic.parkedVehicles.forEach(v => obstacles.push(v.position));
     }
 
-    const lookDist   = Math.max(18, this.speed * 0.8);
-    const corridorW  = 2.8; // half-width of car corridor
+    // Look further ahead and check a wider safety corridor when boosting at high speed
+    const lookDist   = Math.max(18, this.speed * (this.isNitroBoosting ? 0.95 : 0.8));
+    const corridorW  = this.isNitroBoosting ? 3.8 : 2.8; // half-width of car corridor
 
     // Score each side (-1 left, 0 centre, +1 right)
     let bestSide = 0, bestScore = Infinity;

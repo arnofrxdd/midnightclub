@@ -526,8 +526,7 @@ export class CarPhysics {
       
       const wantsHandbrake = keys[' '] || keys['spacebar'];
       
-      // Pitch control: W/S or Arrow Up/Down
-      if (keys['w'] || keys['arrowup']) pitchControl = 3.2; // faster flips
+      if (keys['w'] || keys['arrowup']) pitchControl = 3.2;
       if (keys['s'] || keys['arrowdown']) pitchControl = -3.2;
       
       if (wantsHandbrake) {

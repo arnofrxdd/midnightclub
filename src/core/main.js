@@ -197,7 +197,8 @@ class Game {
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Cap pixel ratio to 1.25 to prevent extreme resolution scaling on 4K monitors (which tanks FPS even on high-end GPUs)
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // HDR filmic tone mapping
@@ -1469,8 +1470,9 @@ class Game {
         }
         
         // Start race on pressing key F
-        if (this.keys['f']) {
+        if (this.keys['f'] || this.keys['keyf']) {
           this.keys['f'] = false; // Consume key press
+          this.keys['keyf'] = false;
           if (this.eventPromptEl) this.eventPromptEl.style.display = 'none';
           this.eventPromptActive = false;
           this.startRace(closestEvent.mode, closestEvent.x, closestEvent.z, closestEvent);

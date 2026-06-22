@@ -72,8 +72,6 @@ npm run deploy
 |------|-------------|
 | **Sprint** | Race from start to finish through a series of checkpoints. No U-turns — path always flows forward. |
 | **Circuit** | Race multiple laps around a generated loop. Lap counter tracks progress. |
-| **Scavenger Hunt** | Hit checkpoints in any order before time runs out. |
-| **Autocross Slalom** | Precision driving through a tight cone course. |
 
 ---
 
@@ -160,6 +158,8 @@ midnight club/
 - Police roadblocks are implemented but currently disabled.
 - Mobile / touch controls are not supported.
 - Save data / leaderboards are not implemented.
+- No stunt support currently.
+- No audio support yet.
 - This is a **concept prototype** — performance and polish are ongoing work.
 
 ---

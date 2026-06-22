@@ -1,18 +1,29 @@
 import * as THREE from 'three';
 
 export function initInput() {
+    // Map e.code → canonical name so we never get collisions like "KeyS" → "keys"
+    const CODE_MAP = {
+      'KeyW': 'w', 'KeyA': 'a', 'KeyS': 's', 'KeyD': 'd',
+      'ArrowUp': 'arrowup', 'ArrowDown': 'arrowdown',
+      'ArrowLeft': 'arrowleft', 'ArrowRight': 'arrowright',
+      'Space': ' ',
+      'ShiftLeft': 'shift', 'ShiftRight': 'shift',
+      'KeyN': 'n', 'KeyF': 'f',
+      'KeyC': 'c', 'KeyV': 'v', 'KeyM': 'm', 'KeyB': 'b', 'KeyP': 'p',
+    };
+
     window.addEventListener('keydown', (e) => {
-      const key = e.key.toLowerCase();
-      this.keys[key] = true;
-      
+      // Always store the character key (e.g. 'w', 'a', ' ')
+      if (e.key) this.keys[e.key.toLowerCase()] = true;
+      // Also store via safe code map (never ambiguous)
+      const mapped = CODE_MAP[e.code];
+      if (mapped) this.keys[mapped] = true;
+
       if (this.inMainMenu) return;
-      
-      if (key === 'c') {
-        this.cycleCameraMode();
-      }
-      if (key === 'v') {
-        this.cycleCameraFocus();
-      }
+
+      const key = e.key ? e.key.toLowerCase() : '';
+      if (key === 'c') this.cycleCameraMode();
+      if (key === 'v') this.cycleCameraFocus();
       if (key === 'm') {
         if (this.debugMenuEnabled && this.racePanelEl) {
           const isHidden = this.racePanelEl.style.display === 'none';
@@ -20,8 +31,18 @@ export function initInput() {
         }
       }
     });
+    
     window.addEventListener('keyup', (e) => {
-      this.keys[e.key.toLowerCase()] = false;
+      if (e.key) this.keys[e.key.toLowerCase()] = false;
+      const mapped = CODE_MAP[e.code];
+      if (mapped) this.keys[mapped] = false;
+    });
+
+    // Clear all keys when window loses focus to prevent them getting stuck forever
+    window.addEventListener('blur', () => {
+      for (let k in this.keys) {
+        this.keys[k] = false;
+      }
     });
   }
 

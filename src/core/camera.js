@@ -28,6 +28,10 @@ export function updateCamera(dt = 0.016) {
     let airTime = this.physics.airTime;
     let isDrifting = this.physics.isDrifting;
     let speed = this.physics.velocity.length();
+    
+    // For smooth camera updates on high refresh rate monitors (144Hz+)
+    let targetPos = this.renderPhysicsPosition || targetObj.position;
+    let targetHeading = this.renderPhysicsHeading !== undefined ? this.renderPhysicsHeading : targetObj.heading;
 
     if (this.debugFocusAI && this.race && this.race.aiRacers) {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
@@ -39,10 +43,12 @@ export function updateCamera(dt = 0.016) {
         airTime = 0;
         isDrifting = activeAI.isDrifting || false;
         speed = activeAI.velocity ? activeAI.velocity.length() : activeAI.speed;
+        targetPos = activeAI.position;
+        targetHeading = activeAI.heading;
       }
     }
 
-    const heading = targetObj.heading;
+    const heading = targetHeading;
 
     // Decay gearShiftPunch over time
     if (this.gearShiftPunch > 0.0) {
@@ -142,7 +148,7 @@ export function updateCamera(dt = 0.016) {
     );
 
     // 4. Lerp camera position smoothly
-    const targetCamPos = targetObj.position.clone().add(offset);
+    const targetCamPos = targetPos.clone().add(offset);
     if (useLag) {
       this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
     } else {
@@ -186,7 +192,7 @@ export function updateCamera(dt = 0.016) {
 
     // 6. LookAt: Look slightly ahead of the car's body center to keep target focused
     const lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
-    const targetLook = targetObj.position.clone().add(
+    const targetLook = targetPos.clone().add(
       new THREE.Vector3(
         Math.sin(heading) * lookAheadDistance,
         targetLookY,
@@ -201,7 +207,7 @@ export function updateCamera(dt = 0.016) {
     }
 
     // Update shadow/directional light to follow player
-    this.dirLight.position.set(targetObj.position.x + 30, 60, targetObj.position.z + 30);
+    this.dirLight.position.set(targetPos.x + 30, 60, targetPos.z + 30);
     this.dirLight.target = targetVisual;
   }
 
@@ -242,7 +248,8 @@ export function cycleCameraMode() {
 export function getTargetGameplayCamera() {
   const targetObj = this.physics;
   const speed = this.physics.velocity.length();
-  const heading = targetObj.heading;
+  const targetPos = this.renderPhysicsPosition || targetObj.position;
+  const heading = this.renderPhysicsHeading !== undefined ? this.renderPhysicsHeading : targetObj.heading;
 
   let baseDist = 15.0;
   let baseHeight = 5.2;
@@ -281,10 +288,10 @@ export function getTargetGameplayCamera() {
     -Math.cos(heading) * distance
   );
 
-  const pos = targetObj.position.clone().add(offset);
+  const pos = targetPos.clone().add(offset);
 
   const lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
-  const lookAt = targetObj.position.clone().add(
+  const lookAt = targetPos.clone().add(
     new THREE.Vector3(
       Math.sin(heading) * lookAheadDistance,
       targetLookY,

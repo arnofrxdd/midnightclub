@@ -104,29 +104,26 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
 
     const addFireHydrant = (fhx, fhz) => {
       const h = this.getBaseHeight(fhx, fhz);
-      
-      const barrelGeo = new THREE.BoxGeometry(0.35, 0.7, 0.35);
-      barrelGeo.translate(fhx, 0.35 + h + 0.35, fhz);
-      localRedHydrantGeoms.push(barrelGeo);
-      
-      const topCapGeo = new THREE.BoxGeometry(0.42, 0.1, 0.42);
-      topCapGeo.translate(fhx, 0.35 + h + 0.75, fhz);
-      localCapHydrantGeoms.push(topCapGeo);
-      
-      const nozzleLGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
-      nozzleLGeo.translate(fhx - 0.2, 0.35 + h + 0.45, fhz);
-      localCapHydrantGeoms.push(nozzleLGeo);
-      
-      const nozzleRGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
-      nozzleRGeo.translate(fhx + 0.2, 0.35 + h + 0.45, fhz);
-      localCapHydrantGeoms.push(nozzleRGeo);
+      if (Math.abs(h) > 0.1) return;
 
-      obstacles.push({
-        xMin: fhx - 0.25,
-        xMax: fhx + 0.25,
-        zMin: fhz - 0.25,
-        zMax: fhz + 0.25,
-        height: 1.0
+      const hydrant = this.templates.fireHydrant.clone();
+      // Position hydrant base on curb (offset slightly up by 0.35m to match template alignment)
+      hydrant.position.set(fhx, 0.35 + h, fhz);
+      group.add(hydrant);
+      
+      this.breakables.push({
+        type: 'hydrant',
+        comHeight: 0.35,
+        radius: 0.25,
+        position: new THREE.Vector3(fhx, 0.35 + h, fhz),
+        group: hydrant,
+        flares: [],
+        lights: [],
+        broken: false,
+        tileX: posX,
+        tileZ: posZ,
+        velocity: new THREE.Vector3(),
+        angularVelocity: new THREE.Vector3()
       });
     };
 
@@ -1229,18 +1226,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       group.add(leavesMesh);
     }
 
-    // Merge and instantiate Fire Hydrants
-    if (localRedHydrantGeoms.length > 0) {
-      const mergedRed = BufferGeometryUtils.mergeGeometries(localRedHydrantGeoms);
-      const hydrantRedMesh = new THREE.Mesh(mergedRed, this.hydrantRedMat);
-      hydrantRedMesh.castShadow = true;
-      group.add(hydrantRedMesh);
-    }
-    if (localCapHydrantGeoms.length > 0) {
-      const mergedCap = BufferGeometryUtils.mergeGeometries(localCapHydrantGeoms);
-      const hydrantCapMesh = new THREE.Mesh(mergedCap, this.hydrantCapMat);
-      group.add(hydrantCapMesh);
-    }
+
 
     // Merge and instantiate Newspaper Boxes
     if (localBodyNewspaperGeoms.length > 0) {

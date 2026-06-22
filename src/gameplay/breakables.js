@@ -106,23 +106,49 @@ export function checkBreakablesCollision(dt) {
             b.broken = true;
             b.fadeTimer = 10.0; // minimum stay time before eligible for off-camera cleanup (increased from 3.5s)
 
+            // Detach b.group from its parent (the tile group) and add it to the global scene
+            if (b.group && b.group.parent) {
+              const worldPos = new THREE.Vector3();
+              const worldQuat = new THREE.Quaternion();
+              b.group.getWorldPosition(worldPos);
+              b.group.getWorldQuaternion(worldQuat);
+              
+              b.group.parent.remove(b.group);
+              
+              b.group.position.copy(worldPos);
+              b.group.quaternion.copy(worldQuat);
+              
+              this.scene.add(b.group);
+            }
+
             // Impulse calculation
             const impactForceDir = ent.velocity.clone().normalize();
             if (speed > 2.0) {
-              // Pole flies off in the direction of the impact velocity
-              b.velocity.copy(impactForceDir).multiplyScalar(speed * 0.9 + 5.0);
-              b.velocity.y = speed * 0.4 + 4.0; // upward launch speed
+              // Pole flies off in the direction of the impact velocity (heavier, less explosive flight)
+              const launchSpeed = Math.max(speed * 0.82 + 3.5, 6.0);
+              b.velocity.copy(impactForceDir).multiplyScalar(launchSpeed);
+              b.velocity.y = Math.max(speed * 0.32 + 3.8, 4.5); // upward launch speed
               
-              // Add crazy spin
+              // Add heavy, minimal spin
               b.angularVelocity.set(
-                (Math.random() - 0.5) * 12.0,
-                (Math.random() - 0.5) * 6.0,
-                (Math.random() - 0.5) * 12.0
+                (Math.random() - 0.5) * 4.5,
+                (Math.random() - 0.5) * 1.5,
+                (Math.random() - 0.5) * 4.5
               );
             } else {
-              b.velocity.set((Math.random() - 0.5) * 3, 2.0, (Math.random() - 0.5) * 3);
-              b.angularVelocity.set(Math.random() * 4, Math.random() * 4, Math.random() * 4);
+              b.velocity.copy(impactForceDir).multiplyScalar(4.0);
+              b.velocity.y = 4.5;
+              b.angularVelocity.set(
+                (Math.random() - 0.5) * 3.5,
+                (Math.random() - 0.5) * 1.0,
+                (Math.random() - 0.5) * 3.5
+              );
             }
+
+            // Give broken props a stronger topple bias so they don't hang in the air.
+            b.velocity.y += 0.8;
+            b.angularVelocity.x += (Math.random() - 0.5) * 1.0;
+            b.angularVelocity.z += (Math.random() - 0.5) * 1.0;
 
             // Turn off light source
             b.lights.forEach(src => {
@@ -165,23 +191,110 @@ export function checkBreakablesCollision(dt) {
               this.physics.velocity.multiplyScalar(0.92);
             }
 
-            // Spawn sparks and wood/metal debris
+            // Spawn sparks and wood/metal debris or water splashes
             const sparkPos = b.position.clone();
             sparkPos.y = 0.8;
-            this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10);
-            this.spawnDebris(sparkPos, impactForceDir, 0x333333, 5); // metal shards
+            if (b.type === 'hydrant') {
+              this.spawnParticles(sparkPos, impactForceDir, 0xaaddff, 18, true);
+              this.spawnDebris(sparkPos, impactForceDir, 0xdd2222, 5); // red metal shards
+            } else {
+              this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10);
+              this.spawnDebris(sparkPos, impactForceDir, 0x333333, 5); // metal shards
+            }
 
             break; // Stop checking other entities for this breakable
           }
         }
       } else {
-        // Update physics of falling breakable prop
-        b.velocity.y += -22.0 * dt; // strong gravity
+        // Update physics of falling breakable prop (increased gravity to make it feel heavier)
+        b.velocity.y += -46.0 * dt; // stronger gravity so the fall commits immediately
         b.group.position.addScaledVector(b.velocity, dt);
 
         b.group.rotation.x += b.angularVelocity.x * dt;
         b.group.rotation.y += b.angularVelocity.y * dt;
         b.group.rotation.z += b.angularVelocity.z * dt;
+
+        // Continuous water spray fountain from broken fire hydrant base
+        if (b.type === 'hydrant') {
+          if (b.sprayTimer === undefined) b.sprayTimer = 18.0; // Spray for 18 seconds
+          if (b.sprayTimer > 0) {
+            b.sprayTimer -= dt;
+            
+            // Check if any vehicle is sitting over the hydrant's base position
+            let isCovered = false;
+            
+            // Check player
+            const pDistSq = (this.physics.position.x - b.position.x) ** 2 + (this.physics.position.z - b.position.z) ** 2;
+            if (pDistSq < 5.0) {
+              isCovered = true;
+            }
+            
+            // Check AI
+            if (!isCovered && this.race && this.race.active) {
+              for (let i = 0; i < this.race.aiRacers.length; i++) {
+                const ai = this.race.aiRacers[i];
+                const distSq = (ai.position.x - b.position.x) ** 2 + (ai.position.z - b.position.z) ** 2;
+                if (distSq < 5.0) {
+                  isCovered = true;
+                  break;
+                }
+              }
+            }
+            
+            // Check cops
+            if (!isCovered && this.pursuit && this.pursuit.active) {
+              for (let i = 0; i < this.pursuit.cops.length; i++) {
+                const cop = this.pursuit.cops[i];
+                if (cop.active) {
+                  const distSq = (cop.position.x - b.position.x) ** 2 + (cop.position.z - b.position.z) ** 2;
+                  if (distSq < 5.0) {
+                    isCovered = true;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            // Check traffic
+            if (!isCovered && this.traffic && this.traffic.vehicles) {
+              for (let i = 0; i < this.traffic.vehicles.length; i++) {
+                const v = this.traffic.vehicles[i];
+                const distSq = (v.position.x - b.position.x) ** 2 + (v.position.z - b.position.z) ** 2;
+                if (distSq < 5.0) {
+                  isCovered = true;
+                  break;
+                }
+              }
+            }
+            
+            // Check parked vehicles
+            if (!isCovered && this.traffic && this.traffic.parkedVehicles) {
+              for (let i = 0; i < this.traffic.parkedVehicles.length; i++) {
+                const v = this.traffic.parkedVehicles[i];
+                const distSq = (v.position.x - b.position.x) ** 2 + (v.position.z - b.position.z) ** 2;
+                if (distSq < 5.0) {
+                  isCovered = true;
+                  break;
+                }
+              }
+            }
+            
+            if (!isCovered) {
+              const sprayPos = b.position.clone();
+              // Start spray slightly above ground level
+              sprayPos.y = this.world.getGroundHeight(sprayPos.x, sprayPos.z) + 0.25;
+              
+              const sprayDir = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.12,
+                1.0,
+                (Math.random() - 0.5) * 0.12
+              ).normalize();
+              
+              // Spawn 3 water particles every frame
+              this.spawnParticles(sprayPos, sprayDir, 0xaaddff, 3, true);
+            }
+          }
+        }
 
         // Bounce on ground level
         const groundHeight = this.world.getGroundHeight(b.group.position.x, b.group.position.z);
@@ -193,14 +306,33 @@ export function checkBreakablesCollision(dt) {
 
         if (b.group.position.y < minHeight) {
           b.group.position.y = minHeight;
-          if (b.velocity.y < -1.5) {
-            b.velocity.y = -b.velocity.y * 0.22; // bounce damping
+          
+          const isFlat = tiltCos < 0.15;
+          if (isFlat) {
+            // Once flat, damp and stop
+            if (b.velocity.y < -1.5) {
+              b.velocity.y = -b.velocity.y * 0.22; // bounce damping
+            } else {
+              b.velocity.y = 0.0;
+            }
+            b.velocity.x *= 0.48 * Math.exp(-dt * 6.5); // slide friction
+            b.velocity.z *= 0.48 * Math.exp(-dt * 6.5);
+            b.angularVelocity.multiplyScalar(0.35 * Math.exp(-dt * 5.0));
           } else {
-            b.velocity.y = 0.0;
+            // While toppling, satisfy the ground tip contact constraint kinematics.
+            // Do NOT bounce the center of mass vertically.
+            // Instead, apply constant gravity torque to slide the center of mass down.
+            const sinTheta = Math.sqrt(1.0 - tiltCos * tiltCos);
+            const toppleTorque = 16.0 * sinTheta; // Accelerates as it leans further
+            const leanX = upVec.z;
+            const leanZ = -upVec.x;
+            b.angularVelocity.x += leanX * toppleTorque * dt;
+            b.angularVelocity.z += leanZ * toppleTorque * dt;
+            
+            // Allow natural sliding velocity on the tip contact
+            b.velocity.x *= 0.98;
+            b.velocity.z *= 0.98;
           }
-          b.velocity.x *= 0.65 * Math.exp(-dt * 4.0); // slide friction
-          b.velocity.z *= 0.65 * Math.exp(-dt * 4.0);
-          b.angularVelocity.multiplyScalar(0.5 * Math.exp(-dt * 3.0));
           
           // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
           let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
@@ -212,8 +344,9 @@ export function checkBreakablesCollision(dt) {
               targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
             }
           }
-          b.group.rotation.x += (targetX - b.group.rotation.x) * 4.0 * dt;
-          b.group.rotation.z += (targetZ - b.group.rotation.z) * 4.0 * dt;
+          const alignStrength = isFlat ? 7.0 : 2.5;
+          b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
+          b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
         }
 
         // Fade out/scale down only when off-camera
@@ -233,4 +366,4 @@ export function checkBreakablesCollision(dt) {
 
     // Clean up breakables that have been removed from the scene
     this.world.breakables = this.world.breakables.filter(b => !b.shouldRemove);
-  }
+}

@@ -5,6 +5,24 @@ import { createSkidmarkTexture } from './textures.js';
 const _skidMidpoint = new THREE.Vector3();
 const _skidDir = new THREE.Vector3();
 const _skidTarget = new THREE.Vector3();
+const _particleViewProjection = new THREE.Matrix4();
+const _particleFrustum = new THREE.Frustum();
+const _particleWorldPos = new THREE.Vector3();
+const _particleCullDistanceSq = 120 * 120;
+
+function shouldUpdateParticle(app, mesh) {
+  if (!app || !app.camera) return true;
+  _particleWorldPos.setFromMatrixPosition(mesh.matrixWorld);
+
+  const cameraPos = app.camera.position;
+  if (cameraPos.distanceToSquared(_particleWorldPos) > _particleCullDistanceSq) {
+    return false;
+  }
+
+  _particleViewProjection.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+  _particleFrustum.setFromProjectionMatrix(_particleViewProjection);
+  return _particleFrustum.containsPoint(_particleWorldPos);
+}
 
 export function getParticleMaterial(color, opacity) {
     const roundedOpacity = Math.round(opacity * 20) / 20; // 20 discrete steps
@@ -265,6 +283,10 @@ export function updateParticles(dt) {
     for (const p of this.particlePool) {
       if (p.life > 0) {
         p.life -= dt;
+        if (!shouldUpdateParticle(this, p.mesh)) {
+          if (p.life <= 0) p.mesh.visible = false;
+          continue;
+        }
         p.mesh.position.addScaledVector(p.velocity, dt);
         
         if (p.isWater) {

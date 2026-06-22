@@ -186,6 +186,25 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
       bulb.position.set(0, 7.8, 0);
       poleGroup.add(bulb);
 
+      // Volumetric light cone
+      const coneMesh = new THREE.Mesh(this.lightConeGeo, this.lightConeMatSodium);
+      coneMesh.position.set(0, 3.9, 0);
+      coneMesh.name = "lightCone";
+      poleGroup.add(coneMesh);
+
+      // Glowing lens flare sprite
+      const flare = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.slFlareTex,
+        color: 0xffaa44,
+        transparent: true,
+        opacity: 0.70,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      }));
+      flare.position.set(0, 7.8, 0);
+      flare.scale.set(3.8, 3.8, 1.0);
+      poleGroup.add(flare);
+
       poleGroup.position.set(posX + lx, 0.35 + h, posZ + lz);
       group.add(poleGroup);
 

@@ -86,50 +86,79 @@ export class RaceManager {
     const visited = new Set();
     visited.add(`${startX},${startZ}`);
     visited.add(`${firstX},${firstZ}`);
+    let prevStep = { x: stepX, z: stepZ };
+    const startDistBoost = 0.18;
 
     const length = 15 + Math.floor(Math.random() * 6); // 15–21 checkpoints
+    const pickJumpCount = () => {
+      const r = Math.random();
+      if (r < 0.5) return 2;
+      if (r < 0.8) return 3;
+      return 4;
+    };
+
     for (let i = 0; i < length; i++) {
-      // All 8 possible grid neighbours (cardinal + diagonal)
-      const allNeighbors = [
-        { x: current.x + 160, z: current.z },
-        { x: current.x - 160, z: current.z },
-        { x: current.x,       z: current.z + 160 },
-        { x: current.x,       z: current.z - 160 },
-        { x: current.x + 160, z: current.z + 160 },
-        { x: current.x - 160, z: current.z + 160 },
-        { x: current.x + 160, z: current.z - 160 },
-        { x: current.x - 160, z: current.z - 160 }
+      const candidates = [];
+      const stepCount = pickJumpCount();
+      const distance = 160 * stepCount;
+      const directionOptions = [
+        { x: 1, z: 0, kind: 'straight' },
+        { x: -1, z: 0, kind: 'side' },
+        { x: 0, z: 1, kind: 'straight' },
+        { x: 0, z: -1, kind: 'side' },
+        { x: 1, z: 1, kind: 'diagonal' },
+        { x: -1, z: 1, kind: 'diagonal' },
+        { x: 1, z: -1, kind: 'diagonal' },
+        { x: -1, z: -1, kind: 'diagonal' }
       ];
 
-      // Only allow neighbours that are strictly forward of the player start point
-      // (positive dot product with the player's heading vector)
-      const validNeighbors = allNeighbors.filter(n => {
-        if (visited.has(`${n.x},${n.z}`)) return false;
-        const dx = n.x - startX;
-        const dz = n.z - startZ;
-        return dx * fwdX + dz * fwdZ > 0; // must be in the forward half-plane
-      });
+      for (const dir of directionOptions) {
+        const n = {
+          x: current.x + dir.x * distance,
+          z: current.z + dir.z * distance
+        };
 
-      if (validNeighbors.length === 0) break;
+        if (visited.has(`${n.x},${n.z}`)) continue;
 
-      // Prefer neighbours that continue pushing forward (highest dot product wins bias)
-      validNeighbors.sort((a, b) => {
-        const dotA = (a.x - startX) * fwdX + (a.z - startZ) * fwdZ;
-        const dotB = (b.x - startX) * fwdX + (b.z - startZ) * fwdZ;
-        return dotB - dotA;
-      });
+        const step = { x: n.x - current.x, z: n.z - current.z };
+        const reversing = step.x === -prevStep.x && step.z === -prevStep.z;
+        if (reversing) continue;
 
-      // Weighted pick: 70% chance to pick from the top-half (forward-biased), 30% random
-      let next;
-      if (Math.random() < 0.7 && validNeighbors.length > 0) {
-        const topHalf = validNeighbors.slice(0, Math.max(1, Math.ceil(validNeighbors.length / 2)));
-        next = topHalf[Math.floor(Math.random() * topHalf.length)];
-      } else {
-        next = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+        const forwardBias = step.x * prevStep.x + step.z * prevStep.z;
+        if (forwardBias < 0) continue;
+
+        const distFromStart = Math.hypot(n.x - startX, n.z - startZ);
+        const outwardBias = distFromStart * startDistBoost;
+        const jumpBias = stepCount * 18;
+        const score = forwardBias + outwardBias + jumpBias;
+
+        candidates.push({ n, score, kind: dir.kind, stepCount });
       }
+
+      if (candidates.length === 0) break;
+
+      const diagonalSet = candidates.filter(entry => entry.kind === 'diagonal');
+      const straightSet = candidates.filter(entry => entry.kind === 'straight');
+      const sideSet = candidates.filter(entry => entry.kind === 'side');
+
+      const roll = Math.random();
+      let bucket = sideSet;
+      if (roll < 0.4) bucket = diagonalSet.length > 0 ? diagonalSet : straightSet;
+      else if (roll < 0.8) bucket = straightSet.length > 0 ? straightSet : diagonalSet;
+
+      if (bucket.length === 0) {
+        bucket = candidates;
+      }
+
+      bucket.sort((a, b) => b.score - a.score);
+      const topHalf = bucket.slice(0, Math.max(1, Math.ceil(bucket.length / 2)));
+      const chosenPool = Math.random() < 0.7 ? topHalf : bucket;
+      const nextMeta = chosenPool[Math.floor(Math.random() * chosenPool.length)];
+      const next = nextMeta.n;
 
       path.push(next);
       visited.add(`${next.x},${next.z}`);
+      prevStep = { x: next.x - current.x, z: next.z - current.z };
       current = next;
     }
     return path;

@@ -834,6 +834,13 @@ class Game {
     // in slow-motion after any heavy synchronous work (e.g. mesh creation)
     // that causes the clock to accumulate a large delta in one frame.
     const dt = Math.min(this.clock.getDelta(), 0.05);
+    const physicsStep = 1 / 60;
+    const maxPhysicsSubsteps = 5;
+    if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
+    if (this.prevPhysicsPosition === undefined) this.prevPhysicsPosition = this.physics.position.clone();
+    if (this.prevPhysicsHeading === undefined) this.prevPhysicsHeading = this.physics.heading || 0;
+    if (this.renderPhysicsPosition === undefined) this.renderPhysicsPosition = this.physics.position.clone();
+    if (this.renderPhysicsHeading === undefined) this.renderPhysicsHeading = this.physics.heading || 0;
     
     const tPursuitStart = performance.now();
     
@@ -1310,7 +1317,26 @@ class Game {
 
     // Update physics
     const tPhysicsStart = performance.now();
-    this.physics.update(scaledDt, this.keys, this.world);
+    this.physicsAccumulator += scaledDt;
+    let physicsSteps = 0;
+    while (this.physicsAccumulator >= physicsStep && physicsSteps < maxPhysicsSubsteps) {
+      this.prevPhysicsPosition.copy(this.physics.position);
+      this.prevPhysicsHeading = this.physics.heading || 0;
+      this.physics.update(physicsStep, this.keys, this.world);
+      this.physicsAccumulator -= physicsStep;
+      physicsSteps++;
+    }
+    if (physicsSteps === maxPhysicsSubsteps) {
+      this.physicsAccumulator = Math.min(this.physicsAccumulator, physicsStep);
+    }
+
+    const physicsAlpha = Math.min(1, this.physicsAccumulator / physicsStep);
+    this.renderPhysicsPosition.copy(this.prevPhysicsPosition).lerp(this.physics.position, physicsAlpha);
+    const currentHeading = this.physics.heading || 0;
+    let headingDelta = currentHeading - this.prevPhysicsHeading;
+    if (headingDelta > Math.PI) headingDelta -= Math.PI * 2;
+    if (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
+    this.renderPhysicsHeading = this.prevPhysicsHeading + headingDelta * physicsAlpha;
 
     // Player wall collision check (applied damage, debris, slow-mo)
     if (this.physics.justCrashed) {
@@ -1344,7 +1370,7 @@ class Game {
     // Update civilian traffic (dynamically adjust density based on player speed)
     if (this.traffic) {
       const playerSpeed = this.physics.velocity.length();
-      const baseMax = this.race.active ? 18 : 30;
+      const baseMax = this.race.active ? 16 : 30;
       let densityScale = 1.0;
       if (playerSpeed > 25.0) {
         // At speed <= 25 m/s, keep 100% density. At higher speeds, reduce to 70% density.
@@ -2078,11 +2104,11 @@ class Game {
 
     const tPlayerVisualsStart = performance.now();
     // Coordinate translation
-    this.carVisualContainer.position.copy(this.physics.position);
+    this.carVisualContainer.position.copy(this.renderPhysicsPosition);
     this.world.alignMeshToTerrain(
       this.carVisualContainer,
-      this.physics.position,
-      this.physics.heading,
+      this.renderPhysicsPosition,
+      this.renderPhysicsHeading,
       (this.physics.isAirborne && this.physics.airTime > 0.2) || this.physics.rolloverTimer > 0,
       scaledDt
     );
@@ -2524,34 +2550,22 @@ class Game {
 
       // Spawn tall checkpoint smoke particles
       this.race.checkpoints.forEach((cp, index) => {
-        let isCurrent = false;
-        let isNext = false;
+        const isFinish = (index === this.race.checkpoints.length - 1);
+        const color = isFinish ? 0xe84545 : 0xffaa3a;
+        const isUnordered = this.race.mode === 'unordered';
+        const isCleared = isUnordered ? this.race.unorderedCleared.has(index) : index < this.race.currentIndex;
+        const isCurrent = isUnordered ? !isCleared : index === this.race.currentIndex;
+        const isNext = !isUnordered && index === Math.min(this.race.currentIndex + 1, this.race.checkpoints.length - 1);
 
-        if (this.race.mode === 'unordered') {
-          isCurrent = !this.race.unorderedCleared.has(index);
-        } else {
-          isCurrent = (index === this.race.currentIndex);
-          
-          let nextIndex = this.race.currentIndex + 1;
-          if (nextIndex >= this.race.checkpoints.length) {
-            if (this.race.mode === 'circuit' && this.race.lapCurrent < this.race.lapsTotal) {
-              nextIndex = 0;
-            } else {
-              nextIndex = -1; // End of race
-            }
+        if (isUnordered) {
+          if (!isCleared && Math.random() < 0.35) {
+            this.spawnCheckpointSmoke(cp, color, 0.85, 0.9);
           }
-          isNext = (index === nextIndex);
-        }
-
-        if (isCurrent) {
-          const isFinish = (index === this.race.checkpoints.length - 1);
-          const color = isFinish ? 0xe84545 : 0xffaa3a;
+        } else if (isCurrent) {
           if (Math.random() < 0.55) {
             this.spawnCheckpointSmoke(cp, color, 1.0, 1.0);
           }
         } else if (isNext) {
-          const isFinish = (index === this.race.checkpoints.length - 1);
-          const color = isFinish ? 0xe84545 : 0xffaa3a;
           if (Math.random() < 0.20) {
             this.spawnCheckpointSmoke(cp, color, 0.45, 0.65);
           }

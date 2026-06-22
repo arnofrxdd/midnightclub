@@ -3386,4 +3386,16 @@ class Game {
   }
 }
 
-new Game();
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+
+if (isMobile) {
+  const blocker = document.getElementById('mobile-blocker');
+  if (blocker) blocker.style.display = 'flex';
+  const loader = document.getElementById('loader');
+  if (loader) loader.style.display = 'none';
+  const menu = document.getElementById('main-menu');
+  if (menu) menu.style.display = 'none';
+  console.log("Game initialization aborted: Mobile device detected.");
+} else {
+  new Game();
+}

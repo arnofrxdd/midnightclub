@@ -969,3 +969,34 @@ body, html {
   0% { opacity: 0.3; }
   100% { opacity: 0.9; }
 }
+
+#mobile-blocker {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #000000;
+  color: #fff;
+  z-index: 999999;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  padding: 20px;
+}
+
+.mobile-blocker-content h2 {
+  color: #ff3b30;
+  font-size: 4em;
+  margin-bottom: 10px;
+}
+
+.mobile-blocker-content p {
+  font-size: 1.5em;
+  color: #ccc;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  #mobile-blocker {
+    display: flex;
+  }
+}

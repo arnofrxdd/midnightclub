@@ -11,7 +11,7 @@ export class RaceManager {
     this.currentIndex = 0;
     
     // Circuit specific
-    this.lapsTotal = 2;
+    this.lapsTotal = 3; // Authoritative lap total used everywhere
     this.lapCurrent = 1;
     
     // Unordered specific
@@ -168,69 +168,64 @@ export class RaceManager {
   }
 
   generateRandomCircuit(targetCount = null) {
-    const count = targetCount || (Math.floor(Math.random() * 8) + 6); // 6-13 checkpoints
-    const path = [];
-    let current = { x: 0, z: 0 };
-    path.push(current);
-    
-    let prevStep = { x: 0, z: 160 }; // Assume starting forward
-    const visited = new Set(["0,0"]);
-    const half = Math.floor(count / 2);
-    
-    for (let i = 1; i < count; i++) {
-      const candidates = [];
-      const directionOptions = [
-        { x: 160, z: 0 }, { x: -160, z: 0 },
-        { x: 0, z: 160 }, { x: 0, z: -160 }
-      ];
-      
-      for (const dir of directionOptions) {
-        const n = { x: current.x + dir.x, z: current.z + dir.z };
-        if (visited.has(`${n.x},${n.z}`)) continue;
-        
-        const reversing = (dir.x === -prevStep.x && dir.z === -prevStep.z);
-        if (reversing) continue;
-        
-        // Outward phase vs Inward phase
-        const distFromOrigin = Math.hypot(n.x, n.z);
-        let score = 0;
-        
-        if (i < half) {
-            // Outward phase: reward going further from origin
-            score += distFromOrigin;
-        } else {
-            // Inward phase: reward going closer to origin
-            score -= distFromOrigin;
+    // -----------------------------------------------------------------------
+    // Direction-index approach: 0=North(+Z), 1=East(+X), 2=South(-Z), 3=West(-X)
+    // We only ever allow turning LEFT (-1), going STRAIGHT (0), or turning RIGHT (+1).
+    // Turning +2 or -2 is a U-turn and is NEVER allowed — it's excluded by design,
+    // not by a penalty score that can be overridden.
+    // -----------------------------------------------------------------------
+    const TILE = 160;
+    const DIRS = [
+      { x:  0, z:  1 },  // 0 = North (+Z)
+      { x:  1, z:  0 },  // 1 = East  (+X)
+      { x:  0, z: -1 },  // 2 = South (-Z)
+      { x: -1, z:  0 },  // 3 = West  (-X)
+    ];
+
+    const count = targetCount || (6 + Math.floor(Math.random() * 5)); // 6–10 checkpoints
+
+    const path   = [];
+    const visited = new Set(['0,0']);
+    let current  = { x: 0, z: 0 };
+    let dirIdx   = 0; // Start heading North
+
+    for (let i = 0; i < count; i++) {
+      // Only consider: left turn (-1), straight (0), right turn (+1)
+      // NEVER +2 / -2 (those are U-turns — completely excluded from the option list)
+      const options = [];
+
+      for (const delta of [0, 1, -1]) { // Prefer straight first, then right, then left
+        const newDirIdx = ((dirIdx + delta) % 4 + 4) % 4;
+        const dir = DIRS[newDirIdx];
+        const n = { x: current.x + dir.x * TILE, z: current.z + dir.z * TILE };
+        const key = `${n.x},${n.z}`;
+        if (!visited.has(key)) {
+          // Weight: straight = 3, turns = 1 (so we mostly go straight but do turn sometimes)
+          const weight = delta === 0 ? 3 : 1;
+          options.push({ n, newDirIdx, weight });
         }
-        
-        // Prevent U-turns (dot product < 0)
-        const dot = (dir.x * prevStep.x) + (dir.z * prevStep.z);
-        if (dot < 0) score -= 1000; // Penalize heavy U-turns
-        if (dot > 0) score += 500;  // Reward going straight
-        
-        candidates.push({ n, step: dir, score });
       }
-      
-      if (candidates.length === 0) {
-         // Fallback if stuck
-         const fallback = { x: current.x + prevStep.x, z: current.z + prevStep.z };
-         path.push(fallback);
-         current = fallback;
-         continue;
+
+      if (options.length === 0) break; // Completely boxed in — stop early
+
+      // Weighted random pick — still avoids fully deterministic straight lines
+      const totalWeight = options.reduce((s, o) => s + o.weight, 0);
+      let rand = Math.random() * totalWeight;
+      let chosen = options[0];
+      for (const o of options) {
+        rand -= o.weight;
+        if (rand <= 0) { chosen = o; break; }
       }
-      
-      candidates.sort((a, b) => b.score - a.score);
-      // Pick randomly from top 2
-      const pick = candidates[Math.floor(Math.random() * Math.min(2, candidates.length))];
-      
-      path.push(pick.n);
-      visited.add(`${pick.n.x},${pick.n.z}`);
-      prevStep = pick.step;
-      current = pick.n;
+
+      current = chosen.n;
+      dirIdx  = chosen.newDirIdx;
+      visited.add(`${current.x},${current.z}`);
+      path.push({ x: current.x, z: current.z });
     }
-    
+
     return path;
   }
+
 
   generateRandomUnordered(targetCount = null) {
     const path = [];
@@ -269,7 +264,7 @@ export class RaceManager {
     
     const expectedCheckpoints = (eventData && eventData.checkpoints) ? eventData.checkpoints : null;
     const expectedRacers = (eventData && eventData.racers) ? eventData.racers : 3;
-    this.lapTotal = (eventData && eventData.laps) ? eventData.laps : (mode === 'circuit' ? 3 : 1);
+    this.lapsTotal = (eventData && eventData.laps) ? eventData.laps : (mode === 'circuit' ? 3 : 1); // Single authoritative source
     
     // Dynamically generate random paths for all races!
     if (mode === 'sprint') {
@@ -422,12 +417,12 @@ export class RaceManager {
         triggerHit = true;
         
         if (this.mode === 'circuit') {
-          // Lap logic
+          // Lap logic — use lapsTotal (the single authoritative source)
           if (this.currentIndex === this.checkpoints.length - 1) {
-            if (this.lapCurrent < this.lapTotal) {
+            if (this.lapCurrent < this.lapsTotal) {
               this.lapCurrent++;
               this.currentIndex = 0; // Reset loop
-              console.log(`Lap ${this.lapCurrent} started.`);
+              console.log(`Lap ${this.lapCurrent}/${this.lapsTotal} started.`);
               return { event: 'lap', lap: this.lapCurrent };
             } else {
               this.completed = true;

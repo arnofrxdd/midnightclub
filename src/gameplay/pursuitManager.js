@@ -36,9 +36,10 @@ export class PursuitManager {
     }
     this.cooldownTimer = 0.0;
     this.maxSpawnCops = Math.min(5, Math.max(1, this.heatLevel)); // Toned down: Heat 1 = 1 cop, Heat 5 = 5 cops max
-    if (this.heatLevel >= 3 && prevHeat < 3) {
-      this.roadblockTimer = 10.0; // Quick initial roadblock when hitting Heat 3
-    }
+    // Roadblocks disabled
+    // if (this.heatLevel >= 3 && prevHeat < 3) {
+    //   this.roadblockTimer = 10.0; // Quick initial roadblock when hitting Heat 3
+    // }
   }
 
   cancelPursuit() {
@@ -108,26 +109,27 @@ export class PursuitManager {
       let rx = 0;
       let rz = 0;
 
-      if (Math.random() < 0.70) {
+      if (Math.random() < 0.80) {
+        // 80% chance: spawn well ahead of the player so they appear to be driving toward you
         const playerHeading = this.app.physics.heading;
         const fwdX = Math.sin(playerHeading);
         const fwdZ = Math.cos(playerHeading);
 
         if (Math.abs(fwdX) > Math.abs(fwdZ)) {
-          // Driving mostly East/West (along X). Spawn ahead in X (approx 3-4 tiles), with minor Z offset (side road/parallel)
+          // Driving mostly East/West. Spawn far ahead in X (8-12 tiles), minor Z offset
           const dirX = Math.sign(fwdX) !== 0 ? Math.sign(fwdX) : (Math.random() > 0.5 ? 1 : -1);
-          rx = dirX * (3 + Math.floor(Math.random() * 2));
+          rx = dirX * (8 + Math.floor(Math.random() * 5));
           rz = (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 2);
         } else {
-          // Driving mostly North/South (along Z). Spawn ahead in Z (approx 3-4 tiles), with minor X offset (side road/parallel)
+          // Driving mostly North/South. Spawn far ahead in Z (8-12 tiles), minor X offset
           const dirZ = Math.sign(fwdZ) !== 0 ? Math.sign(fwdZ) : (Math.random() > 0.5 ? 1 : -1);
-          rz = dirZ * (3 + Math.floor(Math.random() * 2));
+          rz = dirZ * (8 + Math.floor(Math.random() * 5));
           rx = (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 2);
         }
       } else {
-        // 30% random offset around the player (approx 3-4 tiles away)
-        rx = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.floor(Math.random() * 2));
-        rz = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.floor(Math.random() * 2));
+        // 20% chance: spawn from the sides at a safe distance
+        rx = (Math.random() > 0.5 ? 1 : -1) * (6 + Math.floor(Math.random() * 4));
+        rz = (Math.random() > 0.5 ? 1 : -1) * (6 + Math.floor(Math.random() * 4));
       }
 
       const colIdx = findClosestIndex(sortedCols, playerGridX + rx);
@@ -270,8 +272,9 @@ export class PursuitManager {
         cop.heading = dz > 0 ? 0 : Math.PI;
       }
       
-      // Start at 90% of max speed to instantly charge the player
-      cop.speed = cop.maxSpeed * 0.9;
+      // Start at a moderate speed so they visibly drive toward the player from a distance
+      // rather than materialising right in their face at full speed
+      cop.speed = cop.maxSpeed * 0.35;
       cop.velocity.set(
         Math.sin(cop.heading) * cop.speed,
         0,
@@ -564,9 +567,10 @@ export class PursuitManager {
             this.heatLevel++;
             this.maxSpawnCops = Math.min(5, Math.max(1, this.heatLevel));
             this.app.showBanner("PURSUIT ESCALATED", `Heat Level: ${this.heatLevel}`);
-            if (this.heatLevel >= 3 && prevHeat < 3) {
-              this.roadblockTimer = 10.0; // Trigger roadblock quick initial check when hitting Heat 3
-            }
+            // Roadblocks disabled
+            // if (this.heatLevel >= 3 && prevHeat < 3) {
+            //   this.roadblockTimer = 10.0;
+            // }
           }
         }
       }
@@ -638,15 +642,15 @@ export class PursuitManager {
       }
     }
 
-    // 8. Spawn roadblocks periodically if active and heat >= 3
-    if (this.active && this.heatLevel >= 3) {
-      this.roadblockTimer -= dt;
-      if (this.roadblockTimer <= 0) {
-        this.roadblockTimer = 25.0 + Math.random() * 15.0; // check spawn every 25-40s
-        const playerHeading = this.app.physics.heading;
-        this.spawnRoadblockAttempt(world, playerPos, playerHeading);
-      }
-    }
+    // 8. Roadblock spawning (DISABLED)
+    // if (this.active && this.heatLevel >= 3) {
+    //   this.roadblockTimer -= dt;
+    //   if (this.roadblockTimer <= 0) {
+    //     this.roadblockTimer = 25.0 + Math.random() * 15.0;
+    //     const playerHeading = this.app.physics.heading;
+    //     this.spawnRoadblockAttempt(world, playerPos, playerHeading);
+    //   }
+    // }
   }
 
   spawnRoadblockAttempt(world, playerPos, playerHeading) {

@@ -1198,3 +1198,145 @@ font-family: 'Barlow Condensed', 'Outfit', sans-serif;
     display: flex;
   }
 }
+
+/* Beta Feedback System */
+.feedback-toggle-btn {
+  position: absolute;
+  bottom: 175px;
+  right: 24px;
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid #00e5ff;
+  color: #00e5ff;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 16px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 1000;
+  text-shadow: 0 0 5px rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+  transition: all 0.2s;
+}
+.feedback-toggle-btn:hover {
+  background: rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+}
+
+.feedback-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(5, 5, 10, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.feedback-content {
+  background: rgba(20, 22, 30, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 30px rgba(0, 229, 255, 0.15), inset 0 0 20px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  padding: 30px;
+  width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.feedback-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-style: italic;
+  font-weight: 900;
+  font-size: 32px;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  margin: 0;
+  letter-spacing: 2px;
+  border-bottom: 2px solid #00e5ff;
+  padding-bottom: 5px;
+}
+
+.feedback-desc {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  color: #a0a5b5;
+  margin: 0;
+}
+
+.feedback-input, .feedback-textarea {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid #333;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  padding: 10px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.feedback-input:focus, .feedback-textarea:focus {
+  outline: none;
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+}
+
+.feedback-textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.feedback-btn {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 18px;
+  padding: 8px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  border: none;
+  transition: all 0.2s;
+}
+
+.feedback-btn.cancel {
+  background: transparent;
+  color: #a0a5b5;
+  border: 1px solid #444;
+}
+.feedback-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.feedback-btn.submit {
+  background: rgba(0, 229, 255, 0.2);
+  color: #00e5ff;
+  border: 1px solid #00e5ff;
+  text-shadow: 0 0 5px rgba(0, 229, 255, 0.5);
+}
+.feedback-btn.submit:hover {
+  background: rgba(0, 229, 255, 0.4);
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+}
+
+.feedback-status {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  color: #00e5ff;
+  text-align: center;
+  min-height: 20px;
+}

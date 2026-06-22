@@ -57,10 +57,16 @@ class Game {
     
     // Inputs
     this.keys = {};
+    this.inFeedbackMenu = false;
     
     this.debugMenuEnabled = false;
     this.physics = new CarPhysics();
     this.race = new RaceManager();
+    
+    // Setup Feedback UI Logic
+    this.setupFeedbackUI();
+
+    this.inMainMenu = true;
     this.cinematicManager = new CinematicManager(this);
     this.aiMeshes = [];
     this.pursuit = new PursuitManager(this);
@@ -598,6 +604,96 @@ class Game {
     this.perfShadersEl = document.getElementById('perf-shaders');
   }
 
+  setupFeedbackUI() {
+    const toggleBtn = document.getElementById('btn-feedback-toggle');
+    const modal = document.getElementById('feedback-modal');
+    const cancelBtn = document.getElementById('btn-feedback-cancel');
+    const form = document.getElementById('feedback-form');
+    const statusEl = document.getElementById('feedback-status');
+
+    const openFeedback = () => {
+      this.inFeedbackMenu = true;
+      modal.style.display = 'flex';
+      form.reset();
+      statusEl.textContent = '';
+      // Focus textarea
+      setTimeout(() => form.querySelector('textarea').focus(), 10);
+    };
+
+    const closeFeedback = () => {
+      this.inFeedbackMenu = false;
+      modal.style.display = 'none';
+      // Blur any inputs so keydown doesn't keep getting captured
+      document.activeElement.blur();
+    };
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', openFeedback);
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', closeFeedback);
+    }
+
+    // Quick Feedback Logic
+    const likeBtn = document.getElementById('btn-like-race');
+    const dislikeBtn = document.getElementById('btn-dislike-race');
+    const qfThanks = document.getElementById('quick-feedback-thanks');
+
+    const sendQuickFeedback = (rating) => {
+      fetch('https://formspree.io/f/xykqyobp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ message: `Quick Feedback: User rated the ${this.race ? this.race.mode : 'race'} as ${rating}` })
+      }).catch(e => console.error(e)); // Fire and forget
+      
+      if (likeBtn) likeBtn.style.display = 'none';
+      if (dislikeBtn) dislikeBtn.style.display = 'none';
+      if (qfThanks) qfThanks.style.display = 'block';
+    };
+
+    if (likeBtn) likeBtn.addEventListener('click', () => sendQuickFeedback('LIKE'));
+    if (dislikeBtn) dislikeBtn.addEventListener('click', () => sendQuickFeedback('DISLIKE'));
+
+    window.addEventListener('keydown', (e) => {
+      // Prevent opening if they are already typing in an input
+      if (e.key.toLowerCase() === 'b' && !this.inFeedbackMenu && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        openFeedback();
+      } else if (e.key === 'Escape' && this.inFeedbackMenu) {
+        closeFeedback();
+      }
+    });
+
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const data = new FormData(form);
+        statusEl.textContent = 'Sending...';
+        statusEl.style.color = '#fff';
+
+        fetch(form.action, {
+          method: form.method,
+          body: data,
+          headers: {
+            'Accept': 'application/json'
+          }
+        }).then(response => {
+          if (response.ok) {
+            statusEl.textContent = 'Thanks for your feedback!';
+            statusEl.style.color = '#00ffcc';
+            setTimeout(closeFeedback, 1500);
+          } else {
+            statusEl.textContent = 'Oops! There was a problem submitting your form';
+            statusEl.style.color = '#ff1e1e';
+          }
+        }).catch(error => {
+          statusEl.textContent = 'Oops! There was a problem submitting your form';
+          statusEl.style.color = '#ff1e1e';
+        });
+      });
+    }
+  }
+
   precompileShaders() {
     const dummyGroup = new THREE.Group();
     this.scene.add(dummyGroup);
@@ -1035,79 +1131,94 @@ class Game {
     this.clearCheckpointBeacons();
     if (!this.race.active) return;
 
-    // Build visual cylinder markers for active checkpoints
-    this.race.checkpoints.forEach((cp, index) => {
-      // In ordered modes, only render current active target
-      // In unordered mode, render all uncleared checkpoints
+    const cps = this.race.checkpoints;
+    const mode = this.race.mode;
+    const total = cps.length;
+
+    cps.forEach((cp, index) => {
+      // --- Visibility check ---
       let shouldRender = false;
-      if (this.race.mode === 'unordered') {
+      if (mode === 'unordered') {
         shouldRender = !this.race.unorderedCleared.has(index);
       } else {
         shouldRender = (index === this.race.currentIndex);
       }
+      if (!shouldRender) return;
 
-      if (shouldRender) {
-        const isFinish = (index === this.race.checkpoints.length - 1);
-        const color = isFinish ? 0xe84545 : this.getModeColor(this.race.mode).hex; // Red for finish, mode color for standard
+      // --- Ground snap ---
+      const h = (this.world && typeof this.world.getGroundHeight === 'function')
+        ? this.world.getGroundHeight(cp.x, cp.z)
+        : 0.5;
 
-        const cpGroup = new THREE.Group();
-        const h = (this.world && typeof this.world.getGroundHeight === 'function')
-          ? this.world.getGroundHeight(cp.x, cp.z)
-          : 0.5;
-        cpGroup.position.set(cp.x, h - 0.4, cp.z);
+      const cpGroup = new THREE.Group();
+      cpGroup.position.set(cp.x, h - 0.4, cp.z);
 
-        // Hovering Indicator Arrow pointing to the NEXT checkpoint (Midnight Club style)
-        let nextCp = null;
-        if (this.race.mode !== 'unordered') {
-          if (index < this.race.checkpoints.length - 1) {
-            nextCp = this.race.checkpoints[index + 1];
-          } else if (this.race.mode === 'circuit' && this.race.lapCurrent < this.race.lapsTotal) {
-            nextCp = this.race.checkpoints[0];
-          }
+      // --- Color ---
+      const isFinish = (index === total - 1);
+      const color = isFinish ? 0xe84545 : this.getModeColor(mode).hex;
+
+      // --- Determine which checkpoint this arrow should point AT ---
+      // Arrow sits AT checkpoint[index] and points TOWARD the next target.
+      let nextCp = null;
+      if (mode !== 'unordered') {
+        if (index < total - 1) {
+          // Not the last checkpoint — point to checkpoint[index+1]
+          nextCp = cps[index + 1];
+        } else if (mode === 'circuit' && this.race.lapCurrent < this.race.lapsTotal) {
+          // Last checkpoint on a circuit lap that isn't the final lap — loop back to [0]
+          nextCp = cps[0];
         }
-
-        if (nextCp) {
-          const cpArrow = new THREE.Group();
-          cpArrow.position.set(0, 3.5, 0); // Position high inside the smoke column
-          cpArrow.name = "nextCPArrow";
-
-          const arrowColor = 0xffb31a;
-          const arrowMat = new THREE.MeshStandardMaterial({
-            color: arrowColor,
-            emissive: arrowColor,
-            emissiveIntensity: 0.6,
-            roughness: 0.6,
-            metalness: 0.3,
-            depthTest: true
-          });
-
-          // Voxel arrow shaft
-          const arrowShaft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 3.2), arrowMat);
-          arrowShaft.position.z = -1.0;
-          arrowShaft.castShadow = true;
-          arrowShaft.receiveShadow = true;
-          cpArrow.add(arrowShaft);
-
-          // Voxel arrow tip pointing towards next checkpoint
-          const arrowTipGeo = new THREE.ConeGeometry(1.5, 2.5, 4);
-          arrowTipGeo.rotateX(Math.PI / 2);
-          const arrowTip = new THREE.Mesh(arrowTipGeo, arrowMat);
-          arrowTip.position.z = 1.2;
-          arrowTip.castShadow = true;
-          arrowTip.receiveShadow = true;
-          cpArrow.add(arrowTip);
-
-          // Calculate angle from current checkpoint to next checkpoint
-          const dx = nextCp.x - cp.x;
-          const dz = nextCp.z - cp.z;
-          cpArrow.rotation.y = Math.atan2(dx, dz);
-          cpArrow.rotation.x = -0.32; // Tilt upward (pitch) like Midnight Club
-
-          cpGroup.add(cpArrow);
-        }
-
-        this.checkpointVisualsGroup.add(cpGroup);
+        // If it IS the final finish line (sprint or last circuit lap), nextCp stays null → no arrow
       }
+
+      // --- Build the arrow only when there is a valid next target ---
+      if (nextCp !== null) {
+        // Compute the direction vector in WORLD SPACE from this cp to the next cp
+        const dx = nextCp.x - cp.x;
+        const dz = nextCp.z - cp.z;
+        // atan2(x, z) gives the Y-rotation angle in Three.js where +Z is forward
+        const yaw = Math.atan2(dx, dz);
+
+        // Use a TWO-LEVEL hierarchy so yaw and pitch never contaminate each other:
+        //   yawPivot  → handles only the Y-rotation (horizontal pointing direction)
+        //     tiltPivot → handles only the X-rotation (upward tilt for visibility)
+        //       arrow geometry (shaft + tip) → local +Z = forward
+
+        const yawPivot = new THREE.Group();
+        yawPivot.position.set(0, 3.5, 0); // float above ground inside smoke column
+        yawPivot.rotation.y = yaw;        // turn to face next checkpoint
+
+        const tiltPivot = new THREE.Group();
+        tiltPivot.rotation.x = -0.32;     // tilt upward for Midnight Club look (applied AFTER yaw)
+
+        const arrowMat = new THREE.MeshStandardMaterial({
+          color: 0xffb31a,
+          emissive: 0xffb31a,
+          emissiveIntensity: 0.7,
+          roughness: 0.5,
+          metalness: 0.2,
+          depthTest: true,
+        });
+
+        // Shaft: extends along +Z (forward direction in local space)
+        const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 3.2), arrowMat);
+        shaft.position.z = 0.8; // centre of shaft offset so tip aligns flush
+        shaft.castShadow = true;
+        tiltPivot.add(shaft);
+
+        // Tip: a cone whose natural axis is +Y — rotated to point in +Z
+        const tipGeo = new THREE.ConeGeometry(1.2, 2.2, 4);
+        tipGeo.rotateX(Math.PI / 2); // now points in +Z
+        const tip = new THREE.Mesh(tipGeo, arrowMat);
+        tip.position.z = 2.8; // sits at the front of the shaft
+        tip.castShadow = true;
+        tiltPivot.add(tip);
+
+        yawPivot.add(tiltPivot);
+        cpGroup.add(yawPivot);
+      }
+
+      this.checkpointVisualsGroup.add(cpGroup);
     });
   }
 
@@ -1497,8 +1608,8 @@ class Game {
         }
 
         if (shouldRender) {
-          const isFinish = (index === this.race.checkpoints.length - 1);
-          const color = isFinish ? 0xe84545 : this.getModeColor(this.race.mode).hex;
+          // Always use yellow/amber for checkpoint lighting — looks clean for all race modes
+          const CHECKPOINT_LIGHT_COLOR = 0xffb31a;
           const h = (this.world && typeof this.world.getGroundHeight === 'function')
             ? this.world.getGroundHeight(cp.x, cp.z)
             : 0.5;
@@ -1507,7 +1618,7 @@ class Game {
             y: h + 3.6,
             z: cp.z,
             intensity: 12.0,
-            color: color
+            color: CHECKPOINT_LIGHT_COLOR
           });
         }
       });
@@ -2013,7 +2124,8 @@ class Game {
         this.physics.velocity.set(0, 0, 0);
         this.physics.angularVelocity = 0;
       } else {
-        this.physics.update(physicsStep, this.keys, this.world);
+        const activeKeys = this.inFeedbackMenu ? {} : this.keys;
+        this.physics.update(physicsStep, activeKeys, this.world);
       }
       this.physicsAccumulator -= physicsStep;
       physicsSteps++;
@@ -3176,6 +3288,15 @@ class Game {
           if (resultsContainer) {
             resultsPos.textContent = `${finalPlayerRank}${posSuffix}`;
             resultsTime.textContent = this.formatTime(raceResult.time);
+            
+            // Reset Quick Feedback UI
+            const likeBtn = document.getElementById('btn-like-race');
+            const dislikeBtn = document.getElementById('btn-dislike-race');
+            const qfThanks = document.getElementById('quick-feedback-thanks');
+            if (likeBtn) likeBtn.style.display = 'block';
+            if (dislikeBtn) dislikeBtn.style.display = 'block';
+            if (qfThanks) qfThanks.style.display = 'none';
+
             resultsContainer.classList.add('show');
             
             setTimeout(() => {

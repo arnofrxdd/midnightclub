@@ -211,10 +211,9 @@ export function updateMinimap() {
           
           ctx.save();
           if (isCurrent) {
-            // Pulsing color for active target based on race mode
+            // Always yellow/amber for checkpoint minimap dot — consistent across all modes
             const pulse = 1.0 + Math.sin(Date.now() / 150) * 0.15;
-            const targetColor = this.getModeColor ? this.getModeColor(this.race.mode).css : '#39ff14';
-            ctx.fillStyle = targetColor;
+            ctx.fillStyle = '#ffb31a';
             ctx.beginPath();
             ctx.arc(rx * scale, rz * scale, 5.5 * pulse, 0, Math.PI * 2);
             ctx.fill();

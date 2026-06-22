@@ -542,8 +542,8 @@ export class RaceManager {
           const wz = cz * world.tileSize;
           const dist = playerPos ? Math.hypot(wx - playerPos.x, wz - playerPos.z) : 250;
           
-          // Spawn events in a broad range (80m to 1200m) to give lots of choice
-          if (dist > 80 && dist < 1200) {
+          // Spawn events in a broad range (80m to 1600m) to give lots of choice
+          if (dist > 80 && dist < 1600) {
             intersections.push({ x: wx, z: wz });
           }
         }
@@ -555,9 +555,9 @@ export class RaceManager {
     const modes = ['sprint', 'circuit'];
 
     if (intersections.length > 0) {
-      // Shuffle and pick up to 12 events for high event density
+      // Shuffle and pick up to 24 events for high event density
       const shuffled = intersections.sort(() => 0.5 - Math.random());
-      const count = Math.min(12, shuffled.length);
+      const count = Math.min(24, shuffled.length);
       for (let i = 0; i < count; i++) {
         const mode = modes[Math.floor(Math.random() * modes.length)];
         this.worldEvents.push({

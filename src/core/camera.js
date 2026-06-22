@@ -4,6 +4,13 @@ export function updateCamera(dt = 0.016) {
     if (this.cameraOverride) {
       this.camera.position.copy(this.cameraOverride.pos);
       this.camera.lookAt(this.cameraOverride.lookAt);
+      if (this.cameraOverride.roll !== undefined) {
+        this.camera.rotateZ(this.cameraOverride.roll);
+      }
+      if (this.cameraOverride.fov !== undefined) {
+        this.camera.fov = this.cameraOverride.fov;
+        this.camera.updateProjectionMatrix();
+      }
       this.dirLight.position.set(this.physics.position.x + 30, 60, this.physics.position.z + 30);
       this.dirLight.target = this.carVisualContainer;
       return;
@@ -226,4 +233,63 @@ export function cycleCameraMode() {
   this.cameraMode = modes[nextIdx];
   this.showBanner(`CAMERA: ${this.cameraMode.toUpperCase().replace('_', ' ')}`, `Switched camera view`, 1200);
 }
+
+export function getTargetGameplayCamera() {
+  const targetObj = this.physics;
+  const speed = this.physics.velocity.length();
+  const heading = targetObj.heading;
+
+  let baseDist = 15.0;
+  let baseHeight = 5.2;
+  let targetLookY = 1.1;
+
+  const mode = this.cameraMode || 'medium';
+  if (mode === 'really_close') {
+    baseDist = 7.0;
+    baseHeight = 2.4;
+    targetLookY = 0.95;
+  } else if (mode === 'close') {
+    baseDist = 10.5;
+    baseHeight = 3.5;
+    targetLookY = 1.0;
+  } else if (mode === 'medium') {
+    baseDist = 15.0;
+    baseHeight = 5.2;
+    targetLookY = 1.1;
+  } else if (mode === 'far') {
+    baseDist = 22.0;
+    baseHeight = 7.5;
+    targetLookY = 1.3;
+  } else if (mode === 'bonnet') {
+    baseDist = -2.2;
+    baseHeight = 1.0;
+    targetLookY = 1.0;
+  }
+
+  const distance = baseDist + speed * 0.1;
+  const height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01);
+
+  // Use current player heading directly since it aligns with the start grid heading
+  const offset = new THREE.Vector3(
+    -Math.sin(heading) * distance,
+    height,
+    -Math.cos(heading) * distance
+  );
+
+  const pos = targetObj.position.clone().add(offset);
+
+  const lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
+  const lookAt = targetObj.position.clone().add(
+    new THREE.Vector3(
+      Math.sin(heading) * lookAheadDistance,
+      targetLookY,
+      Math.cos(heading) * lookAheadDistance
+    )
+  );
+
+  const targetFOV = 55 + Math.min(20, speed * 0.35);
+
+  return { pos, lookAt, fov: targetFOV };
+}
+
 

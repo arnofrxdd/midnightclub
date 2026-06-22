@@ -13,7 +13,7 @@ import { CinematicManager } from '../gameplay/cinematicManager.js';
 import { TrafficManager } from '../ai/trafficManager.js';
 import { PursuitManager } from '../gameplay/pursuitManager.js';
 import { initInput, initDebugVisuals } from './input.js';
-import { updateCamera, cycleCameraFocus, cycleCameraMode } from './camera.js';
+import { updateCamera, cycleCameraFocus, cycleCameraMode, getTargetGameplayCamera } from './camera.js';
 import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
 import { formatTime, showBanner, showNitroNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
 import { checkBreakablesCollision } from '../gameplay/breakables.js';
@@ -449,6 +449,10 @@ class Game {
 
   cycleCameraMode() {
     return cycleCameraMode.call(this);
+  }
+
+  getTargetGameplayCamera() {
+    return getTargetGameplayCamera.call(this);
   }
 
   initMinimap() {

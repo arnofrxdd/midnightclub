@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Midnight Club: Voxel Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,600;1,700;1,800;1,900&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/midnightclub/assets/index-C1SJNAt-.js"></script>
+  <link rel="stylesheet" crossorigin href="/midnightclub/assets/index-C3RDXj_q.css">
+</head>
+<body>
+  <div id="loader">
+    <div class="loader-title">MIDNIGHT CLUB</div>
+    <div class="loader-subtitle">Voxel Edition</div>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Main Menu Overlay -->
+  <div id="main-menu" class="main-menu-container">
+    <div class="menu-content">
+      <h1 class="menu-logo">MIDNIGHT CLUB</h1>
+      <h2 class="menu-sublogo">VOXEL EDITION</h2>
+      <p class="menu-hint">PRESS START TO ENTER THE STREETS</p>
+      <button id="btn-play" class="menu-play-btn">START PLAYING</button>
+    </div>
+  </div>
+
+  <div id="canvas-container"></div>
+  <div class="vignette-grading"></div>
+  <div id="cop-flash" class="cop-vignette"></div>
+  <div id="noise-overlay" class="noise-overlay" style="opacity: 0.05;"></div>
+
+  <!-- Busted warning HUD -->
+  <div id="busted-container" class="busted-meter-container">
+    <span class="busted-title">WARNING: BUSTING</span>
+    <div class="busted-bar-bg">
+      <div id="busted-fill" class="busted-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- Pursuit Heat HUD -->
+  <div id="heat-hud" class="heat-hud-container">
+    <div class="heat-hud-header">
+      <span class="heat-hud-title">PURSUIT HEAT: <span id="heat-hud-value">1</span></span>
+      <div id="heat-hud-los" class="heat-hud-los hidden">HIDDEN</div>
+    </div>
+    <div class="heat-bar-bg">
+      <div id="heat-fill" class="heat-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- SVG noise filter definition -->
+  <svg style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+    <filter id="noiseFilter">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+  </svg>
+
+  <!-- Race Notification Banner -->
+  <div id="race-banner" class="race-banner">
+    <h1 id="banner-title" class="banner-title">RACE STARTED</h1>
+    <div id="banner-subtitle" class="banner-subtitle">Go Go Go!</div>
+  </div>
+
+  <!-- Stunt/Trick Notification Display -->
+  <div id="stunt-notif" class="stunt-notification-container">
+    <span id="stunt-title" class="stunt-notification-title">STUNT LANDED!</span>
+    <span id="stunt-score" class="stunt-notification-score">+500 PTS</span>
+  </div>
+
+  <!-- Race Selector Panel -->
+  <div class="race-panel">
+    <span class="race-panel-title">Active Races</span>
+    <button id="btn-sprint" class="race-btn">Sprint Challenge <span>→</span></button>
+    <button id="btn-circuit" class="race-btn">Circuit Laps <span>→</span></button>
+    <button id="btn-unordered" class="race-btn">Scavenger Hunt <span>→</span></button>
+    <button id="btn-autocross" class="race-btn">Autocross Slalom <span>→</span></button>
+    <button id="btn-cancel" class="race-btn active-cancel" style="display: none;">Cancel Race</button>
+  </div>
+
+  <!-- Race Stats Display -->
+  <div id="stats-hud" class="stats-container">
+    <div class="stats-item">
+      <span class="stats-label">Pos</span>
+      <span id="stats-pos" class="stats-value stats-pos-val">1/4</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label">Mode</span>
+      <span id="stats-mode" class="stats-value">Sprint</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label" id="stats-progress-label">Checkpoint</span>
+      <span id="stats-progress" class="stats-value">1/9</span>
+    </div>
+    <div class="stats-item">
+      <span class="stats-label">Timer</span>
+      <span id="stats-timer" class="stats-value timer">00:00.00</span>
+    </div>
+  </div>
+
+  <div class="hud-layer">
+    <div class="hud-header">
+      <div>
+        <div class="brand">MIDNIGHT CLUB</div>
+        <div class="sub-brand">Voxel Edition</div>
+      </div>
+      <!-- Control View Removed entirely -->
+    </div>
+
+    <div class="hud-bottom">
+      <!-- Speedometer Dial (Floating, borderless) -->
+      <div class="speed-dial-wrapper">
+        <svg class="speed-dial-svg" viewBox="0 0 160 160">
+          <defs>
+            <linearGradient id="needle-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ff3b30" />
+              <stop offset="50%" stop-color="#ff6b4a" />
+              <stop offset="100%" stop-color="#aa1111" />
+            </linearGradient>
+          </defs>
+
+          <!-- Background outer track (RPM) -->
+          <circle class="dial-bg" cx="80" cy="80" r="70" stroke="#14161f" stroke-width="5" fill="none" stroke-dasharray="330 110" stroke-linecap="round" transform="rotate(135 80 80)" />
+          <!-- Active RPM gauge segment -->
+          <circle id="dial-rpm-fill" class="dial-fill" cx="80" cy="80" r="70" stroke="#ffc600" stroke-width="5" fill="none" stroke-dasharray="0 440" stroke-linecap="round" transform="rotate(135 80 80)" />
+          
+          <!-- Background inner track (Nitro Boost) -->
+          <circle class="dial-nitro-bg" cx="80" cy="80" r="61" stroke="#09141d" stroke-width="3" fill="none" stroke-dasharray="287 115" stroke-linecap="round" transform="rotate(135 80 80)" />
+          <!-- Active Nitro gauge segment -->
+          <circle id="dial-nitro-fill" class="dial-nitro-fill" cx="80" cy="80" r="61" stroke="#00e5ff" stroke-width="3.5" fill="none" stroke-dasharray="0 400" stroke-linecap="round" transform="rotate(135 80 80)" />
+          
+          <!-- Dial Ticks (Rotated around center 80, 80) -->
+          <g class="dial-ticks">
+            <!-- Main Ticks (0-8 RPM x1000) -->
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(-135 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(-101.25 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(-67.5 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(-33.75 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(0 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(33.75 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(67.5 80 80)" stroke="#565b6d" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(101.25 80 80)" stroke="#ff3b30" stroke-width="2" />
+            <line x1="80" y1="10" x2="80" y2="17" transform="rotate(135 80 80)" stroke="#ff3b30" stroke-width="2" />
+            
+            <!-- Sub-ticks -->
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(-118.125 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(-84.375 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(-50.625 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(-16.875 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(16.875 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(50.625 80 80)" stroke="#2d303b" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(84.375 80 80)" stroke="#ff3b30" opacity="0.6" stroke-width="1" />
+            <line x1="80" y1="10" x2="80" y2="14" transform="rotate(118.125 80 80)" stroke="#ff3b30" opacity="0.6" stroke-width="1" />
+          </g>
+
+          <!-- Numbers -->
+          <g class="dial-numbers">
+            <text x="42" y="125" class="dial-num">0</text>
+            <text x="27" y="95" class="dial-num">1</text>
+            <text x="30" y="63" class="dial-num">2</text>
+            <text x="50" y="38" class="dial-num">3</text>
+            <text x="80" y="30" class="dial-num" text-anchor="middle">4</text>
+            <text x="110" y="38" class="dial-num">5</text>
+            <text x="130" y="63" class="dial-num">6</text>
+            <text x="133" y="95" class="dial-num redline-num">7</text>
+            <text x="118" y="125" class="dial-num redline-num">8</text>
+          </g>
+          
+          <!-- Glowing needle with carbon cap (No overlapping red dot in center) -->
+          <g id="dial-needle" transform="rotate(-135 80 80)">
+            <polygon points="77.5,80 79.5,14 80.5,14 82.5,80" fill="url(#needle-grad)" />
+            <line x1="80" y1="80" x2="80" y2="12" stroke="#ff3b30" stroke-width="1" stroke-linecap="round" />
+            <circle cx="80" cy="80" r="11" fill="#090a0e" stroke="#2a2c35" stroke-width="1.5" />
+          </g>
+        </svg>
+        
+        <div class="dial-speed-metrics">
+          <span id="speed-val" class="speed-value">000</span>
+          <span class="speed-unit">MPH</span>
+        </div>
+        
+        <div class="dial-gear-container">
+          <span id="gear-val" class="gear-value">1</span>
+        </div>
+
+        <div id="notification-stack" class="notification-stack"></div>
+      </div>
+
+      <div class="minimap-wrapper">
+        <canvas id="minimap-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -116,6 +116,29 @@ export function updateMinimap() {
       }
     }
 
+    // Draw active world events (beacons) on minimap if no race is active
+    if (!this.race.active && this.race.worldEvents) {
+      this.race.worldEvents.forEach(evt => {
+        const rx = evt.x - px;
+        const rz = evt.z - pz;
+        
+        // Pulsing bright red blip for the race start event
+        const pulse = 1.0 + Math.sin(Date.now() / 200) * 0.15;
+        ctx.save();
+        ctx.fillStyle = '#ff1e1e';
+        ctx.beginPath();
+        ctx.arc(rx * scale, rz * scale, 5.0 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(rx * scale, rz * scale, 8.0 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
     // Draw active checkpoints on minimap
     if (this.race.active) {
       this.race.checkpoints.forEach((cp, index) => {
@@ -282,6 +305,9 @@ export function initRaceHUD() {
     this.cancelBtnEl = document.getElementById('btn-cancel');
     
     this.racePanelEl = document.querySelector('.race-panel');
+    if (!this.debugMenuEnabled && this.racePanelEl) {
+      this.racePanelEl.style.display = 'none';
+    }
     
     // Register buttons
     document.getElementById('btn-sprint').onclick = () => this.startRace('sprint');

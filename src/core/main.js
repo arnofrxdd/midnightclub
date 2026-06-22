@@ -9,6 +9,7 @@ import { createVoxelCarMesh } from './carMesh.js';
 import { World } from '../world/world.js';
 import { CarPhysics } from './physics.js';
 import { RaceManager } from '../gameplay/race.js';
+import { CinematicManager } from '../gameplay/cinematicManager.js';
 import { TrafficManager } from '../ai/trafficManager.js';
 import { PursuitManager } from '../gameplay/pursuitManager.js';
 import { initInput, initDebugVisuals } from './input.js';
@@ -58,8 +59,10 @@ class Game {
     // Inputs
     this.keys = {};
     
+    this.debugMenuEnabled = false;
     this.physics = new CarPhysics();
     this.race = new RaceManager();
+    this.cinematicManager = new CinematicManager(this);
     this.aiMeshes = [];
     this.pursuit = new PursuitManager(this);
 
@@ -102,6 +105,22 @@ class Game {
     // Traffic System
     this.traffic = new TrafficManager(this.scene, 30);
     this.traffic.init(this.physics.position, this.world);
+
+    // Dynamic World Event Start Selection
+    this.race.selectNewWorldEvent(this.world, this.physics.position);
+
+    // Create event proximity prompt dynamically
+    this.eventPromptEl = document.createElement('div');
+    this.eventPromptEl.className = 'event-prompt-container';
+    this.eventPromptEl.innerHTML = `
+      <div class="event-prompt-key-wrapper">
+        <span class="event-prompt-key">F</span>
+        <span class="event-prompt-action">Start Race</span>
+      </div>
+      <div id="event-prompt-mode" class="event-prompt-mode">SPRINT CHALLENGE</div>
+    `;
+    document.body.appendChild(this.eventPromptEl);
+    this.eventPromptModeEl = document.getElementById('event-prompt-mode');
 
     // Precompile shaders to avoid runtime compilation stutter
     this.precompileShaders();
@@ -765,10 +784,15 @@ class Game {
   }
 
   startRace(mode) {
-    // Grab the player's current world position and heading (Y-axis rotation)
-    const playerPos = this.physics ? this.physics.position.clone() : new THREE.Vector3();
-    const playerHeading = (this.physics && this.physics.mesh) ? this.physics.mesh.rotation.y : 0;
-    this.race.startRace(mode, this.world, playerPos, playerHeading);
+    // Generate a new random intersection for the race start
+    const gridSize = this.world.tileSize * 4; // 160
+    const rx = (Math.floor(Math.random() * 11) - 5) * gridSize;
+    const rz = (Math.floor(Math.random() * 11) - 5) * gridSize;
+    const raceStartPos = new THREE.Vector3(rx, 0, rz);
+    
+    // We will start the race from this new random position
+    const playerHeading = 0; // Fixed heading for now
+    this.race.startRace(mode, this.world, raceStartPos, playerHeading);
     if (this.pursuit) this.pursuit.cancelPursuit();
     
     // Show stats immediately
@@ -778,14 +802,19 @@ class Game {
     this.showBanner("RACE STARTED", "Follow the arrow!");
     this.rebuildCheckpointBeacons();
 
+    // Trigger cinematic sequence
+    if (this.cinematicManager) {
+      this.cinematicManager.start(mode);
+    }
+
     // Defer heavy mesh creation & traffic reinit to next frames to avoid
     // a huge dt spike (slow-motion effect) on the first frame after race start.
     setTimeout(() => {
       // Build AI car meshes (heavy: mergeGeometries x3)
       this.buildAIMeshes();
 
-      // Reduce traffic density during active race
-      if (this.traffic) {
+      // Only initialize traffic if cinematic manager is not running (cinematic manages traffic on complete)
+      if (this.traffic && (!this.cinematicManager || this.cinematicManager.state === 'none')) {
         this.traffic.clear();
         this.traffic.maxVehicles = 18;
         this.traffic.init(this.physics.position, this.world);
@@ -816,6 +845,9 @@ class Game {
       }
       this.clock.getDelta(); // flush accumulated time
     }, 0);
+
+    // Select new world event
+    this.race.selectNewWorldEvent(this.world, this.physics.position);
   }
 
   clearCheckpointBeacons() {
@@ -948,14 +980,92 @@ class Game {
     
     const scaledDt = dt; // Slow-motion disabled by player request
     
+    // Update cinematic manager
+    if (this.cinematicManager) {
+      this.cinematicManager.update(scaledDt);
+    }
+
+    // Proximity check and prompt for free-roam event discovery
+    let nearEvent = false;
+    let closestEvent = null;
+    let closestDist = Infinity;
+    if (!this.race.active && this.race.worldEvents && this.race.worldEvents.length > 0) {
+      this.race.worldEvents.forEach(evt => {
+        const dx = this.physics.position.x - evt.x;
+        const dz = this.physics.position.z - evt.z;
+        const dist = Math.hypot(dx, dz);
+        
+        if (dist < 22.0 && dist < closestDist) {
+          closestDist = dist;
+          closestEvent = evt;
+          nearEvent = true;
+        }
+      });
+      
+      if (nearEvent && closestEvent) {
+        if (this.eventPromptEl) {
+          this.eventPromptEl.style.display = 'flex';
+          if (this.eventPromptModeEl) {
+            this.eventPromptModeEl.textContent = `${closestEvent.mode.toUpperCase()} CHALLENGE`;
+          }
+        }
+        
+        // Start race on pressing key F
+        if (this.keys['f']) {
+          this.keys['f'] = false; // Consume key press
+          if (this.eventPromptEl) this.eventPromptEl.style.display = 'none';
+          this.startRace(closestEvent.mode);
+        }
+      }
+    }
+    
+    if (!nearEvent && this.eventPromptEl && this.eventPromptEl.style.display !== 'none') {
+      this.eventPromptEl.style.display = 'none';
+    }
+
     let focusTarget = this.physics;
-    if (this.debugFocusAI && this.race && this.race.aiRacers) {
+    
+    // If cinematic is active, the rendering anchor follows the camera so the world loads
+    // smoothly underneath it as it flies to the new random intersection.
+    if (this.cinematicManager && this.cinematicManager.state !== 'none') {
+      focusTarget = {
+        position: this.camera.position,
+        heading: this.camHeading || 0
+      };
+    } else if (this.debugFocusAI && this.race && this.race.aiRacers) {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
       if (activeAI) focusTarget = activeAI;
     }
     
     // Collect dynamic lights for the lighting pool (headlamps from player and traffic)
     const dynamicLights = [];
+
+    // Spawn red smoke columns for active free-roam event beacons
+    if (!this.race.active && this.race.worldEvents) {
+      this.race.worldEvents.forEach(evt => {
+        const dx = evt.x - focusTarget.position.x;
+        const dz = evt.z - focusTarget.position.z;
+        const distSq = dx * dx + dz * dz;
+        
+        // Render within 260 meters
+        if (distSq < 260 * 260) {
+          if (Math.random() < 0.55) {
+            this.spawnCheckpointSmoke(evt, 0xff1e1e, 1.2, 1.2);
+          }
+          
+          const h = (this.world && typeof this.world.getGroundHeight === 'function')
+            ? this.world.getGroundHeight(evt.x, evt.z)
+            : 0.5;
+          dynamicLights.push({
+            x: evt.x,
+            y: h + 3.6,
+            z: evt.z,
+            intensity: 15.0,
+            color: 0xff1e1e
+          });
+        }
+      });
+    }
 
     // Active checkpoint point lights (routed to PointLight pool to keep scene light count constant)
     if (this.race && this.race.active && this.race.checkpoints) {
@@ -1069,7 +1179,7 @@ class Game {
     }
 
     // Update police pursuit manager
-    if (this.pursuit) {
+    if (this.pursuit && (!this.cinematicManager || this.cinematicManager.state === 'none')) {
       const playerSpeed = this.physics.velocity.length();
       const isPlayerTryingToMove = !!(
         this.keys['w'] || this.keys['arrowup'] ||
@@ -1442,10 +1552,17 @@ class Game {
     const tPhysicsStart = performance.now();
     this.physicsAccumulator += scaledDt;
     let physicsSteps = 0;
+    const isCinematic = this.cinematicManager && this.cinematicManager.state !== 'none';
     while (this.physicsAccumulator >= physicsStep && physicsSteps < maxPhysicsSubsteps) {
       this.prevPhysicsPosition.copy(this.physics.position);
       this.prevPhysicsHeading = this.physics.heading || 0;
-      this.physics.update(physicsStep, this.keys, this.world);
+      if (isCinematic) {
+        this.physics.speed = 0;
+        this.physics.velocity.set(0, 0, 0);
+        this.physics.angularVelocity = 0;
+      } else {
+        this.physics.update(physicsStep, this.keys, this.world);
+      }
       this.physicsAccumulator -= physicsStep;
       physicsSteps++;
     }
@@ -2587,6 +2704,9 @@ class Game {
             this.traffic.maxVehicles = 40;
             this.traffic.init(this.physics.position, this.world);
           }
+
+          // Select new world event
+          this.race.selectNewWorldEvent(this.world, this.physics.position);
         }
       }
 
@@ -2638,6 +2758,11 @@ class Game {
           this.navArrow.visible = false;
         }
       } else {
+        this.navArrow.visible = false;
+      }
+      
+      // Force hide arrow during cinematics
+      if (this.cinematicManager && this.cinematicManager.state !== 'none') {
         this.navArrow.visible = false;
       }
 

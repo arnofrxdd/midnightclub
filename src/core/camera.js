@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 
 export function updateCamera(dt = 0.016) {
+    if (this.cameraOverride) {
+      this.camera.position.copy(this.cameraOverride.pos);
+      this.camera.lookAt(this.cameraOverride.lookAt);
+      this.dirLight.position.set(this.physics.position.x + 30, 60, this.physics.position.z + 30);
+      this.dirLight.target = this.carVisualContainer;
+      return;
+    }
+
     let targetObj = this.physics;
     let targetVisual = this.carVisualContainer;
     let isBoosting = this.physics.isBoosting;

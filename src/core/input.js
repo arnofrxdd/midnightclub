@@ -11,6 +11,12 @@ export function initInput() {
       if (key === 'v') {
         this.cycleCameraFocus();
       }
+      if (key === 'm') {
+        if (this.debugMenuEnabled && this.racePanelEl) {
+          const isHidden = this.racePanelEl.style.display === 'none';
+          this.racePanelEl.style.display = isHidden ? 'flex' : 'none';
+        }
+      }
     });
     window.addEventListener('keyup', (e) => {
       this.keys[e.key.toLowerCase()] = false;

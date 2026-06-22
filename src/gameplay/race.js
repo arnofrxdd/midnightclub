@@ -24,6 +24,9 @@ export class RaceManager {
     // AI Racers list
     this.aiRacers = [];
 
+    // Dynamic world event starts
+    this.worldEvents = [];
+
     // Define checkpoint maps (relative to intersections spaced every 160 units)
     // Recall tileSize=40, intersections every 4 tiles = 160 units
     this.maps = {
@@ -277,11 +280,13 @@ export class RaceManager {
     this.completed = false;
     this.unorderedCleared.clear();
     
-    // Spawn AI Racers in grid pattern behind starting line (behind (0,0,0) facing forward along +Z)
+    // Spawn AI Racers in grid pattern behind starting line (facing forward along +Z)
+    const pX = playerPos ? playerPos.x : 0;
+    const pZ = playerPos ? playerPos.z : 0;
     this.aiRacers = [
-      new AICar(1, "Voxel Racer A", 0x39ff14, new THREE.Vector3(-6, 0.5, -8), 1.05), // Toxic Green, fast!
-      new AICar(2, "Voxel Racer B", 0xff007f, new THREE.Vector3(6, 0.5, -8), 1.15),  // Neon Magenta, very fast!
-      new AICar(3, "Voxel Racer C", 0x7f00ff, new THREE.Vector3(0, 0.5, -16), 1.25) // Neon Violet, extreme!
+      new AICar(1, "Voxel Racer A", 0x39ff14, new THREE.Vector3(pX - 6, 0.5, pZ - 8), 1.05), // Toxic Green, fast!
+      new AICar(2, "Voxel Racer B", 0xff007f, new THREE.Vector3(pX + 6, 0.5, pZ - 8), 1.15),  // Neon Magenta, very fast!
+      new AICar(3, "Voxel Racer C", 0x7f00ff, new THREE.Vector3(pX, 0.5, pZ - 16), 1.25) // Neon Violet, extreme!
     ];
 
     // Build the road-intersection navigation graph (used by AI for A* pathfinding)
@@ -497,5 +502,59 @@ export class RaceManager {
     });
 
     return drivers;
+  }
+
+  selectNewWorldEvent(world, playerPos) {
+    const intersections = [];
+    const cols = Array.from(world.roadColumns);
+    const rows = Array.from(world.roadRows);
+
+    cols.forEach(cx => {
+      rows.forEach(cz => {
+        // Any cell that is in both columns and rows is a valid intersection
+        if (world.roadColumns.has(cx) && world.roadRows.has(cz)) {
+          const wx = cx * world.tileSize;
+          const wz = cz * world.tileSize;
+          const dist = playerPos ? Math.hypot(wx - playerPos.x, wz - playerPos.z) : 250;
+          
+          // Spawn events in a broad range (80m to 1200m) to give lots of choice
+          if (dist > 80 && dist < 1200) {
+            intersections.push({ x: wx, z: wz });
+          }
+        }
+      });
+    });
+
+    this.worldEvents = [];
+    const modes = ['sprint', 'circuit', 'unordered'];
+
+    if (intersections.length > 0) {
+      // Shuffle and pick up to 12 events for high event density
+      const shuffled = intersections.sort(() => 0.5 - Math.random());
+      const count = Math.min(12, shuffled.length);
+      for (let i = 0; i < count; i++) {
+        const mode = modes[Math.floor(Math.random() * modes.length)];
+        this.worldEvents.push({
+          x: shuffled[i].x,
+          z: shuffled[i].z,
+          mode: mode
+        });
+      }
+    } else {
+      // Robust fallback on actual road intersection points
+      const colArr = Array.from(world.roadColumns);
+      const rowArr = Array.from(world.roadRows);
+      if (colArr.length > 0 && rowArr.length > 0) {
+        for (let i = 0; i < 5; i++) {
+          const cx = colArr[Math.floor(Math.random() * colArr.length)];
+          const cz = rowArr[Math.floor(Math.random() * rowArr.length)];
+          this.worldEvents.push({
+            x: cx * world.tileSize,
+            z: cz * world.tileSize,
+            mode: modes[i % modes.length]
+          });
+        }
+      }
+    }
   }
 }

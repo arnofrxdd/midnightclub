@@ -66,15 +66,54 @@ export function updateCamera(dt = 0.016) {
     this.camera.fov += (targetFOV - this.camera.fov) * (1 - Math.exp(-6 * dt));
     this.camera.updateProjectionMatrix();
 
-    // 2. Heading Interpolation with Drift Lag: camera swings wider during drifts
-    let diff = heading - this.camHeading;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    const rotSpeed = isDrifting ? 2.5 : 5.0; // Balanced rotation lag
-    this.camHeading += diff * (1 - Math.exp(-rotSpeed * dt));
+    // 2. Heading Interpolation & Parameters based on Camera Mode
+    let baseDist = 15.0;
+    let baseHeight = 5.2;
+    let useLag = true;
+    let targetLookY = 1.1;
 
-    // 3. Dynamic Distance & Height: Medium voxel chase cam + G-Force Pitching & Bungee Lag
-    const distance = 15.0 + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8);
-    const height = 5.2 + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset;
+    const mode = this.cameraMode || 'medium';
+    if (mode === 'really_close') {
+      baseDist = 7.0;
+      baseHeight = 2.4;
+      targetLookY = 0.95;
+    } else if (mode === 'close') {
+      baseDist = 10.5;
+      baseHeight = 3.5;
+      targetLookY = 1.0;
+    } else if (mode === 'medium') {
+      baseDist = 15.0;
+      baseHeight = 5.2;
+      targetLookY = 1.1;
+    } else if (mode === 'far') {
+      baseDist = 22.0;
+      baseHeight = 7.5;
+      targetLookY = 1.3;
+    } else if (mode === 'bonnet') {
+      baseDist = -2.2; // front of car looking forward
+      baseHeight = 1.0;
+      useLag = false; // direct camera lock
+      targetLookY = 1.0;
+    }
+
+    if (useLag) {
+      let diff = heading - this.camHeading;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const rotSpeed = isDrifting ? 2.5 : 5.0; // Balanced rotation lag
+      this.camHeading += diff * (1 - Math.exp(-rotSpeed * dt));
+    } else {
+      this.camHeading = heading;
+    }
+
+    // 3. Dynamic Distance & Height: Chase cam parameters with G-Force Pitching & Bungee Lag
+    let distance, height;
+    if (useLag) {
+      distance = baseDist + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8);
+      height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset;
+    } else {
+      distance = baseDist;
+      height = baseHeight;
+    }
 
     const offset = new THREE.Vector3(
       -Math.sin(this.camHeading) * distance,
@@ -84,21 +123,27 @@ export function updateCamera(dt = 0.016) {
 
     // 4. Lerp camera position smoothly
     const targetCamPos = targetObj.position.clone().add(offset);
-    this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
+    if (useLag) {
+      this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
+    } else {
+      this.camera.position.copy(targetCamPos);
+    }
 
-    // Add Hand-held Micro-Wobble to position
-    this.camera.position.x += wobbleX;
-    this.camera.position.y += wobbleY;
+    // Add Hand-held Micro-Wobble to position (if not in direct bonnet mode for stability)
+    if (useLag) {
+      this.camera.position.x += wobbleX;
+      this.camera.position.y += wobbleY;
+    }
 
-    // 5. Visceral Shake: Add high-frequency camera vibration at high speed or during drift (moderated for medium view)
+    // 5. Visceral Shake: Add high-frequency camera vibration at high speed or during drift
     let shakeIntensity = 0;
     if (speed > 25) {
       shakeIntensity += (speed - 25) * 0.005;
     }
-    if (isDrifting) {
+    if (isDrifting && useLag) {
       shakeIntensity += 0.08;
     }
-    if (this.gearShiftPunch > 0.0 && targetObj === this.physics) {
+    if (this.gearShiftPunch > 0.0 && targetObj === this.physics && useLag) {
       shakeIntensity += this.gearShiftPunch * 0.12;
     }
     if (this.crashShake > 0.0 && targetObj === this.physics) {
@@ -110,26 +155,30 @@ export function updateCamera(dt = 0.016) {
       this.camera.position.z += (Math.random() - 0.5) * shakeIntensity;
     }
 
-    // Prevent camera from colliding/clipping with the ground/roads
-    const minCamClearance = 2.0;
-    const camGroundH = this.world ? this.world.getGroundHeight(this.camera.position.x, this.camera.position.z) : 0.0;
-    if (this.camera.position.y < camGroundH + minCamClearance) {
-      this.camera.position.y = camGroundH + minCamClearance;
+    // Prevent camera from colliding/clipping with the ground/roads (not needed or bypassed for bonnet cam)
+    if (useLag) {
+      const minCamClearance = 2.0;
+      const camGroundH = this.world ? this.world.getGroundHeight(this.camera.position.x, this.camera.position.z) : 0.0;
+      if (this.camera.position.y < camGroundH + minCamClearance) {
+        this.camera.position.y = camGroundH + minCamClearance;
+      }
     }
 
     // 6. LookAt: Look slightly ahead of the car's body center to keep target focused
-    const lookAheadDistance = 4.0 + speed * 0.08;
+    const lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
     const targetLook = targetObj.position.clone().add(
       new THREE.Vector3(
         Math.sin(heading) * lookAheadDistance,
-        1.1,
+        targetLookY,
         Math.cos(heading) * lookAheadDistance
       )
     );
     this.camera.lookAt(targetLook);
 
     // Apply Camera Roll (Lean) after lookAt
-    this.camera.rotateZ(this.camRoll);
+    if (useLag) {
+      this.camera.rotateZ(this.camRoll);
+    }
 
     // Update shadow/directional light to follow player
     this.dirLight.position.set(targetObj.position.x + 30, 60, targetObj.position.z + 30);
@@ -161,4 +210,12 @@ export function cycleCameraFocus() {
       this.showBanner(`CAMERA: ${activeAI.name}`, `Focusing on AI racer`, 1500);
     }
   }
+
+export function cycleCameraMode() {
+  const modes = ['really_close', 'close', 'medium', 'far', 'bonnet'];
+  const currentIdx = modes.indexOf(this.cameraMode || 'medium');
+  const nextIdx = (currentIdx + 1) % modes.length;
+  this.cameraMode = modes[nextIdx];
+  this.showBanner(`CAMERA: ${this.cameraMode.toUpperCase().replace('_', ' ')}`, `Switched camera view`, 1200);
+}
 

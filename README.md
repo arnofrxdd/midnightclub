@@ -78,16 +78,11 @@ npm run deploy
 ## ✨ Features
 
 - **Infinite Procedural City** — The world generates city blocks, roads, intersections, alleys, buildings, and props in real time as you drive. Old chunks stream out behind you.
-- **Dynamic Day/Night Lighting** — Real-time deferred lighting with a pooled point light system. Headlights, taillights, checkpoint beacons and cop sirens all cast coloured light on the road surface.
 - **Voxel Car Physics** — Custom-built arcade physics engine with gear simulation, suspension, drift, nitro boost, and reverse gear with a launch-torque burst.
 - **AI Racers** — Opponent cars use A\* pathfinding on a dynamically built navigation graph. They brake, drift and race intelligently against you.
 - **Police Pursuit System** — Speed traps, chasing cop cars, heat levels 1–5, and a bust mechanic. Roadblock system exists but is currently disabled.
 - **Stunts & Near Misses** — Score points for drifts, jumps, near-misses with traffic, and other tricks.
 - **Race Events** — World events spawn near the player with beacon markers and minimap indicators. Drive up and press **F** to start.
-- **Cinematic Camera** — Smooth intro swoops and race-start cinematics.
-- **Beta Feedback** — Press **B** at any time (or click the button above the minimap) to submit in-game feedback via Formspree. Quick 👍 / 👎 rating also appears on the Race Finished screen.
-- **Reverse Lights** — White reverse lights activate when in reverse gear.
-- **LOD System** — Distant geometry and lighting are culled or simplified for performance.
 
 ---
 

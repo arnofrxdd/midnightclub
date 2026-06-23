@@ -485,11 +485,21 @@ export class AICar {
     this.velocityY -= 6.0 * dt; 
     const nextY = this.position.y + this.velocityY * dt;
 
-    if (nextY < targetY || (!this.isAirborne && Math.abs(this.position.y - targetY) < 0.25)) {
+    if (nextY < targetY) {
       // Grounded - stick to slope and calculate upward momentum for jumps
       this.position.y += (targetY - this.position.y) * 12.0 * dt;
-      this.velocityY = (this.position.y - prevY) / dt;
       if (this.position.y < targetY) this.position.y = targetY;
+
+      // Calculate vertical velocity using vector projection at the rear wheels
+      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const rearWheelX = this.position.x - fwd.x * 1.3;
+      const rearWheelZ = this.position.z - fwd.z * 1.3;
+      const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
+      const hRearBack = world ? world.getGroundHeight(rearWheelX - fwd.x * 0.5, rearWheelZ - fwd.z * 0.5) : targetY;
+      const rearFwdSlope = (hRearFwd - hRearBack) / 1.0;
+      
+      const fwdSpeed = this.velocity.dot(fwd);
+      this.velocityY = fwdSpeed * rearFwdSlope;
     } else {
       // Airborne - floaty gravity
       this.position.y = nextY;

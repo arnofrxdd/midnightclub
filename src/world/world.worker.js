@@ -258,22 +258,22 @@ class MockWorld {
     const row1 = this.sortedRowsArray[rowIdx1];
     const row2 = this.sortedRowsArray[rowIdx2];
 
-    const hashString = (str) => {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = (hash * 31 + str.charCodeAt(i)) | 0;
-      }
-      return (Math.abs(hash) % 10000) / 10000;
+    const hashInt = (x, y, seed) => {
+      let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
+      h ^= h >>> 13;
+      h = Math.imul(h, 0xc2b2ae35);
+      h ^= h >>> 16;
+      return (h >>> 0) / 4294967296.0;
     };
 
     const getIntersectionHeight = (c, r) => {
       if ((c + r) % 2 !== 0) return 0.0;
-      const key = `I,${c},${r}`;
-      const hash = hashString(key);
-      if (hash < 0.30) {
+      const hash = hashInt(c, r, 0);
+      if (hash < 0.30) { // natural probability
         const sign = ((c + r) % 4 === 0) ? 1 : -1;
-        const isSharp = hashString(key + "sharp") < 0.45;
-        const amp = isSharp ? (12.0 + hashString(key + "h") * 4.0) : (7.0 + hashString(key + "h") * 3.0);
+        const isSharp = hashInt(c, r, 1) < 0.45;
+        // Natural amplitude for normal jumps
+        const amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
         return sign * amp;
       }
       return 0.0;
@@ -284,8 +284,19 @@ class MockWorld {
     const h01 = getIntersectionHeight(colIdx1, rowIdx2);
     const h11 = getIntersectionHeight(colIdx2, rowIdx2);
 
-    const u = (tileX - col1) / (col2 - col1);
-    const v = (tileZ - row1) / (row2 - row1);
+    let u = (tileX - col1) / (col2 - col1);
+    let v = (tileZ - row1) / (row2 - row1);
+
+    // Use a piecewise linear function for straight, angular ramps instead of curves
+    const linearRamp = (t) => {
+      const margin = 0.25; // 25% flat at intersections, 50% straight ramp in the middle
+      if (t < margin) return 0.0;
+      if (t > 1.0 - margin) return 1.0;
+      return (t - margin) / (1.0 - 2.0 * margin);
+    };
+    
+    u = linearRamp(u);
+    v = linearRamp(v);
 
     return (1 - u) * (1 - v) * h00 + u * (1 - v) * h10 + (1 - u) * v * h01 + u * v * h11;
   }

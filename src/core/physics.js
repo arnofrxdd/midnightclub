@@ -442,8 +442,8 @@ export class CarPhysics {
     const avgGroundHeight = (hGround[0] + hGround[1] + hGround[2] + hGround[3]) / 4;
     const heightAboveGround = this.position.y - avgGroundHeight;
     
-    // Only airborne if suspension is fully extended AND center height is significantly above ground
-    if (totalComp <= 0.001 && heightAboveGround > 1.05) {
+    // Only airborne if suspension is fully extended AND center height is slightly above resting ground
+    if (totalComp <= 0.001 && heightAboveGround > 0.70) {
       this.isAirborne = true;
       this.airTime += dt;
     } else {
@@ -479,7 +479,7 @@ export class CarPhysics {
 
     if (this.rolloverTimer <= 0) {
       // Apply forces and torques to the rigid body
-      const gravityAcc = -6.0; // Extremely floaty moon gravity
+      const gravityAcc = -18.0; // Realistic, heavier gravity
       const prevY = this.position.y;
       
       // Predict next Y position based on current velocity and gravity
@@ -487,12 +487,32 @@ export class CarPhysics {
       const nextY = this.position.y + this.velocityY * dt;
       const targetY = avgGroundHeight + 0.58;
 
-      // If the parabolic path falls below the ground, or we are very close to it, stick to the terrain
-      if (nextY < targetY || (!this.isAirborne && Math.abs(this.position.y - targetY) < 0.25)) {
+      // If the parabolic trajectory takes us below the ground, we stick to the ground
+      if (nextY < targetY) {
         // Smoothly lerp towards target ground height
         const lerpSpeed = 18.0 + Math.min(12.0, this.velocity.length() * 0.1);
         this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, 1 - Math.exp(-lerpSpeed * dt));
-        this.velocityY = (this.position.y - prevY) / dt;
+        
+        // Calculate vertical velocity using vector projection at the rear wheels
+        const rearWheelX = this.position.x - forwardVec.x * 1.3;
+        const rearWheelZ = this.position.z - forwardVec.z * 1.3;
+        // Sample exclusively backwards (1.2m behind) to prevent looking over the crest prematurely
+        const hRearCenter = world ? world.getGroundHeight(rearWheelX, rearWheelZ) : targetY;
+        const hRearBack = world ? world.getGroundHeight(rearWheelX - forwardVec.x * 1.2, rearWheelZ - forwardVec.z * 1.2) : targetY;
+        const rearFwdSlope = (hRearCenter - hRearBack) / 1.2;
+        
+        const fwdSpeed = this.velocity.dot(forwardVec);
+        const slopeVel = fwdSpeed * rearFwdSlope;
+        
+        // If the slope pushes us up faster than our current vertical velocity, take the slope's velocity.
+        // Otherwise, smoothly blend it so we don't instantly lose upward momentum at the lip of a jump.
+        if (slopeVel > this.velocityY) {
+          this.velocityY = slopeVel;
+        } else if (this.velocityY > 0 && slopeVel < this.velocityY) {
+          this.velocityY += (slopeVel - this.velocityY) * 8.0 * dt;
+        } else {
+          this.velocityY = slopeVel;
+        }
       } else {
         // Airborne: Follow the parabolic gravity path!
         this.position.y = nextY;
@@ -550,31 +570,19 @@ export class CarPhysics {
       this.pitchVelocity *= Math.exp(-2.2 * dt);
       this.rollVelocity *= Math.exp(-2.2 * dt);
 
-      // Gyro stabilization helper (levels out the pitch/roll to match local terrain slope underneath)
+      // Aerodynamic stabilization: The heavy front engine naturally pulls the nose down in long jumps,
+      // and air resistance slowly levels out the roll. This completely removes the artificial
+      // "ground tracking" effect that forced unnatural nose-dives over downhill slopes.
       const hasPitchInput = keys['w'] || keys['s'] || keys['arrowup'] || keys['arrowdown'];
       const hasRollInput = !wantsHandbrake && (keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright']);
       
-      let targetPitch = 0;
-      let targetRoll = 0;
-      if (world && typeof world.getGroundHeight === 'function') {
-        const sampleDist = 1.0;
-        const hFront = world.getGroundHeight(this.position.x + forwardVec.x * sampleDist, this.position.z + forwardVec.z * sampleDist);
-        const hBack = world.getGroundHeight(this.position.x - forwardVec.x * sampleDist, this.position.z - forwardVec.z * sampleDist);
-        const airFwdSlope = (hFront - hBack) / (sampleDist * 2.0);
-
-        const hRight = world.getGroundHeight(this.position.x + rightVec.x * sampleDist, this.position.z + rightVec.z * sampleDist);
-        const hLeft = world.getGroundHeight(this.position.x - rightVec.x * sampleDist, this.position.z - rightVec.z * sampleDist);
-        const airLatSlope = (hRight - hLeft) / (sampleDist * 2.0);
-        
-        targetPitch = Math.max(-0.5, Math.min(0.5, -airFwdSlope));
-        targetRoll = Math.max(-0.5, Math.min(0.5, -airLatSlope));
-      }
-      
       if (!hasPitchInput) {
-        this.pitchVelocity += (targetPitch - this.bodyPitch) * 2.5 * dt;
+        // Slowly drift pitch towards -0.3 (slightly nose down) over time
+        this.pitchVelocity += (-0.3 - this.bodyPitch) * 0.8 * dt;
       }
       if (!hasRollInput) {
-        this.rollVelocity += (targetRoll - this.bodyRoll) * 2.5 * dt;
+        // Slowly stabilize roll to flat (0) over time
+        this.rollVelocity += (0 - this.bodyRoll) * 1.2 * dt;
       }
     }
     

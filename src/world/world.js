@@ -48,14 +48,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5); // Spacing of 3 to 7 tiles
+      curr += 2 + Math.floor(rand * 3); // Spacing of 2 to 4 tiles
       this.mainRoadColumns.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
+      curr -= (2 + Math.floor(rand * 3));
       this.mainRoadColumns.add(curr);
     }
 
@@ -63,14 +63,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5);
+      curr += 2 + Math.floor(rand * 3);
       this.mainRoadRows.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
+      curr -= (2 + Math.floor(rand * 3));
       this.mainRoadRows.add(curr);
     }
 
@@ -1504,22 +1504,22 @@ export class World {
     const row1 = this.sortedRowsArray[rowIdx1];
     const row2 = this.sortedRowsArray[rowIdx2];
 
-    const hashString = (str) => {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = (hash * 31 + str.charCodeAt(i)) | 0;
-      }
-      return (Math.abs(hash) % 10000) / 10000;
+    const hashInt = (x, y, seed) => {
+      let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
+      h ^= h >>> 13;
+      h = Math.imul(h, 0xc2b2ae35);
+      h ^= h >>> 16;
+      return (h >>> 0) / 4294967296.0;
     };
 
     const getIntersectionHeight = (c, r) => {
       if ((c + r) % 2 !== 0) return 0.0;
-      const key = `I,${c},${r}`;
-      const hash = hashString(key);
-      if (hash < 0.30) {
+      const hash = hashInt(c, r, 0);
+      if (hash < 0.30) { // natural probability
         const sign = ((c + r) % 4 === 0) ? 1 : -1;
-        const isSharp = hashString(key + "sharp") < 0.45;
-        const amp = isSharp ? (12.0 + hashString(key + "h") * 4.0) : (7.0 + hashString(key + "h") * 3.0);
+        const isSharp = hashInt(c, r, 1) < 0.45;
+        // Natural amplitude for normal jumps
+        const amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
         return sign * amp;
       }
       return 0.0;
@@ -1530,8 +1530,19 @@ export class World {
     const h01 = getIntersectionHeight(colIdx1, rowIdx2);
     const h11 = getIntersectionHeight(colIdx2, rowIdx2);
 
-    const u = (tileX - col1) / (col2 - col1);
-    const v = (tileZ - row1) / (row2 - row1);
+    let u = (tileX - col1) / (col2 - col1);
+    let v = (tileZ - row1) / (row2 - row1);
+
+    // Use a piecewise linear function for straight, angular ramps instead of curves
+    const linearRamp = (t) => {
+      const margin = 0.25; // 25% flat at intersections, 50% straight ramp in the middle
+      if (t < margin) return 0.0;
+      if (t > 1.0 - margin) return 1.0;
+      return (t - margin) / (1.0 - 2.0 * margin);
+    };
+    
+    u = linearRamp(u);
+    v = linearRamp(v);
 
     const val = (1 - u) * (1 - v) * h00 + u * (1 - v) * h10 + (1 - u) * v * h01 + u * v * h11;
     return val;
@@ -1597,29 +1608,12 @@ export class World {
   }
 
   alignMeshToTerrain(mesh, position, heading, isAirborne = null, dt = 0.016) {
-    const groundH = this.getGroundHeight(position.x, position.z);
-    const heightAboveGround = Math.max(0, position.y - groundH);
-
-    // Calculate height-based alignment weight
-    let alignmentWeight = 1.0;
-    if (heightAboveGround > 0.85) {
-      const fadeDist = 1.15; // smooth fade from 0.85m to 2.0m height
-      alignmentWeight = 1.0 - Math.min(1.0, (heightAboveGround - 0.85) / fadeDist);
-      // Apply smoothstep
-      alignmentWeight = alignmentWeight * alignmentWeight * (3 - 2 * alignmentWeight);
-    }
-
-    // Force alignment to 0 during rollovers or explicit airborne states
     if (isAirborne === true) {
-      alignmentWeight = 0.0;
-    }
-
-    // Flat orientation quaternion (yaw only)
-    _qFlat.setFromAxisAngle(_yAxis, heading);
-
-    if (alignmentWeight <= 0.001) {
-      const t = Math.min(1.0, 18.0 * dt);
-      mesh.quaternion.slerp(_qFlat, t);
+      // Airborne: Preserve the exact launch tilt (pitch/roll), but update yaw (heading).
+      // This prevents the car from violently snapping flat the moment it leaves a ramp.
+      const currentEuler = new THREE.Euler().setFromQuaternion(mesh.quaternion, 'YXZ');
+      currentEuler.y = heading;
+      mesh.quaternion.setFromEuler(currentEuler);
       return;
     }
 
@@ -1665,10 +1659,9 @@ export class World {
     _matrix.makeBasis(_right, _up, _fwd);
     _qTarget.setFromRotationMatrix(_matrix);
 
-    // Slerp from flat to terrain slope target
-    const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
+    // Smoothly slerp to terrain slope
     const t = 1.0 - Math.exp(-18.0 * dt);
-    mesh.quaternion.slerp(targetQ, t);
+    mesh.quaternion.slerp(_qTarget, t);
   }
 }
 

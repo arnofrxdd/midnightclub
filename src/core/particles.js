@@ -140,72 +140,65 @@ export function initCheckpointSmoke() {
   }
 
 export function initSkidmarks() {
-    this.skidmarkPool = [];
-    this.maxSkidmarks = 300; // Increased pool slightly for persistence
+    this.maxSkidmarks = 2000; // HUGE pool for persistent skidmarks
     this.skidIndex = 0;
 
     const skidGeo = new THREE.BoxGeometry(0.35, 0.01, 1.0);
     
-    // Create a pool of 10 shared materials for different lengths (from 0.5 to 5.0 in steps of 0.5)
-    this.skidMaterials = [];
-    for (let i = 0; i < 10; i++) {
-      const length = 0.5 + i * 0.5;
-      const treadTex = createSkidmarkTexture();
-      treadTex.repeat.set(1, length * 4.0); // 4 repeats per meter for consistent voxel density
-      
-      const mat = new THREE.MeshStandardMaterial({
-        map: treadTex,
-        transparent: true,
-        opacity: 0.85,
-        roughness: 0.9,
-        metalness: 0.1,
-        depthWrite: false
-      });
-      this.skidMaterials.push(mat);
-    }
+    const treadTex = createSkidmarkTexture();
+    treadTex.repeat.set(1, 4.0); // 4 repeats per meter
+    
+    const mat = new THREE.MeshStandardMaterial({
+      map: treadTex,
+      transparent: true,
+      opacity: 0.85,
+      roughness: 0.9,
+      metalness: 0.1,
+      depthWrite: false
+    });
 
+    this.skidmarkMesh = new THREE.InstancedMesh(skidGeo, mat, this.maxSkidmarks);
+    this.skidmarkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.skidmarkMesh.frustumCulled = false; // MUST be false, otherwise driving away from origin (0,0,0) makes all skidmarks disappear!
+    this.scene.add(this.skidmarkMesh);
+
+    // Hide all instances initially
+    const dummy = new THREE.Object3D();
+    dummy.scale.set(0, 0, 0);
+    dummy.updateMatrix();
     for (let i = 0; i < this.maxSkidmarks; i++) {
-      // Default to first material, changes dynamically based on length
-      const mesh = new THREE.Mesh(skidGeo, this.skidMaterials[0]);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.skidmarkPool.push({
-        mesh: mesh
-      });
+      this.skidmarkMesh.setMatrixAt(i, dummy.matrix);
     }
+    this.skidmarkMesh.instanceMatrix.needsUpdate = true;
 
     // Keep track of previous wheel positions for drawing lines
     this.prevLeftWheel = null;
     this.prevRightWheel = null;
+    this._skidDummy = new THREE.Object3D();
   }
 
 export function spawnSkidmarkSegment(p1, p2) {
-    const s = this.skidmarkPool[this.skidIndex];
-    const mesh = s.mesh;
-    
     const midpoint = _skidMidpoint.addVectors(p1, p2).multiplyScalar(0.5);
 
-    // Determine height: if inside sidewalk bounds (road is 26m wide, tile is 40m), y is 0.37, else 0.22
+    // Determine height
     const ts = 40;
     const gridX = Math.round(p1.x / ts);
     const gridZ = Math.round(p1.z / ts);
     const isRoad = this.world.roadColumns.has(gridX) || this.world.roadRows.has(gridZ);
     const isIntersection = this.world.roadColumns.has(gridX) && this.world.roadRows.has(gridZ);
     
-    let height = 0.24; // Default road top surface (road block center y=0.1 + thickness/2 = 0.2, offset by 0.04)
+    let height = 0.24;
     if (isRoad && !isIntersection) {
       const localX = p1.x - gridX * ts;
       const localZ = p1.z - gridZ * ts;
       const { rwX, rwZ } = this.world.getRoadWidthForGrid(gridX, gridZ);
       if (this.world.roadRows.has(gridZ)) {
-        // Vertical road: Z must be within [-rwZ/2, rwZ/2]
         if (Math.abs(localZ) > rwZ / 2) height = 0.39;
       } else {
-        // Horizontal road: X must be within [-rwX/2, rwX/2]
         if (Math.abs(localX) > rwX / 2) height = 0.39;
       }
     } else if (!isRoad) {
-      height = 0.39; // Sidewalks / building ground level (sidewalk block center y=0.175 + thickness/2 = 0.35, offset by 0.04)
+      height = 0.39;
     }
     
     const baseHeight = this.world.getBaseHeight(midpoint.x, midpoint.z);
@@ -215,20 +208,18 @@ export function spawnSkidmarkSegment(p1, p2) {
     const len = dir.length();
     if (len < 0.05) return;
 
-    // Pick closest material in pool to match length, preventing texture stretch
-    const closestIdx = Math.max(0, Math.min(9, Math.round((len - 0.5) / 0.5)));
-    mesh.material = this.skidMaterials[closestIdx];
-
-    mesh.position.copy(midpoint);
-    mesh.scale.set(1.0, 1.0, len);
-    mesh.visible = true;
+    this._skidDummy.position.copy(midpoint);
+    this._skidDummy.scale.set(1.0, 1.0, len);
     
     // Rotate to point along direction vector
     const target = _skidTarget.copy(p2);
     target.y = height + this.world.getBaseHeight(target.x, target.z);
-    mesh.lookAt(target);
+    this._skidDummy.lookAt(target);
+    this._skidDummy.updateMatrix();
 
-    s.age = 0;
+    this.skidmarkMesh.setMatrixAt(this.skidIndex, this._skidDummy.matrix);
+    this.skidmarkMesh.instanceMatrix.needsUpdate = true;
+
     this.skidIndex = (this.skidIndex + 1) % this.maxSkidmarks;
   }
 

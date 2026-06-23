@@ -1684,7 +1684,7 @@ function getIntersectionHeight(c, r) {
   if (hash < 0.30) {
     const sign = ((c + r) % 4 === 0) ? 1 : -1;
     const isSharp = hashInt(c, r, 1) < 0.45;
-    const amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
+    const amp = isSharp ? (22.0 + hashInt(c, r, 2) * 10.0) : (15.0 + hashInt(c, r, 3) * 6.0);
     return sign * amp;
   }
   return 0.0;

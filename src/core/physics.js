@@ -92,6 +92,8 @@ export class CarPhysics {
 
   update(dt, keys, world) {
     if (dt <= 0) return;
+    // DO NOT reset justLanded here! It must be consumed by main.js at the end of the frame
+    // because physics.update may run multiple sub-steps per frame!
     
     // 1. Process steering input
     let targetSteer = 0;
@@ -124,7 +126,7 @@ export class CarPhysics {
     }
 
     // Drift initiation logic
-    if (wantsHandbrake && speedMagnitude > 7.0) {
+    if (wantsHandbrake && speedMagnitude > 7.0 && !this.isAirborne) {
       this.isDrifting = true;
       // Handbrake locks rear wheels and drops traction coefficient rapidly
       this.driftTraction = Math.max(0.1, this.driftTraction - 4.5 * dt);
@@ -263,6 +265,9 @@ export class CarPhysics {
         if (this.rpm > 7800) {
           force *= 0.05;
         }
+      } else if (this.isBoosting) {
+        // Allow pure nitro boosting even when not holding accelerate
+        force += this.engineForce * 1.85;
       }
     }
 
@@ -446,6 +451,7 @@ export class CarPhysics {
     if (totalComp <= 0.001 && heightAboveGround > 0.70) {
       this.isAirborne = true;
       this.airTime += dt;
+      this.isDrifting = false; // No drifting in air
     } else {
       this.isAirborne = false;
       this.airTime = 0.0;
@@ -541,31 +547,8 @@ export class CarPhysics {
       this.rollVelocity = 0;
     }
 
-    // Mid-air correction keys
+    // Mid-air stabilization (no manual keyboard controls)
     if (this.isAirborne && this.airTime > 0.2 && this.rolloverTimer <= 0) {
-      let pitchControl = 0;
-      let rollControl = 0;
-      let yawControl = 0;
-      
-      const wantsHandbrake = keys[' '] || keys['spacebar'];
-      
-      if (keys['w'] || keys['arrowup']) pitchControl = 3.2;
-      if (keys['s'] || keys['arrowdown']) pitchControl = -3.2;
-      
-      if (wantsHandbrake) {
-        // If holding Space, steer keys A/D control horizontal spinning (Yaw)
-        if (keys['a'] || keys['arrowleft']) yawControl = 3.6;
-        if (keys['d'] || keys['arrowright']) yawControl = -3.6;
-      } else {
-        // Otherwise, steer keys A/D control Barrel Roll
-        if (keys['a'] || keys['arrowleft']) rollControl = -3.2;
-        if (keys['d'] || keys['arrowright']) rollControl = 3.2;
-      }
-      
-      this.pitchVelocity += pitchControl * dt;
-      this.rollVelocity += rollControl * dt;
-      this.heading += yawControl * dt;
-      
       // Damp rotation velocities in the air
       this.pitchVelocity *= Math.exp(-2.2 * dt);
       this.rollVelocity *= Math.exp(-2.2 * dt);
@@ -573,32 +556,35 @@ export class CarPhysics {
       // Aerodynamic stabilization: The heavy front engine naturally pulls the nose down in long jumps,
       // and air resistance slowly levels out the roll. This completely removes the artificial
       // "ground tracking" effect that forced unnatural nose-dives over downhill slopes.
-      const hasPitchInput = keys['w'] || keys['s'] || keys['arrowup'] || keys['arrowdown'];
-      const hasRollInput = !wantsHandbrake && (keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright']);
       
-      if (!hasPitchInput) {
-        // Slowly drift pitch towards -0.3 (slightly nose down) over time
-        this.pitchVelocity += (-0.3 - this.bodyPitch) * 0.8 * dt;
-      }
-      if (!hasRollInput) {
-        // Slowly stabilize roll to flat (0) over time
-        this.rollVelocity += (0 - this.bodyRoll) * 1.2 * dt;
-      }
+      // Slowly drift pitch towards flat (-0.05) over time instead of heavy nose-dive
+      this.pitchVelocity += (-0.05 - this.bodyPitch) * 0.8 * dt;
+      
+      // Slowly stabilize roll to flat (0) over time
+      this.rollVelocity += (0 - this.bodyRoll) * 1.2 * dt;
     }
     
-    // Clamp pitch/roll to safe visual limits under normal conditions when on the ground
-    if (this.rolloverTimer <= 0 && !this.isAirborne) {
-      this.bodyPitch = Math.max(-0.4, Math.min(0.4, this.bodyPitch));
-      this.bodyRoll = Math.max(-0.5, Math.min(0.5, this.bodyRoll));
+    // Clamp pitch/roll to safe visual limits
+    if (this.rolloverTimer <= 0) {
+      if (this.isAirborne) {
+        // Hard limit on nose-diving in mid-air
+        this.bodyPitch = Math.max(-0.15, Math.min(0.4, this.bodyPitch));
+      } else {
+        this.bodyPitch = Math.max(-0.4, Math.min(0.4, this.bodyPitch));
+        this.bodyRoll = Math.max(-0.5, Math.min(0.5, this.bodyRoll));
+      }
     }
 
     // Detect landing and calculate tricks
-    if (wasAirborne && !this.isAirborne && prevAirTime > 0.2) {
+    if (wasAirborne && !this.isAirborne && prevAirTime > 0.05) {
       // Landed! Wrap visual pitch/roll to [-PI, PI] to prevent sudden angle snaps
       while (this.bodyPitch < -Math.PI) this.bodyPitch += Math.PI * 2;
       while (this.bodyPitch > Math.PI) this.bodyPitch -= Math.PI * 2;
       while (this.bodyRoll < -Math.PI) this.bodyRoll += Math.PI * 2;
       while (this.bodyRoll > Math.PI) this.bodyRoll -= Math.PI * 2;
+      
+      this.justLanded = true;
+      this.landingImpact = Math.abs(this.velocityY);
 
       // Stunt/Trick detection
       let trickName = "";
@@ -659,8 +645,9 @@ export class CarPhysics {
       // Landing alignment validation (relative to slope plane)
       const landingRollError = Math.abs(this.bodyRoll);
       const landingPitchError = Math.abs(this.bodyPitch);
-      const isCleanLanding = landingRollError < 0.22 && landingPitchError < 0.22;
-      const isWipeout = false;
+      const isWipeout = landingRollError > 1.0 || landingPitchError > 1.0;
+      
+      this.landedWipeout = isWipeout;
       
       if (trickName !== "") {
         if (isWipeout) {
@@ -670,29 +657,18 @@ export class CarPhysics {
           this.rolloverSpin = (Math.random() > 0.5 ? 1.0 : -1.0) * (8.0 + Math.random() * 4.0);
           this.velocity.multiplyScalar(0.2); // Lose speed
           this.isDrifting = true;
-        } else if (isCleanLanding) {
-          this.trickNotification = `CLEAN LANDING: ${trickName} (+${trickScore} PTS)`;
-          this.nitroLevel = Math.min(this.maxNitro, this.nitroLevel + nitroGained);
-          
-          // Speed boost!
-          const currentSpeed = this.velocity.length();
-          this.velocity.setLength(Math.max(currentSpeed, 45.0));
         } else {
           this.trickNotification = `LANDED: ${trickName} (+${trickScore} PTS)`;
-          this.nitroLevel = Math.min(this.maxNitro, this.nitroLevel + nitroGained * 0.5);
+          this.nitroLevel = Math.min(this.maxNitro, this.nitroLevel + nitroGained);
         }
       } else {
-        // No trick, check if landing normal wipeout or clean land
+        // No trick, check if landing normal wipeout
         if (isWipeout) {
           this.trickNotification = "WIPEOUT!";
           this.rolloverTimer = 1.25;
           this.rolloverSpin = (Math.random() > 0.5 ? 1.0 : -1.0) * (6.5 + Math.random() * 4.5);
           this.velocity.multiplyScalar(0.3);
           this.isDrifting = true;
-        } else if (isCleanLanding && prevAirTime > 0.8) {
-          this.trickNotification = "CLEAN LANDING!";
-          const currentSpeed = this.velocity.length();
-          this.velocity.setLength(Math.max(currentSpeed, 38.0));
         }
       }
     }

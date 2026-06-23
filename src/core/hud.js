@@ -374,3 +374,90 @@ export function initRaceHUD() {
     this.scene.add(this.checkpointVisualsGroup);
   }
 
+export function initHypeSystem() {
+  const hudLayer = document.querySelector('.hud-layer');
+  if (!hudLayer) return;
+
+  // Create container
+  this.hypeContainer = document.createElement('div');
+  this.hypeContainer.id = 'hype-container';
+  this.hypeContainer.style.cssText = `
+    position: absolute;
+    top: 15%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0;
+    text-align: center;
+    pointer-events: none;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  `;
+
+  // Phrase text
+  this.hypePhraseEl = document.createElement('div');
+  this.hypePhraseEl.style.cssText = `
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 52px;
+    font-style: italic;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0px 4px 15px rgba(0,0,0,0.8), 0 0 20px #ffc600;
+    letter-spacing: 2px;
+    margin-bottom: -10px;
+  `;
+
+  // Combo multiplier text
+  this.hypeComboEl = document.createElement('div');
+  this.hypeComboEl.style.cssText = `
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 32px;
+    font-style: italic;
+    font-weight: 700;
+    color: #ff3b30;
+    text-shadow: 0px 2px 10px rgba(0,0,0,0.8), 0 0 15px #ff3b30;
+    letter-spacing: 1px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.1s;
+  `;
+
+  this.hypeContainer.appendChild(this.hypePhraseEl);
+  this.hypeContainer.appendChild(this.hypeComboEl);
+  hudLayer.appendChild(this.hypeContainer);
+}
+
+export function showHype(phrase, comboCount, colorHex) {
+  if (!this.hypeContainer) return;
+
+  this.hypePhraseEl.textContent = phrase;
+  this.hypePhraseEl.style.textShadow = \`0px 4px 15px rgba(0,0,0,0.8), 0 0 25px \${colorHex}, 0 0 10px \${colorHex}\`;
+  
+  if (comboCount > 1) {
+    this.hypeComboEl.textContent = \`\${comboCount}X COMBO\`;
+    this.hypeComboEl.style.opacity = '1';
+    // Small heartbeat pop for combo
+    this.hypeComboEl.style.transform = 'scale(1.2)';
+    setTimeout(() => { if(this.hypeComboEl) this.hypeComboEl.style.transform = 'scale(1)'; }, 100);
+  } else {
+    this.hypeComboEl.style.opacity = '0';
+  }
+
+  this.hypeContainer.style.opacity = '1';
+  this.hypeContainer.style.transform = 'translate(-50%, -50%) scale(1.0)';
+  
+  // Heartbeat pop on the main phrase
+  this.hypePhraseEl.style.transform = 'scale(1.1)';
+  setTimeout(() => { if(this.hypePhraseEl) this.hypePhraseEl.style.transform = 'scale(1)'; }, 100);
+
+  if (this.hypeTimeout) clearTimeout(this.hypeTimeout);
+  this.hypeTimeout = setTimeout(() => this.hideHype(), 2500);
+}
+
+export function hideHype() {
+  if (!this.hypeContainer) return;
+  this.hypeContainer.style.opacity = '0';
+  this.hypeContainer.style.transform = 'translate(-50%, -50%) scale(0.8)';
+}

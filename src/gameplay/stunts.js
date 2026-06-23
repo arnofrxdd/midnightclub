@@ -20,15 +20,21 @@ export function checkSlipstream(dt = 0.016) {
       toVeh.y = 0; // Ignore height differences for slipstream detection
       const dist = toVeh.length();
       
-      if (dist > 4.5 && dist < 40.0) { // Increased draft range to 40m
-        toVeh.normalize();
-        const dot = toVeh.dot(playerForward);
-        if (dot > 0.88) { // Relaxed to ~28 degrees to allow drafting cornering/dodging AI
-          const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-          if (vForward.dot(playerForward) > 0.6) { // Relaxed heading alignment to allow drafting drifting AI
-            inDraft = true;
-            targetVeh = v;
-            break;
+      if (dist > 4.5 && dist < 40.0) { 
+        // Strict lateral distance check (must be right behind them, within 2.5 meters sideways)
+        const playerRight = new THREE.Vector3(Math.cos(playerHeading), 0, -Math.sin(playerHeading));
+        const lateralDist = Math.abs(toVeh.dot(playerRight));
+        
+        if (lateralDist < 2.5) {
+          toVeh.normalize();
+          const dot = toVeh.dot(playerForward);
+          if (dot > 0.7) { // Target is in front of us
+            const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
+            if (vForward.dot(playerForward) > 0.5) { // Same general direction
+              inDraft = true;
+              targetVeh = v;
+              break;
+            }
           }
         }
       }
@@ -145,3 +151,30 @@ export function updateDriftNitro(dt) {
 
     this.prevIsDrifting = isCurrentlyDrifting;
   }
+
+export function updateAirNitro(dt) {
+    if (this.prevIsAirborne === undefined) this.prevIsAirborne = false;
+    if (this.airNitroGained === undefined) this.airNitroGained = 0;
+
+    const isCurrentlyAirborne = this.physics.isAirborne && this.physics.airTime > 0.2;
+
+    if (isCurrentlyAirborne) {
+      // Accumulate nitro gained during airtime
+      const gain = 0.12 * dt;
+      this.airNitroGained += gain;
+      this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + gain);
+      
+      const pctGained = Math.round(this.airNitroGained * 100);
+      this.showNotification('air_active', `AIRBORNE +${pctGained}%`, 0);
+    } else {
+      if (this.prevIsAirborne && this.airNitroGained > 0.03) {
+        // Notification removal is handled here. Physics.js handles the "LANDED" popup!
+        this.removeNotification('air_active');
+      } else {
+        this.removeNotification('air_active');
+      }
+      this.airNitroGained = 0;
+    }
+
+    this.prevIsAirborne = isCurrentlyAirborne;
+}

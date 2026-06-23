@@ -131,7 +131,7 @@ export class AICar {
           ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
           
       if (this.velocityY === undefined) this.velocityY = 0;
-      this.velocityY -= 14.0 * dt;
+      this.velocityY -= 18.0 * dt;
       const nextY = this.position.y + this.velocityY * dt;
 
       if (nextY < targetY) {
@@ -503,7 +503,7 @@ export class AICar {
     const prevY = this.position.y;
     
     // Predict next Y position based on current velocity and gravity
-    this.velocityY -= 14.0 * dt; // Match player gravity
+    this.velocityY -= 18.0 * dt; // Match player gravity
     const nextY = this.position.y + this.velocityY * dt;
 
     if (nextY < targetY) {
@@ -887,7 +887,7 @@ export class AICar {
       : 0.5;
     
     if (this.velocityY === undefined) this.velocityY = 0;
-    this.velocityY -= 14.0 * dt;
+    this.velocityY -= 18.0 * dt;
     const nextY = this.position.y + this.velocityY * dt;
 
     if (nextY < targetY) {
@@ -929,7 +929,7 @@ export class AICar {
       : 0.5;
       
     if (this.velocityY === undefined) this.velocityY = 0;
-    this.velocityY -= 14.0 * dt;
+    this.velocityY -= 18.0 * dt;
     const nextY = this.position.y + this.velocityY * dt;
 
     if (nextY < targetY) {

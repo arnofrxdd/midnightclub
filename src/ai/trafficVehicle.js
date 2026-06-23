@@ -658,7 +658,7 @@ export class TrafficVehicle {
         const heightAboveGround = this.position.y - targetY;
         if (heightAboveGround > 0.05 || this.velocityY > 0.5) {
           this.isAirborne = true;
-          this.velocityY -= 22.0 * dt;
+          this.velocityY -= 18.0 * dt;
           this.position.y += this.velocityY * dt;
           this.roll += this.rollVelocity * dt;
           this.pitch += this.pitchVelocity * dt;
@@ -874,7 +874,7 @@ export class TrafficVehicle {
       const heightAboveGround = this.position.y - targetY;
       if (heightAboveGround > 0.05 || this.velocityY > 0.5) {
         this.isAirborne = true;
-        this.velocityY -= 22.0 * dt;
+        this.velocityY -= 18.0 * dt;
         this.position.y += this.velocityY * dt;
         this.roll += this.rollVelocity * dt;
         this.pitch += this.pitchVelocity * dt;

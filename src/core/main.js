@@ -17,7 +17,7 @@ import { updateCamera, cycleCameraFocus, cycleCameraMode, getTargetGameplayCamer
 import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
 import { formatTime, showBanner, initNotifications, showNotification, removeNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
 import { checkBreakablesCollision } from '../gameplay/breakables.js';
-import { checkSlipstream, checkNearMisses, updateDriftNitro } from '../gameplay/stunts.js';
+import { checkSlipstream, checkNearMisses, updateDriftNitro, updateAirNitro } from '../gameplay/stunts.js';
 import { handleCrashDamage } from './carMesh.js';
 import { testOBBCollision } from './obb.js';
 
@@ -55,15 +55,15 @@ class Game {
     this.prevIsDrifting = false;
     this.gearShiftPunch = 0.0;
     this.debugShowTrafficOnMinimap = false; // Set to true only in debug to show traffic on radar
-    
+
     // Inputs
     this.keys = {};
     this.inFeedbackMenu = false;
-    
+
     this.debugMenuEnabled = false;
     this.physics = new CarPhysics();
     this.race = new RaceManager();
-    
+
     // Setup Feedback UI Logic
     this.setupFeedbackUI();
 
@@ -81,7 +81,7 @@ class Game {
     this.bustedContainerEl = document.getElementById('busted-container');
     this.bustedFillEl = document.getElementById('busted-fill');
     this.noiseOverlayEl = document.getElementById('noise-overlay');
-    
+
     this.lensflareTex = createLensflareTexture();
     this.nitroFlareTex = createNitroFlareTexture();
     this.nitroSpriteMat = new THREE.SpriteMaterial({
@@ -94,7 +94,7 @@ class Game {
     this.initThree();
     this.world = new World(this.scene);
     this.isInitialLoad = true;
-    
+
     // Pick a random axis (X or Z) and direction to ensure the camera is always on the same
     // straight road as the player (who starts at 0,0). This guarantees the transition swoop
     // travels cleanly down the road instead of cutting diagonally through buildings!
@@ -102,11 +102,11 @@ class Game {
     this.menuCameraAxis = axes[Math.floor(Math.random() * axes.length)];
     this.menuCameraDir = Math.random() > 0.5 ? 1 : -1;
     this.menuCameraBaseOffset = 180 + Math.random() * 80;
-    
+
     // Snap player to the dynamically generated ground height at spawn so they don't fall/clip
     const startY = this.world.getGroundHeight(this.physics.position.x, this.physics.position.z);
     this.physics.position.y = startY + 0.5; // suspension clearance
-    
+
     this.createCarMesh();
     this.createNavigationArrow();
     this.initInput();
@@ -122,7 +122,7 @@ class Game {
     this.initDebugVisuals();
     this.perf = { world: 0, physics: 0, traffic: 0, trafficUpdate: 0, trafficMesh: 0, collisions: 0, playerVisuals: 0, pursuit: 0, race: 0, particles: 0, render: 0, eyeAdaptation: 0, total: 0 };
     this.createPerfHUD();
-    
+
     // Traffic System
     this.traffic = new TrafficManager(this.scene, 30);
     this.traffic.init(this.physics.position, this.world);
@@ -145,12 +145,12 @@ class Game {
 
     // Precompile shaders to avoid runtime compilation stutter
     this.precompileShaders();
-    
+
     // Main Menu State Initialization
     this.inMainMenu = true;
     this.menuTransitionTime = 0.0;
     this.menuTransitionDuration = 2.0; // 2 seconds swoop
-    
+
     this.mainMenuEl = document.getElementById('main-menu');
     this.hudLayerEl = document.querySelector('.hud-layer');
     if (this.hudLayerEl) {
@@ -209,18 +209,18 @@ class Game {
     // Camera: Classic Isometric camera setup
     this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     this.camHeading = 0;
-    
+
     // Lighting - Realistic night scene (NFS 2015 desaturated street-driven lights)
     // Ambient: Dark slate/coal ambient (significantly increased to prevent far-distance roads from going pitch black)
     const ambientLight = new THREE.AmbientLight(0x354158, 0.95);
     this.scene.add(ambientLight);
- 
+
     // Directional: Dim moonlighting (increased intensity and angled to illuminate building facades)
     this.dirLight = new THREE.DirectionalLight(0x6b7b99, 0.9);
     this.dirLight.position.set(0.6, 1.2, 0.4).normalize(); // Angled so vertical building walls get moonlight definition
     this.dirLight.castShadow = false; // Disabled completely for extreme GPU performance gains
     this.scene.add(this.dirLight);
- 
+
     // Sky Hemisphere Light (very dim, desaturated sky/ground)
     const hemiLight = new THREE.HemisphereLight(0x14182b, 0x0c0b0c, 0.35);
     this.scene.add(hemiLight);
@@ -232,7 +232,7 @@ class Game {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(renderPass);
     this.composer.addPass(outputPass);
- 
+
     // Resize handler
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -242,7 +242,7 @@ class Game {
     });
   }
 
-    createVoxelCarMesh(bodyColorHex, type = 'sports') {
+  createVoxelCarMesh(bodyColorHex, type = 'sports') {
     return createVoxelCarMesh(bodyColorHex, type, this.lensflareTex);
   }
 
@@ -332,12 +332,15 @@ class Game {
     this.nitroLight.position.set(0, 0.3, -2.15);
     this.carGroup.add(this.nitroLight);
 
+    this.sparkLight = new THREE.PointLight(0xffdd44, 0.0, 25, 2.0);
+    this.scene.add(this.sparkLight);
+
     // Reverse Lights (White)
     this.reverseLightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.reverseLightPoint = new THREE.PointLight(0xffffff, 0.0, 8, 1.5);
     this.reverseLightPoint.position.set(0, 0.42, -2.4);
     this.carGroup.add(this.reverseLightPoint);
-    
+
     const reverseLightGeo = new THREE.BoxGeometry(0.25, 0.1, 0.1);
     this.reverseLightL = new THREE.Mesh(reverseLightGeo, this.reverseLightMat);
     this.reverseLightL.position.set(-0.55, 0.42, -2.36);
@@ -364,8 +367,8 @@ class Game {
     this.leftSpotTarget = new THREE.Object3D();
     this.leftSpotTarget.position.set(-0.65, 0.4, 15);
     this.scene.add(this.leftSpotTarget); // Added to scene for correct world direction calculation
-    
-    this.leftSpot = new THREE.SpotLight(0xfffae6, 14.0, 50, Math.PI/14, 0.85, 1.0);
+
+    this.leftSpot = new THREE.SpotLight(0xfffae6, 14.0, 50, Math.PI / 14, 0.85, 1.0);
     this.leftSpot.position.set(-0.65, 0.4, 2.35);
     this.leftSpot.target = this.leftSpotTarget;
     this.carGroup.add(this.leftSpot);
@@ -373,8 +376,8 @@ class Game {
     this.rightSpotTarget = new THREE.Object3D();
     this.rightSpotTarget.position.set(0.65, 0.4, 15);
     this.scene.add(this.rightSpotTarget); // Added to scene
-    
-    this.rightSpot = new THREE.SpotLight(0xfffae6, 14.0, 50, Math.PI/14, 0.85, 1.0);
+
+    this.rightSpot = new THREE.SpotLight(0xfffae6, 14.0, 50, Math.PI / 14, 0.85, 1.0);
     this.rightSpot.position.set(0.65, 0.4, 2.35);
     this.rightSpot.target = this.rightSpotTarget;
     this.carGroup.add(this.rightSpot);
@@ -396,7 +399,7 @@ class Game {
     const leftSprite = meshGroup.getObjectByName("leftHeadlightSprite");
     const rightSprite = meshGroup.getObjectByName("rightHeadlightSprite");
     if (!leftSprite || !rightSprite) return;
-    
+
     const camPos = this.camera.position;
 
     // Use cached scratch vectors
@@ -419,22 +422,22 @@ class Game {
     }
     const distR = camPos.distanceTo(s.rw);
     s.fw.set(Math.sin(heading), 0, Math.cos(heading));
-    
+
     s.tcl.copy(camPos).sub(s.lw).normalize();
     s.tcr.copy(camPos).sub(s.rw).normalize();
-    
+
     const dotL = s.fw.dot(s.tcl);
     const dotR = s.fw.dot(s.tcr);
-    
+
     const distFadeL = Math.max(0.0, 1.0 - distL / 340.0);
     const distFadeR = Math.max(0.0, 1.0 - distR / 340.0);
-    
+
     const intensityL = Math.pow(Math.max(0.0, dotL), 3.5) * distFadeL;
     const intensityR = Math.pow(Math.max(0.0, dotR), 3.5) * distFadeR;
-    
+
     leftSprite.material.opacity = intensityL * 0.95;
     leftSprite.scale.set(3.4 * (0.3 + intensityL * 1.5), 0.7 * (0.3 + intensityL * 1.5), 1.0);
-    
+
     rightSprite.material.opacity = intensityR * 0.95;
     rightSprite.scale.set(3.4 * (0.3 + intensityR * 1.5), 0.7 * (0.3 + intensityR * 1.5), 1.0);
   }
@@ -455,7 +458,7 @@ class Game {
 
       // World position of the vertex on the X-Z plane
       tempV.set(localX, 0, localZ).applyMatrix4(headlightPool.matrixWorld);
-      
+
       // Get ground height at this world coordinate
       const groundY = this.world.getGroundHeight(tempV.x, tempV.z);
 
@@ -472,7 +475,7 @@ class Game {
     // 3D voxel pointer arrow floating above the car roof
     this.navArrow = new THREE.Group();
     this.navArrow.renderOrder = 9999;
-    
+
     const arrowMat = new THREE.MeshStandardMaterial({
       color: 0xe5a93b,
       emissive: 0xe5a93b,
@@ -483,7 +486,7 @@ class Game {
       depthWrite: false,
       transparent: true
     });
-    
+
     // Arrow Shaft
     const shaftGeo = new THREE.BoxGeometry(0.3, 0.15, 1.2);
     const shaft = new THREE.Mesh(shaftGeo, arrowMat);
@@ -507,7 +510,7 @@ class Game {
     this.navArrow.position.set(0, 1.7, -0.3);
     this.navArrow.rotation.x = -0.32; // Tilt upward (pitch) like Midnight Club
     this.navArrow.visible = false;
-    
+
     // Add to car group so it moves & rotates with the car automatically
     this.carVisualContainer.add(this.navArrow);
   }
@@ -648,7 +651,7 @@ class Game {
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ message: `Quick Feedback: User rated the ${this.race ? this.race.mode : 'race'} as ${rating}` })
       }).catch(e => console.error(e)); // Fire and forget
-      
+
       if (likeBtn) likeBtn.style.display = 'none';
       if (dislikeBtn) dislikeBtn.style.display = 'none';
       if (qfThanks) qfThanks.style.display = 'block';
@@ -699,10 +702,10 @@ class Game {
   precompileShaders() {
     const dummyGroup = new THREE.Group();
     this.scene.add(dummyGroup);
-    
+
     // Collect all materials to compile
     const mats = [];
-    
+
     // World materials
     if (this.world) {
       if (this.world.asphaltMaterials) mats.push(...this.world.asphaltMaterials);
@@ -747,7 +750,7 @@ class Game {
       if (this.world.newspaperBodyMat) mats.push(this.world.newspaperBodyMat);
       if (this.world.newspaperGlassMat) mats.push(this.world.newspaperGlassMat);
       if (this.world.newspaperPaperMat) mats.push(this.world.newspaperPaperMat);
-      
+
       // Neon/billboard color variations
       if (this.world.billboardColors) {
         this.world.billboardColors.forEach(c => {
@@ -793,7 +796,7 @@ class Game {
 
     // Compile everything
     this.renderer.compile(this.scene, this.camera);
-    
+
     // Clean up dummy meshes and dispose cloned geometries to avoid memory leaks
     dummyGroup.traverse(child => {
       if (child.geometry) {
@@ -813,7 +816,7 @@ class Game {
   }
 
   getModeColor(mode) {
-    switch(mode) {
+    switch (mode) {
       case 'sprint': return { hex: 0xc026ff, css: '#c026ff', glow: 'rgba(192, 38, 255, 0.9)' }; // Purple
       case 'circuit': return { hex: 0xff1e1e, css: '#ff1e1e', glow: 'rgba(255, 30, 30, 0.9)' }; // Red
       case 'autocross': return { hex: 0x00e5ff, css: '#00e5ff', glow: 'rgba(0, 229, 255, 0.9)' }; // Cyan
@@ -831,9 +834,9 @@ class Game {
     canvas.width = 2048;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     ctx.font = 'italic 900 130px "Barlow Condensed", "Outfit", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -841,18 +844,18 @@ class Game {
     const colors = this.getModeColor(mode);
     ctx.shadowColor = colors.glow;
     ctx.shadowBlur = 20;
-    
+
     ctx.fillText(text.toUpperCase(), canvas.width / 2, canvas.height / 2);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
-    const material = new THREE.SpriteMaterial({ 
-      map: texture, 
+    const material = new THREE.SpriteMaterial({
+      map: texture,
       transparent: true,
       depthTest: true,
-      depthWrite: false 
+      depthWrite: false
     });
-    
+
     this._eventTextMaterials[key] = material;
     return material;
   }
@@ -921,6 +924,10 @@ class Game {
     return updateDriftNitro.call(this, dt);
   }
 
+  updateAirNitro(dt) {
+    return updateAirNitro.call(this, dt);
+  }
+
   initNotifications() {
     return initNotifications.call(this);
   }
@@ -946,7 +953,7 @@ class Game {
     this.race.aiRacers.forEach(ai => {
       const container = new THREE.Group();
       const { carGroup, wheels } = this.createVoxelCarMesh(ai.colorHex, 'sports');
-      
+
       const aiNitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
       aiNitroLeftSprite.position.set(-0.6, 0.2, -2.1);
       aiNitroLeftSprite.scale.set(0.001, 0.001, 0.001);
@@ -1014,7 +1021,7 @@ class Game {
 
     if (eventX !== undefined && eventZ !== undefined) {
       const MIN_DIST = 200; // minimum distance from the event intersection
-      
+
       // Collect all valid intersections from the world road graph
       const cols = Array.from(this.world.roadColumns);
       const rows = Array.from(this.world.roadRows);
@@ -1064,7 +1071,7 @@ class Game {
     if (this.physics) {
       this.physics.nitroLevel = this.physics.maxNitro;
     }
-    
+
     // Hide stats initially until cinematic finishes
     this.hudStatsEl.style.display = 'none';
     this.cancelBtnEl.style.display = 'none';
@@ -1244,7 +1251,7 @@ class Game {
   animate(time) {
     const startFrame = performance.now();
     requestAnimationFrame((t) => this.animate(t));
-    
+
     // Use rAF timestamp for perfect v-sync aligned delta (eliminates wake-up jitter at high refresh rates)
     const currentTime = time !== undefined ? time : performance.now();
     if (this.lastFrameTime === undefined) {
@@ -1265,12 +1272,12 @@ class Game {
     if (this.prevPhysicsHeading === undefined) this.prevPhysicsHeading = this.physics.heading || 0;
     if (this.renderPhysicsPosition === undefined) this.renderPhysicsPosition = this.physics.position.clone();
     if (this.renderPhysicsHeading === undefined) this.renderPhysicsHeading = this.physics.heading || 0;
-    
+
     const tPursuitStart = performance.now();
-    
+
     if (this.slowMoTimer === undefined) this.slowMoTimer = 0.0;
     if (this.crashShake === undefined) this.crashShake = 0.0;
-    
+
     if (this.slowMoTimer > 0) {
       this.slowMoTimer -= dt;
     }
@@ -1278,9 +1285,9 @@ class Game {
       this.crashShake *= Math.exp(-6.0 * dt);
       if (this.crashShake < 0.01) this.crashShake = 0.0;
     }
-    
+
     const scaledDt = dt; // Slow-motion disabled by player request
-    
+
     // Update cinematic manager
     if (this.cinematicManager) {
       this.cinematicManager.update(scaledDt);
@@ -1292,25 +1299,25 @@ class Game {
         this.menuTransitionTime += dt;
         const t = Math.min(1.0, this.menuTransitionTime / this.menuTransitionDuration);
         const easeT = t * t * (3.0 - 2.0 * t); // smoothstep
-        
+
         if (!this.menuTransitionStartPos) {
           this.menuTransitionStartPos = this.camera.position.clone();
           const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
           this.menuTransitionStartLookAt = this.menuTransitionStartPos.clone().addScaledVector(dir, 20.0);
         }
-        
+
         const gameplayCam = this.getTargetGameplayCamera();
-        
+
         const currentPos = this.menuTransitionStartPos.clone().lerp(gameplayCam.pos, easeT);
         const currentLookAt = this.menuTransitionStartLookAt.clone().lerp(gameplayCam.lookAt, easeT);
         const currentFov = 50 + (gameplayCam.fov - 50) * easeT;
-        
+
         this.cameraOverride = {
           pos: currentPos,
           lookAt: currentLookAt,
           fov: currentFov
         };
-        
+
         if (t >= 1.0) {
           this.inMainMenu = false;
           this.cameraOverride = null;
@@ -1328,13 +1335,13 @@ class Game {
       } else {
         // High angled-down view looking down a street at a 45-degree angle (away from player car)
         const time = Date.now() * 0.0001;
-        
+
         // Slow linear pan forward along the street
         const panDist = (this.menuCameraBaseOffset - (time % 40)) * this.menuCameraDir;
         const camY = 80;
         const lookY = 0.5;
         let camX = 0, camZ = 0, lookX = 0, lookZ = 0;
-        
+
         if (this.menuCameraAxis === 'z') {
           camX = 0;
           camZ = panDist;
@@ -1346,7 +1353,7 @@ class Game {
           lookX = camX - 80 * this.menuCameraDir;
           lookZ = 0;
         }
-        
+
         this.cameraOverride = {
           pos: new THREE.Vector3(camX, camY, camZ),
           lookAt: new THREE.Vector3(lookX, lookY, lookZ),
@@ -1359,7 +1366,7 @@ class Game {
     if (!this.inMainMenu && !this.race.active && this.physics.position) {
       if (this.eventSpawnTimer === undefined) this.eventSpawnTimer = 0.0;
       this.eventSpawnTimer += dt;
-      
+
       if (this.eventSpawnTimer > 0.16) {
         this.eventSpawnTimer = 0.0;
         const px = this.physics.position.x;
@@ -1367,7 +1374,7 @@ class Game {
         const maxEvents = 90;
         const playerGridX = Math.round(px / this.world.tileSize);
         const playerGridZ = Math.round(pz / this.world.tileSize);
-        
+
         // 1. Prune events that are too far behind (>1200m)
         if (this.race.worldEvents) {
           this.race.worldEvents = this.race.worldEvents.filter(evt => {
@@ -1377,7 +1384,7 @@ class Game {
         } else {
           this.race.worldEvents = [];
         }
-        
+
         // 2. Incrementally spawn several new events around the player's current intersection bubble
         if (this.race.worldEvents.length < maxEvents && this.world) {
           const modes = ['sprint', 'circuit'];
@@ -1404,9 +1411,9 @@ class Game {
               const duplicate = this.race.worldEvents.some(evt => evt.x === wx && evt.z === wz);
               if (!duplicate) {
                 const mode = ['sprint', 'circuit'][Math.floor(Math.random() * 2)];
-                this.race.worldEvents.push({ 
-                  x: wx, 
-                  z: wz, 
+                this.race.worldEvents.push({
+                  x: wx,
+                  z: wz,
                   mode: mode,
                   laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
                   checkpoints: Math.floor(Math.random() * 15) + 10,
@@ -1428,14 +1435,14 @@ class Game {
         const dx = this.physics.position.x - evt.x;
         const dz = this.physics.position.z - evt.z;
         const dist = Math.hypot(dx, dz);
-        
+
         if (dist < 22.0 && dist < closestDist) {
           closestDist = dist;
           closestEvent = evt;
           nearEvent = true;
         }
       });
-      
+
       if (nearEvent && closestEvent) {
         if (this.eventPromptEl) {
           if (!this.eventPromptActive) {
@@ -1453,13 +1460,13 @@ class Game {
               startX = (targetPos.x * 0.5 + 0.5) * window.innerWidth;
               startY = (-(targetPos.y * 0.5) + 0.5) * window.innerHeight;
             }
-            
+
             this.eventPromptEl.style.transition = 'none';
             this.eventPromptEl.style.left = `${startX}px`;
             this.eventPromptEl.style.top = `${startY}px`;
             this.eventPromptEl.classList.remove('docked', 'fade-out');
             this.eventPromptEl.style.display = 'flex';
-            
+
             // Next frame: transition to HUD position
             setTimeout(() => {
               this.eventPromptEl.style.transition = 'left 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.5s ease-out';
@@ -1468,7 +1475,7 @@ class Game {
               this.eventPromptEl.classList.add('docked');
             }, 10);
           }
-          
+
           if (this.eventPromptModeEl) {
             this.eventPromptModeEl.textContent = `${closestEvent.mode.toUpperCase()} EVENT`;
             const cssColor = this.getModeColor(closestEvent.mode).css;
@@ -1480,7 +1487,7 @@ class Game {
             this.eventPromptStatsEl.textContent = `${lapsText}CHECKPOINTS: ${closestEvent.checkpoints} • OPPONENTS: ${closestEvent.racers}`;
           }
         }
-        
+
         // Start race on pressing key F
         if (this.keys['f'] || this.keys['keyf']) {
           this.keys['f'] = false; // Consume key press
@@ -1491,7 +1498,7 @@ class Game {
         }
       }
     }
-    
+
     if (!nearEvent && this.eventPromptEl && this.eventPromptEl.style.display !== 'none' && !this.eventPromptEl.classList.contains('fade-out')) {
       this.eventPromptEl.classList.add('fade-out');
       this.eventPromptActive = false;
@@ -1503,13 +1510,13 @@ class Game {
     }
 
     let focusTarget = this.physics;
-    
+
     // If cinematic is active or in main menu, the rendering anchor follows the camera so the world loads
     // smoothly underneath it.
     if (this.inMainMenu || (this.cinematicManager && this.cinematicManager.state !== 'none')) {
       let overrideHeading = this.camHeading || 0;
       let overridePos = this.camera.position;
-      
+
       if (this.cameraOverride) {
         overridePos = this.cameraOverride.pos;
         const dx = this.cameraOverride.lookAt.x - this.cameraOverride.pos.x;
@@ -1525,19 +1532,19 @@ class Game {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
       if (activeAI) focusTarget = activeAI;
     }
-    
+
     // Collect dynamic lights for the lighting pool (headlamps from player and traffic)
     const dynamicLights = [];
 
     // Spawn red smoke columns for active free-roam event beacons
     if (!this._eventSprites) this._eventSprites = [];
-    
+
     if (!this.race.active && this.race.worldEvents) {
       this.race.worldEvents.forEach(evt => {
         const dx = evt.x - focusTarget.position.x;
         const dz = evt.z - focusTarget.position.z;
         const distSq = dx * dx + dz * dz;
-        
+
         let spriteObj = this._eventSprites.find(s => s.evt === evt);
 
         // Render within 260 meters
@@ -1545,7 +1552,7 @@ class Game {
           if (Math.random() < 0.55) {
             this.spawnCheckpointSmoke(evt, this.getModeColor(evt.mode).hex, 1.2, 1.2);
           }
-          
+
           const h = (this.world && typeof this.world.getGroundHeight === 'function')
             ? this.world.getGroundHeight(evt.x, evt.z)
             : 0.5;
@@ -1568,21 +1575,21 @@ class Game {
           } else if (!spriteObj.sprite.parent) {
             this.scene.add(spriteObj.sprite);
           }
-          
+
           const dist = Math.sqrt(distSq);
           const scaleFactor = 0.4 + 0.6 * Math.min(1.0, Math.pow(dist / 200.0, 0.7));
           spriteObj.sprite.scale.set(64 * scaleFactor, 8 * scaleFactor, 1);
           spriteObj.sprite.position.set(evt.x, h + 5.0, evt.z);
-          
+
           // Smooth fade out logic if player drives past the event
           const toEvent = new THREE.Vector3(evt.x - this.camera.position.x, (h + 5.0) - this.camera.position.y, evt.z - this.camera.position.z).normalize();
           const camForward = new THREE.Vector3();
           this.camera.getWorldDirection(camForward);
           const dot = toEvent.dot(camForward);
-          
+
           // Fade out as dot goes from 0.1 to -0.2 (leaving screen/going behind)
           const angleFade = Math.min(1.0, Math.max(0.0, (dot + 0.2) / 0.3));
-          
+
           spriteObj.sprite.material.opacity = angleFade;
           spriteObj.sprite.visible = !(nearEvent && closestEvent === evt) && angleFade > 0;
 
@@ -1637,7 +1644,7 @@ class Game {
         }
       });
     }
-    
+
     // Player headlights (optimized, zero-alloc)
     _scratchV3_1.set(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading)); // playerForward
     _scratchV3_2.set(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading)); // playerRight
@@ -1649,8 +1656,10 @@ class Game {
     _scratchV3_3.copy(pPos).addScaledVector(_scratchV3_1, 2.35).addScaledVector(_scratchV3_2, 0.65); // pHeadR
     this.rightSpotTarget.position.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 15.0);
 
-    // Update rear tail/brake light glow intensity dynamically
-    const isBraking = this.keys['s'] || this.keys['arrowdown'];
+    // Update rear tail/brake light glow intensity dynamically (single point light for performance)
+    const wantsHandbrake = this.keys[' '] || this.keys['spacebar'];
+    const isBraking = this.keys['s'] || this.keys['arrowdown'] || wantsHandbrake;
+
     if (isBraking) {
       this.tailLight.intensity = 5.5; // Bright red brake light
       this.playerTaillightMat.color.setHex(0xff3333);
@@ -1678,7 +1687,7 @@ class Game {
 
       _scratchV3_1.set(Math.sin(v.heading), 0, Math.cos(v.heading)); // tForward
       _scratchV3_2.copy(v.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
-      
+
       // Directional gating: headlights should only shine forward relative to camera/player view
       _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
       const dot = _scratchV3_1.dot(_scratchV3_3);
@@ -1704,7 +1713,7 @@ class Game {
           // AI Headlights
           _scratchV3_1.set(Math.sin(ai.heading), 0, Math.cos(ai.heading)); // aiForward
           _scratchV3_2.copy(ai.position).addScaledVector(_scratchV3_1, 3.5); // headlampPos
-          
+
           // Directional gating: headlights should only shine forward relative to camera/player view
           _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
           const dot = _scratchV3_1.dot(_scratchV3_3);
@@ -1760,12 +1769,12 @@ class Game {
       if (this.pursuit.active && this.pursuit.cops.length > 0) {
         const playerPos = this.physics.position;
         const playerForward = new THREE.Vector3(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading));
-        
+
         for (let i = 0; i < this.pursuit.cops.length; i++) {
           const cop = this.pursuit.cops[i];
           const toCop = cop.position.clone().sub(playerPos);
           const distance = toCop.length();
-          
+
           if (distance < 90) { // Only check cops within 90 meters
             const dot = playerForward.dot(toCop.normalize());
             if (dot < -0.15) { // Negative dot product means cop is behind player
@@ -1782,24 +1791,24 @@ class Game {
       if (copBehind) {
         this.copFlashEl.style.display = 'block';
         const flashBlue = (Math.floor(Date.now() / 300) % 2 === 0);
-        
+
         // Calculate factor based on closest cop trailing distance (10m to 90m)
         const proximityFactor = Math.max(0, Math.min(1, 1 - (closestCopBehindDist - 10) / 80));
-        
+
         // Scale height between 5vh (far) and 22vh (bumper-to-bumper)
         const dynamicHeight = 5 + proximityFactor * 17;
         this.copFlashEl.style.height = `${dynamicHeight}vh`;
-        
+
         // Toggle flash color class
         if (flashBlue) {
           this.copFlashEl.classList.add('flash-blue');
         } else {
           this.copFlashEl.classList.remove('flash-blue');
         }
-        
+
         // Scale opacity dynamically: brighter and more saturated when closer, dims when flashing off
-        const targetOpacity = flashBlue 
-          ? (0.35 + proximityFactor * 0.65) 
+        const targetOpacity = flashBlue
+          ? (0.35 + proximityFactor * 0.65)
           : (0.05 + proximityFactor * 0.25);
         this.copFlashEl.style.opacity = targetOpacity;
       } else {
@@ -1845,12 +1854,12 @@ class Game {
       // Dynamic Film Grain / Noise Intensity based on cop pursuit and busting state
       if (this.noiseOverlayEl) {
         let noiseOpacity = 0.05; // Clean, subtle base film grain
-        
+
         if (this.pursuit) {
           if (this.pursuit.active) {
             // Increase noise based on heat level (up to +0.06 at heat 5)
             noiseOpacity += (this.pursuit.heatLevel || 1) * 0.012;
-            
+
             // Increase noise based on proximity to nearest cop (up to +0.08 when very close)
             let closestCopDist = Infinity;
             this.pursuit.cops.forEach(cop => {
@@ -1864,13 +1873,13 @@ class Game {
               noiseOpacity += proximityFactor * 0.08;
             }
           }
-          
+
           // Intensify noise heavily as player is being busted (up to +0.22 when fully busting)
           if (this.pursuit.bustProgress > 0) {
             noiseOpacity += this.pursuit.bustProgress * 0.22;
           }
         }
-        
+
         // Clamp to a safe maximum to keep game readable
         noiseOpacity = Math.min(0.40, noiseOpacity);
         this.noiseOverlayEl.style.opacity = noiseOpacity;
@@ -1896,7 +1905,7 @@ class Game {
           if (dist <= 130.0) {
             _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
             _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
-            
+
             // Directional gating: headlights should only shine forward relative to camera/player view
             _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
             const dot = _scratchV3_1.dot(_scratchV3_3);
@@ -1926,17 +1935,17 @@ class Game {
           const rgtSin = Math.sin(cop.heading + Math.PI / 2);
           const lateralSpeed = Math.abs(cop.velocity.x * rgtCos + cop.velocity.z * rgtSin);
           const isSkidding = cop.velocity && (lateralSpeed > 3.2 || (cop.velocity.lengthSq() > 300 && Math.abs(cop.angularVelocity) > 1.0));
-          
+
           if (isSkidding) {
             const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(cop.meshGroup.matrixWorld);
             const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(cop.meshGroup.matrixWorld);
             const backward = cop.velocity.clone().negate().normalize();
             backward.y = 0.3;
             backward.normalize();
-            
+
             const leftWet = this.world.isWetAt(leftRear.x, leftRear.z);
             const rightWet = this.world.isWetAt(rightRear.x, rightRear.z);
-            
+
             if (!leftWet) this.spawnParticles(leftRear, backward, 0xaaaaaa, 1);
             if (!rightWet) this.spawnParticles(rightRear, backward, 0xaaaaaa, 1);
 
@@ -1972,7 +1981,7 @@ class Game {
           if (dist <= 130.0) {
             _scratchV3_1.set(Math.sin(cop.heading), 0, Math.cos(cop.heading)); // copForward
             _scratchV3_2.copy(cop.position).addScaledVector(_scratchV3_1, 2.3); // headPos
-            
+
             // Directional gating: headlights should only shine forward relative to camera/player view
             _scratchV3_3.copy(this.camera.position).sub(_scratchV3_2).normalize();
             const dot = _scratchV3_1.dot(_scratchV3_3);
@@ -2010,11 +2019,11 @@ class Game {
                 child.getWorldQuaternion(_scratchQuat);
                 _scratchEuler.setFromQuaternion(_scratchQuat, 'YXZ');
                 const copHeading = _scratchEuler.y;
-                
+
                 this.updateHeadlightFlares(child, copHeading);
-                
+
                 child.getWorldPosition(_scratchV3_3); // copWorldPos
-                
+
                 const dist = _scratchV3_3.distanceTo(focusTarget.position);
                 let lightIntensityScale = 1.0;
                 if (dist > 120.0) {
@@ -2024,11 +2033,11 @@ class Game {
                   const smoothT = t * t * (3.0 - 2.0 * t);
                   lightIntensityScale = 1.0 - smoothT;
                 }
-                
+
                 if (lightIntensityScale > 0.0) {
                   _scratchV3_1.set(Math.sin(copHeading), 0, Math.cos(copHeading)); // copForward
                   _scratchV3_2.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 2.3); // headPos
-                  
+
                   // Directional gating: headlights should only shine forward relative to camera/player view
                   _scratchV3_4.copy(this.camera.position).sub(_scratchV3_2).normalize();
                   const dot = _scratchV3_1.dot(_scratchV3_4);
@@ -2101,13 +2110,13 @@ class Game {
     const activeWorldHeading = isLookingBack ? focusTarget.heading + Math.PI : focusTarget.heading;
     this.world.update(focusTarget.position.x, focusTarget.position.z, activeWorldHeading, dynamicLights, scaledDt, this.camera ? this.camera.position : null);
     this.perf.world = performance.now() - tWorldStart;
-    
+
     if (this.isInitialLoad) {
       // 144 target tiles covers roughly a 12x12 area initially loading around the player
-      const targetTiles = 140; 
+      const targetTiles = 140;
       const loaded = this.world.loadedTiles.size;
       const progress = Math.min(100, Math.floor((loaded / targetTiles) * 100));
-      
+
       const bar = document.getElementById('loading-bar');
       if (bar) bar.style.width = `${progress}%`;
 
@@ -2165,10 +2174,10 @@ class Game {
       const contactPos = this.physics.position.clone().addScaledVector(normal, -1.8);
       contactPos.y = 0.4 + this.world.getBaseHeight(contactPos.x, contactPos.z);
       const relativeVel = normal.clone().multiplyScalar(impactSpeed);
-      
+
       this.handleCrashDamage(this.carVisualContainer, contactPos, impactSpeed, relativeVel);
       this.spawnDebris(contactPos, normal, 0x1a3d8c, Math.min(10, Math.floor(impactSpeed * 0.45)));
-      
+
       if (impactSpeed > 10.0) {
         this.slowMoTimer = 0.28;
         this.crashShake = Math.min(0.85, impactSpeed * 0.045);
@@ -2184,7 +2193,7 @@ class Game {
       this.physics.prevGear = this.physics.gear;
     }
     this.perf.physics = performance.now() - tPhysicsStart;
-    
+
     const tTrafficStart = performance.now();
     const tTrafficUpdateStart = performance.now();
     // Update civilian traffic (dynamically adjust density based on player speed)
@@ -2198,7 +2207,7 @@ class Game {
       }
       this.traffic.dynamicActiveMax = Math.round(baseMax * densityScale);
     }
-    
+
     this.traffic.update(
       scaledDt,
       focusTarget.position,
@@ -2213,7 +2222,7 @@ class Game {
     this.perf.trafficUpdate = performance.now() - tTrafficUpdateStart;
 
     const tTrafficMeshStart = performance.now();
-    
+
     if (!this._fauxTraffic) this._fauxTraffic = [];
     const fauxVehicles = [];
     if (this.traffic && this.traffic.sharedBuffer) {
@@ -2227,10 +2236,10 @@ class Game {
           }
           continue;
         }
-        
+
         let v = this._fauxTraffic[i];
         if (!v) v = this._fauxTraffic[i] = { id: i, position: new THREE.Vector3(), impactVelocity: new THREE.Vector3() };
-        
+
         v.type = this.traffic.sharedBuffer[offset + 1] === 0 ? 'cab' : (this.traffic.sharedBuffer[offset + 1] === 1 ? 'sedan' : 'suv');
         v.colorHex = this.traffic.sharedBuffer[offset + 2];
         v.position.set(this.traffic.sharedBuffer[offset + 3], this.traffic.sharedBuffer[offset + 4], this.traffic.sharedBuffer[offset + 5]);
@@ -2239,12 +2248,12 @@ class Game {
         v.roll = this.traffic.sharedBuffer[offset + 8];
         v.opacity = this.traffic.sharedBuffer[offset + 9];
         v.speed = this.traffic.sharedBuffer[offset + 10];
-        
+
         const isSkidding = this.traffic.sharedBuffer[offset + 11] === 1.0;
         if (isSkidding) {
           v.impactVelocity.set(-this.traffic.sharedBuffer[offset + 12] * 4, 0, -this.traffic.sharedBuffer[offset + 13] * 4);
         } else {
-          v.impactVelocity.set(0,0,0);
+          v.impactVelocity.set(0, 0, 0);
         }
         fauxVehicles.push(v);
       }
@@ -2253,7 +2262,7 @@ class Game {
     fauxVehicles.forEach(v => {
       if (!v.meshGroup) {
         const { carGroup, wheels } = this.createVoxelCarMesh(v.colorHex, v.type);
-        
+
         if (v.type === 'cab') {
           // Yellow Taxi roof light sign
           const taxiLight = new THREE.Mesh(
@@ -2263,12 +2272,12 @@ class Game {
           taxiLight.position.set(0, 1.1, -0.3);
           carGroup.add(taxiLight);
         }
-        
+
         this.scene.add(carGroup);
         v.meshGroup = carGroup;
         v.wheels = wheels;
       }
-      
+
       const isTeleport = v.meshGroup.position.distanceToSquared(v.position) > 100.0;
       v.meshGroup.position.copy(v.position);
 
@@ -2303,7 +2312,7 @@ class Game {
       if (headlightPool) {
         headlightPool.material.opacity = 0.35 * (v.opacity !== undefined ? v.opacity : 1.0);
       }
-      
+
       // Animate civilian wheels rolling
       if (shouldUpdateThisFrame) {
         const tRot = (v.speed / 0.42) * scaledDt;
@@ -2320,10 +2329,10 @@ class Game {
       if (tSpeed > 3.0 && (v.opacity === undefined || v.opacity > 0.8) && v.splashTimer <= 0) {
         const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
         const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
-        
+
         const leftWet = this.world.isWetAt(leftRear.x, leftRear.z);
         const rightWet = this.world.isWetAt(rightRear.x, rightRear.z);
-        
+
         if (leftWet || rightWet) {
           v.splashTimer = 0.1; // fire every 100ms per traffic car
           const backward = new THREE.Vector3(-Math.sin(v.heading), 0.55, -Math.cos(v.heading)).normalize();
@@ -2341,10 +2350,10 @@ class Game {
         const backward = v.impactVelocity.clone().negate().normalize();
         backward.y = 0.3;
         backward.normalize();
-        
+
         const leftWet = this.world.isWetAt(leftRear.x, leftRear.z);
         const rightWet = this.world.isWetAt(rightRear.x, rightRear.z);
-        
+
         if (!leftWet) this.spawnParticles(leftRear, backward, 0xaaaaaa, 1);
         if (!rightWet) this.spawnParticles(rightRear, backward, 0xaaaaaa, 1);
 
@@ -2373,10 +2382,10 @@ class Game {
           }
           continue;
         }
-        
+
         let v = this._fauxParked[i];
         if (!v) v = this._fauxParked[i] = { id: i, position: new THREE.Vector3(), impactVelocity: new THREE.Vector3() };
-        
+
         v.type = this.traffic.sharedBuffer[offset + 1] === 0 ? 'cab' : (this.traffic.sharedBuffer[offset + 1] === 1 ? 'sedan' : 'suv');
         v.colorHex = this.traffic.sharedBuffer[offset + 2];
         v.position.set(this.traffic.sharedBuffer[offset + 3], this.traffic.sharedBuffer[offset + 4], this.traffic.sharedBuffer[offset + 5]);
@@ -2385,12 +2394,12 @@ class Game {
         v.roll = this.traffic.sharedBuffer[offset + 8];
         v.opacity = this.traffic.sharedBuffer[offset + 9];
         v.speed = this.traffic.sharedBuffer[offset + 10];
-        
+
         const isSkidding = this.traffic.sharedBuffer[offset + 11] === 1.0;
         if (isSkidding) {
           v.impactVelocity.set(-this.traffic.sharedBuffer[offset + 12] * 4, 0, -this.traffic.sharedBuffer[offset + 13] * 4);
         } else {
-          v.impactVelocity.set(0,0,0);
+          v.impactVelocity.set(0, 0, 0);
         }
         fauxParked.push(v);
       }
@@ -2400,7 +2409,7 @@ class Game {
       fauxParked.forEach(v => {
         if (!v.meshGroup) {
           const { carGroup, wheels } = this.createVoxelCarMesh(v.colorHex, v.type);
-          
+
           if (v.type === 'cab') {
             const taxiLight = new THREE.Mesh(
               new THREE.BoxGeometry(0.5, 0.2, 0.8),
@@ -2409,18 +2418,18 @@ class Game {
             taxiLight.position.set(0, 1.1, -0.3);
             carGroup.add(taxiLight);
           }
-          
+
           // Disable headlight lens flare sprites for parked cars initially
           const leftSprite = carGroup.getObjectByName("leftHeadlightSprite");
           const rightSprite = carGroup.getObjectByName("rightHeadlightSprite");
           if (leftSprite) leftSprite.visible = false;
           if (rightSprite) rightSprite.visible = false;
-          
+
           this.scene.add(carGroup);
           v.meshGroup = carGroup;
           v.wheels = wheels;
         }
-        
+
         const dist = v.position.distanceTo(focusTarget.position);
         const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
         this.updateVehicleLOD(v, dist, targetOpacity);
@@ -2438,7 +2447,7 @@ class Game {
         if (headlightPool) {
           headlightPool.material.opacity = 0.0;
         }
-        
+
         // Parked cars don't roll wheels or make water splash unless moving from impact
         const isParkedSkidding = v.impactVelocity.lengthSq() > 0.1;
         if (isParkedSkidding) {
@@ -2450,7 +2459,7 @@ class Game {
               w.children[1].rotation.x += tRot;
             });
           }
-          
+
           const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
           const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(v.meshGroup.matrixWorld);
 
@@ -2523,16 +2532,16 @@ class Game {
           const restitution = 0.65; // partially elastic crash
           const m1 = 1350;
           const m2 = 1100;
-          
+
           const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
           const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
           // Apply forces
           this.physics.velocity.addScaledVector(impulseVec, 1.0 / m1);
-          
+
           // For traffic car, we add the impulse directly to impactVelocity
           v.impactVelocity.addScaledVector(impulseVec, -1.0 / m2);
-          
+
           // Spin traffic car based on impact force offset (random offset torque)
           const contactPos = this.physics.position.clone().add(v.position).multiplyScalar(0.5);
           const offset = contactPos.clone().sub(v.position);
@@ -2551,7 +2560,7 @@ class Game {
             v.rollVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
             v.pitchVelocity = (Math.random() - 0.5) * Math.min(2.0, impulseScalar * 0.0001);
           }
-          
+
           // Deduct speed based on how much was absorbed
           v.speed = Math.max(0.0, v.speed - (impulseScalar * 0.0006));
         }
@@ -2589,7 +2598,7 @@ class Game {
             // Position resolution
             ai.position.addScaledVector(pushDir, overlap * 0.5);
             v.position.addScaledVector(pushDir, -overlap * 0.5);
-            
+
             // Physics impulse
             const tForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
             const v2 = tForward.clone().multiplyScalar(v.speed).add(v.impactVelocity);
@@ -2607,7 +2616,7 @@ class Game {
 
               ai.velocity.addScaledVector(impulseVec, 1.0 / m1);
               v.impactVelocity.addScaledVector(impulseVec, -1.0 / m2);
-              
+
               const contactPos = ai.position.clone().add(v.position).multiplyScalar(0.5);
               const offset = contactPos.clone().sub(v.position);
               offset.y = 0;
@@ -2668,7 +2677,7 @@ class Game {
           // Physical Conservation of Momentum Response
           const fwd1 = new THREE.Vector3(Math.sin(v1.heading), 0, Math.cos(v1.heading));
           const fwd2 = new THREE.Vector3(Math.sin(v2.heading), 0, Math.cos(v2.heading));
-          
+
           const vel1 = fwd1.multiplyScalar(v1.speed).add(v1.impactVelocity);
           const vel2 = fwd2.multiplyScalar(v2.speed).add(v2.impactVelocity);
 
@@ -2684,7 +2693,7 @@ class Game {
             const restitution = 0.45;
             const m1 = 1500;
             const m2 = 1500;
-            
+
             const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
             const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
@@ -2693,7 +2702,7 @@ class Game {
 
             // Spin cars based on impact offset torque
             const contactPos = v1.position.clone().add(v2.position).multiplyScalar(0.5);
-            
+
             const offset1 = contactPos.clone().sub(v1.position);
             offset1.y = 0;
             const forceDir1 = pushDir.clone().negate();
@@ -2753,7 +2762,7 @@ class Game {
     if (this.pursuit && this.pursuit.active) {
       this.pursuit.cops.forEach(cop => {
         if (!cop.active) return;
-        
+
         // Cop vs Player
         const distToPlayer = this.physics.position.distanceTo(cop.position);
         const obb = (distToPlayer < 6.0) ? testOBBCollision(this.physics, cop) : { collision: false };
@@ -2772,20 +2781,20 @@ class Game {
           const velAlongNormal = relativeVel.dot(pushDir);
 
           if (velAlongNormal < 0) {
-            const restitution = 0.5; 
+            const restitution = 0.5;
             const m1 = 1350; // Player
             const m2 = 1600; // Heavy Cop Cruiser
-            
+
             const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
             const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
             this.physics.velocity.addScaledVector(impulseVec, 1.0 / m1);
             cop.speed = Math.max(-10.0, cop.speed - (impulseScalar * 0.0006));
-            
+
             // Side impact / spin-out logic
             const playerRight = new THREE.Vector3(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading));
             const sideImpactSpeed = relativeVel.dot(playerRight);
-            
+
             if (Math.abs(sideImpactSpeed) > 9.5) {
               // Spin out player's car (toned down)
               this.physics.externalSpin = Math.sign(sideImpactSpeed) * (1.8 + Math.random() * 1.5);
@@ -2883,7 +2892,7 @@ class Game {
 
               const copForward = new THREE.Vector3(Math.sin(cop.heading), 0, Math.cos(cop.heading));
               const copVel = copForward.clone().multiplyScalar(cop.speed);
-              
+
               const trafficForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
               const trafficVel = trafficForward.clone().multiplyScalar(v.speed).add(v.impactVelocity);
 
@@ -2894,14 +2903,14 @@ class Game {
                 const restitution = 0.5;
                 const m1 = 1500; // Traffic
                 const m2 = 1600; // Cop
-                
+
                 const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
                 const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
                 v.impactVelocity.addScaledVector(impulseVec, 1.0 / m1);
                 v.isRecovering = true;
                 cop.speed = Math.max(-10.0, cop.speed - (impulseScalar * 0.0006));
-                
+
                 const contactPos = v.position.clone().add(cop.position).multiplyScalar(0.5);
                 contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
                 this.spawnParticles(contactPos, pushDir, 0xffe6a8, 10, false, true);
@@ -2944,7 +2953,7 @@ class Game {
             // Momentum exchange
             const cop1Forward = new THREE.Vector3(Math.sin(cop1.heading), 0, Math.cos(cop1.heading));
             const cop2Forward = new THREE.Vector3(Math.sin(cop2.heading), 0, Math.cos(cop2.heading));
-            
+
             const v1 = cop1Forward.clone().multiplyScalar(cop1.speed);
             const v2 = cop2Forward.clone().multiplyScalar(cop2.speed);
 
@@ -2992,7 +3001,7 @@ class Game {
       // Must use quaternion directly — alignMeshToTerrain uses mesh.quaternion.slerp()
       // which overwrites rotation.set(). Setting quaternion directly wins.
       this.carVisualContainer.position.copy(this.physics.position);
-      _scratchQuat.setFromAxisAngle(new THREE.Vector3(0,1,0), this.physics.heading);
+      _scratchQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.physics.heading);
       this.carVisualContainer.quaternion.copy(_scratchQuat);
       this.carVisualContainer.updateMatrixWorld(true);
     } else {
@@ -3009,10 +3018,10 @@ class Game {
     }
 
 
-    
+
     // Update player headlight lens flares
     this.updateHeadlightFlares(this.carVisualContainer, this.physics.heading);
-    
+
     // Body roll/pitch dynamics
     this.carGroup.rotation.z = this.physics.bodyRoll;
     this.carGroup.rotation.x = this.physics.bodyPitch;
@@ -3027,7 +3036,7 @@ class Game {
       sparkDir.addScaledVector(new THREE.Vector3(Math.random() - 0.5, 0.4, Math.random() - 0.5), 0.45).normalize();
       this.spawnParticles(contactPos, sparkDir, 0xffaa00, 3, false, true);
     }
-    
+
     // Rotate wheels
     const fwdSinH = Math.sin(this.physics.heading);
     const fwdCosH = Math.cos(this.physics.heading);
@@ -3036,11 +3045,11 @@ class Game {
     this.wheels.forEach((w, idx) => {
       // Steer the entire parent group on the Y axis for front wheels
       w.rotation.y = (idx < 2) ? this.physics.steeringAngle : 0;
-      
+
       // Clear child Y-axis rotations to avoid double-transformation / gimbal wobble
       w.children[0].rotation.y = 0;
       w.children[1].rotation.y = 0;
-      
+
       // Roll children on their local X axes
       w.children[0].rotation.x += wheelRotSpeed;
       w.children[1].rotation.x += wheelRotSpeed;
@@ -3050,7 +3059,7 @@ class Game {
     const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(this.carVisualContainer.matrixWorld);
     const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(this.carVisualContainer.matrixWorld);
     const playerSpeedMag = this.physics.velocity.length();
-    
+
     // Check center too so tile-boundary straddling doesn't silently miss puddles
     const leftWet = this.world.isWetAt(leftRear.x, leftRear.z);
     const rightWet = this.world.isWetAt(rightRear.x, rightRear.z);
@@ -3065,7 +3074,7 @@ class Game {
       const backward = this.physics.velocity.clone().negate().normalize();
       backward.y = 0.55; // spray upwards
       backward.normalize();
-      
+
       const count = Math.min(8, Math.floor(playerSpeedMag * 0.35));
       if (leftWet && count > 0) {
         this.spawnParticles(leftRear, backward, 0xccddee, count, true);
@@ -3087,7 +3096,7 @@ class Game {
       if (this.driftStatusEl) {
         this.driftStatusEl.classList.remove('active');
       }
-      
+
       // Idle exhaust smoke
       if (Math.random() < 0.15) {
         const exhaust = new THREE.Vector3(0.6, 0.2, -2.1).applyMatrix4(this.carVisualContainer.matrixWorld);
@@ -3113,12 +3122,11 @@ class Game {
     if (isSkidding) {
       if (this.prevLeftWheel) this.spawnSkidmarkSegment(this.prevLeftWheel, leftRear);
       if (this.prevRightWheel) this.spawnSkidmarkSegment(this.prevRightWheel, rightRear);
-      this.prevLeftWheel = leftRear.clone();
-      this.prevRightWheel = rightRear.clone();
-    } else {
-      this.prevLeftWheel = null;
-      this.prevRightWheel = null;
     }
+
+    // Always track previous wheel position to ensure the first skid frame perfectly connects to the tire!
+    this.prevLeftWheel = leftRear.clone();
+    this.prevRightWheel = rightRear.clone();
     this.perf.playerVisuals = performance.now() - tPlayerVisualsStart;
     this.perf.traffic = performance.now() - tTrafficStart;
 
@@ -3149,10 +3157,10 @@ class Game {
             const m2 = 900; // AI (physically lighter)
             const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
             const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
-            
+
             this.physics.velocity.addScaledVector(impulseVec, 1.0 / m1);
             ai.velocity.addScaledVector(impulseVec, -1.0 / m2);
-            
+
             ai.recoveryBoostTimer = 2.0;
           }
 
@@ -3202,7 +3210,7 @@ class Game {
               const m2 = 1350;
               const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
               const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
-              
+
               ai1.velocity.addScaledVector(impulseVec, 1.0 / m1);
               ai2.velocity.addScaledVector(impulseVec, -1.0 / m2);
             }
@@ -3223,7 +3231,7 @@ class Game {
           }
         }
       }
-      
+
       // Update AI mesh positions and rotations
       this.race.aiRacers.forEach(ai => {
         if (ai.meshGroup) {
@@ -3249,13 +3257,13 @@ class Game {
               // rotation.set() is overridden by the slerp in alignMeshToTerrain on next frame.
               ai.meshGroup.position.copy(ai.spawnPos);
               const _q = new THREE.Quaternion();
-              _q.setFromAxisAngle(new THREE.Vector3(0,1,0), ai.heading);
+              _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), ai.heading);
               ai.meshGroup.quaternion.copy(_q);
             } else {
               this.world.alignMeshToTerrain(ai.meshGroup, ai.position, ai.heading, false, scaledDt);
             }
             ai.meshGroup.updateMatrixWorld(true);
-            
+
 
 
             this.updateVehicleLOD(ai, dist, 1.0);
@@ -3272,7 +3280,7 @@ class Game {
           if (headlightPool) {
             headlightPool.material.opacity = 0.35;
           }
-          
+
           if (shouldUpdateThisFrame && !ai._lastLOD) {
             // Animate AI wheels rolling (pure scalar — no Vector3 alloc)
             const aiFwdSinH = Math.sin(ai.heading);
@@ -3292,7 +3300,7 @@ class Game {
           // Spawn AI drift smoke or puddle splashes!
           const leftRear = new THREE.Vector3(-0.95, 0.1, -1.3).applyMatrix4(ai.meshGroup.matrixWorld);
           const rightRear = new THREE.Vector3(0.95, 0.1, -1.3).applyMatrix4(ai.meshGroup.matrixWorld);
-          
+
           const leftWet = this.world.isWetAt(leftRear.x, leftRear.z);
           const rightWet = this.world.isWetAt(rightRear.x, rightRear.z);
 
@@ -3320,12 +3328,10 @@ class Game {
           if (ai.isDrifting) {
             if (ai.prevLeftWheel) this.spawnSkidmarkSegment(ai.prevLeftWheel, leftRear);
             if (ai.prevRightWheel) this.spawnSkidmarkSegment(ai.prevRightWheel, rightRear);
-            ai.prevLeftWheel = leftRear.clone();
-            ai.prevRightWheel = rightRear.clone();
-          } else {
-            ai.prevLeftWheel = null;
-            ai.prevRightWheel = null;
           }
+          // Always track previous wheel position so the first skid frame perfectly connects to the tire
+          ai.prevLeftWheel = leftRear.clone();
+          ai.prevRightWheel = rightRear.clone();
 
           // Update AI Nitro visual effects (sprite flare)
           if (ai.isBoosting) {
@@ -3350,15 +3356,15 @@ class Game {
           // Flash a check point banner
           this.showBanner("CHECKPOINT", `Index: ${raceResult.nextIndex + 1}/${this.race.checkpoints.length}`, 800);
           this.rebuildCheckpointBeacons();
-        } 
+        }
         else if (raceResult.event === 'lap') {
           this.showBanner("LAP COMPLETED", `LAP ${raceResult.lap} Started!`, 1500);
           this.rebuildCheckpointBeacons();
-        } 
+        }
         else if (raceResult.event === 'finish') {
           const finalRankings = this.race.calculateRankings(this.physics.position);
           const finalPlayerRank = finalRankings.findIndex(r => r.isPlayer) + 1;
-          
+
           let posSuffix = "TH";
           if (finalPlayerRank === 1) posSuffix = "ST";
           else if (finalPlayerRank === 2) posSuffix = "ND";
@@ -3371,7 +3377,7 @@ class Game {
           if (resultsContainer) {
             resultsPos.textContent = `${finalPlayerRank}${posSuffix}`;
             resultsTime.textContent = this.formatTime(raceResult.time);
-            
+
             // Reset Quick Feedback UI
             const likeBtn = document.getElementById('btn-like-race');
             const dislikeBtn = document.getElementById('btn-dislike-race');
@@ -3381,7 +3387,7 @@ class Game {
             if (qfThanks) qfThanks.style.display = 'none';
 
             resultsContainer.classList.add('show');
-            
+
             setTimeout(() => {
               if (resultsContainer) resultsContainer.classList.remove('show');
             }, 6000);
@@ -3391,7 +3397,7 @@ class Game {
           this.cancelBtnEl.style.display = 'none';
           this.navArrow.visible = false;
           this.clearCheckpointBeacons();
-          
+
           // Delay clearing AI so they can brake and coast to a stop
           setTimeout(() => {
             this.clearAIMeshes();
@@ -3459,7 +3465,7 @@ class Game {
       } else {
         this.navArrow.visible = false;
       }
-      
+
       // Force hide arrow during cinematics
       if (this.cinematicManager && this.cinematicManager.state !== 'none') {
         this.navArrow.visible = false;
@@ -3500,6 +3506,7 @@ class Game {
     this.checkSlipstream(scaledDt);
     this.checkNearMisses(scaledDt);
     this.updateDriftNitro(scaledDt);
+    this.updateAirNitro(scaledDt);
 
     // Update debug path and lookahead visuals (DISABLED)
     let hasPath = false;
@@ -3518,7 +3525,7 @@ class Game {
           this.debugPathLine.geometry.setFromPoints(pts);
           this.debugPathLine.visible = true;
         }
-        
+
         if (activeAI.debugLookahead) {
           this.debugLookaheadMarker.position.copy(activeAI.debugLookahead);
           this.debugLookaheadMarker.position.y = 1.5 + (this.world ? this.world.getGroundHeight(activeAI.debugLookahead.x, activeAI.debugLookahead.z) : 0.5);
@@ -3528,29 +3535,16 @@ class Game {
         }
       }
     }
-    
+
     if (!hasPath) {
       this.debugPathLine.visible = false;
       this.debugLookaheadMarker.visible = false;
     }
 
-    
-    // Update skidmarks (Persistent until far away - 220m)
-    const px = this.physics.position.x;
-    const pz = this.physics.position.z;
-    const pruneDistSq = 220 * 220;
 
-    this.skidmarkPool.forEach(s => {
-      if (s.mesh.visible) {
-        const dx = s.mesh.position.x - px;
-        const dz = s.mesh.position.z - pz;
-        const distSq = dx * dx + dz * dz;
-        if (distSq > pruneDistSq) {
-          s.mesh.visible = false;
-        }
-      }
-    });
-    
+    // InstancedMesh handles skidmark rendering perfectly without CPU-side culling.
+    // Replaced legacy distance culling loop for massive performance gain.
+
     // Animate floating checkpoint next-arrows (bobbing and pulsing)
     this.checkpointVisualsGroup.children.forEach(cpGroup => {
       const arrow = cpGroup.getObjectByName("nextCPArrow");
@@ -3589,11 +3583,11 @@ class Game {
       // Needle angle goes from -135deg (idle) to +135deg (max)
       const needleAngle = (rpmPct / 100) * 270 - 135;
       this.dialNeedleEl.setAttribute('transform', `rotate(${needleAngle} 80 80)`);
-      
+
       // Arc fill length goes from 0 (empty) to 330 (fully active)
       const activeLength = (rpmPct / 100) * 330;
       this.dialRpmFillEl.setAttribute('stroke-dasharray', `${activeLength} 440`);
-      
+
       if (this.physics.rpm > 7300) {
         this.dialRpmFillEl.style.stroke = '#ff3b30'; // Redline warning
       } else {
@@ -3605,7 +3599,7 @@ class Game {
     if (this.nitroBarEl) {
       const activeLength = this.physics.nitroLevel * 287;
       this.nitroBarEl.setAttribute('stroke-dasharray', `${activeLength} 400`);
-      
+
       if (this.physics.isBoosting) {
         this.nitroBarEl.style.stroke = '#ffffff'; // White/Cyan hot when boosting
       } else {
@@ -3613,14 +3607,60 @@ class Game {
       }
     }
 
+    // Handle every landing (smoke and shake) regardless of tricks
+    if (this.physics.justLanded) {
+      const contactPos = this.physics.position.clone();
+      contactPos.y += 0.1;
+
+      if (this.physics.landedWipeout) {
+        this.spawnDebris(contactPos, new THREE.Vector3(0, 4, 0), 0x222222, 16);
+        this.crashShake = Math.max(this.crashShake || 0, 0.95);
+      } else {
+        // Regular landing smoke
+        const count = Math.min(15, Math.floor(this.physics.landingImpact * 1.5));
+        if (count > 0) {
+          this.spawnParticles(contactPos, new THREE.Vector3(0, 2, 0), 0xaaaaaa, count);
+        }
+
+        // Bright landing sparks requested by user
+        if (this.physics.landingImpact > 2.0) {
+          const sparkCount = Math.min(45, Math.floor(this.physics.landingImpact * 3.5));
+          this.spawnParticles(contactPos, new THREE.Vector3(0, 4, 0), 0xffee88, sparkCount, false, true);
+
+          // Also spawn sparks at the back of the car
+          const backDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0, -Math.cos(this.physics.heading));
+          const backPos = contactPos.clone().addScaledVector(backDir, 1.5);
+          this.spawnParticles(backPos, new THREE.Vector3(0, 3.5, 0), 0xffee88, Math.floor(sparkCount * 0.8), false, true);
+
+          // Flash the realtime spark light
+          if (this.sparkLight) {
+            this.sparkLight.position.copy(contactPos);
+            this.sparkLight.position.y += 1.0;
+            this.sparkLight.intensity = Math.min(15.0, this.physics.landingImpact * 2.0);
+          }
+        }
+
+        // Camera shake scales with landing impact
+        if (this.physics.landingImpact > 5.0) {
+          const shakeFactor = Math.min(0.65, this.physics.landingImpact * 0.04);
+          this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
+        }
+      }
+
+      // Consume the event! This is bulletproof because it guarantees main.js sees it
+      // even if physics sub-stepped multiple times in the background.
+      this.physics.justLanded = false;
+      this.physics.landingImpact = 0;
+    }
+
     // Check for new stunt notification from the physics engine
     if (this.physics.trickNotification) {
       const msg = this.physics.trickNotification;
       this.physics.trickNotification = ""; // consume immediately
-      
+
       let title = "STUNT LANDED!";
       let scoreText = "";
-      
+
       if (msg.includes("WIPEOUT")) {
         title = "WIPEOUT!";
         scoreText = msg.replace("WIPEOUT: ", "");
@@ -3629,7 +3669,7 @@ class Game {
         const contactPos = this.physics.position.clone();
         contactPos.y += 0.3;
         this.spawnDebris(contactPos, new THREE.Vector3(0, 4, 0), 0x222222, 16);
-        
+
         // Massive wipeout screenshake!
         this.crashShake = Math.max(this.crashShake || 0, 0.95);
       } else if (msg.includes("CLEAN LANDING")) {
@@ -3640,7 +3680,7 @@ class Game {
         const contactPos = this.physics.position.clone();
         contactPos.y += 0.1;
         this.spawnParticles(contactPos, new THREE.Vector3(0, 2, 0), 0x00f0ff, 15);
-        
+
         // Landing shake (impact based)
         const verticalImpact = Math.abs(this.physics.velocityY);
         if (verticalImpact > 6.0) {
@@ -3653,7 +3693,7 @@ class Game {
         const contactPos = this.physics.position.clone();
         contactPos.y += 0.1;
         this.spawnParticles(contactPos, new THREE.Vector3(0, 1.5, 0), 0xe5a93b, 10);
-        
+
         // Landing shake (impact based)
         const verticalImpact = Math.abs(this.physics.velocityY);
         if (verticalImpact > 6.0) {
@@ -3666,7 +3706,7 @@ class Game {
         const contactPos = this.physics.position.clone();
         contactPos.y += 0.1;
         this.spawnParticles(contactPos, new THREE.Vector3(0, 1.5, 0), 0x00ff7f, 8);
-        
+
         const verticalImpact = Math.abs(this.physics.velocityY);
         if (verticalImpact > 6.0) {
           this.crashShake = Math.max(this.crashShake || 0, Math.min(0.5, verticalImpact * 0.055));
@@ -3679,8 +3719,10 @@ class Game {
     const tEyeAdaptationStart = performance.now();
     // Dynamic HDR Auto-Exposure (Eye Adaptation)
     let localBrightness = 0.04; // Base dark brightness offset
-    
+
     if (this.world && this.world.lightSources) {
+      const px = this.physics.position.x;
+      const pz = this.physics.position.z;
       this.world.lightSources.forEach(light => {
         const dx = light.x - px;
         const dz = light.z - pz;
@@ -3692,19 +3734,25 @@ class Game {
         }
       });
     }
-    
+
     // Add headlight baseline contribution
     localBrightness += 1.5;
 
     // target exposure: inverse of square root of brightness (higher base and max targets for dark areas)
     const targetExposure = Math.max(0.85, Math.min(3.2, 2.6 / Math.sqrt(localBrightness)));
-    
+
     if (this.renderer.toneMappingExposure === undefined) {
       this.renderer.toneMappingExposure = 1.0;
     }
     // Eye adaptation latency interpolation
     this.renderer.toneMappingExposure += (targetExposure - this.renderer.toneMappingExposure) * dt * 2.5;
     this.perf.eyeAdaptation = performance.now() - tEyeAdaptationStart;
+
+    // Fade out spark light rapidly
+    if (this.sparkLight && this.sparkLight.intensity > 0) {
+      this.sparkLight.intensity *= Math.exp(-6.0 * dt);
+      if (this.sparkLight.intensity < 0.1) this.sparkLight.intensity = 0;
+    }
 
     this.renderer.render(this.scene, this.camera);
     this.perf.render = performance.now() - tRenderStart;

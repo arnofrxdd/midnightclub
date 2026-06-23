@@ -8,13 +8,6 @@ export class TrafficManager {
     this.vehicles = [];
     this.parkedVehicles = [];
     this.maxParkedVehicles = 12;
-    
-    // Web Worker Preparation: 
-    // We allocate a flat array of numbers to hold all traffic data.
-    // Each vehicle takes 16 floats: 
-    // [id, type, color, x, y, z, heading, pitch, roll, opacity, speed, isSkidding, skidDirX, skidDirZ, pad, pad]
-    const totalCars = this.maxVehicles + this.maxParkedVehicles;
-    this.sharedBuffer = new Float32Array(totalCars * 16);
   }
 
   init(playerPos, world = null) {
@@ -172,90 +165,6 @@ export class TrafficManager {
     this.vehicles.forEach((v, idx) => {
       v.id = idx;
     });
-
-    this.syncToBuffer();
-  }
-
-  syncToBuffer() {
-    let offset = 0;
-    
-    // Sync Active Vehicles
-    for (let i = 0; i < this.maxVehicles; i++) {
-      const v = this.vehicles[i];
-      if (v) {
-        this.sharedBuffer[offset++] = v.id;
-        this.sharedBuffer[offset++] = v.type === 'cab' ? 0 : (v.type === 'sedan' ? 1 : 2); // Simple enum mapping
-        this.sharedBuffer[offset++] = v.colorHex;
-        this.sharedBuffer[offset++] = v.position.x;
-        this.sharedBuffer[offset++] = v.position.y;
-        this.sharedBuffer[offset++] = v.position.z;
-        this.sharedBuffer[offset++] = v.heading;
-        this.sharedBuffer[offset++] = v.pitch || 0;
-        this.sharedBuffer[offset++] = v.roll || 0;
-        this.sharedBuffer[offset++] = v.opacity !== undefined ? v.opacity : 1.0;
-        
-        // Physics / Visual Effects Data
-        this.sharedBuffer[offset++] = v.speed || 0;
-        
-        const isSkidding = v.impactVelocity && v.impactVelocity.lengthSq() > 9.0;
-        this.sharedBuffer[offset++] = isSkidding ? 1.0 : 0.0;
-        
-        if (isSkidding) {
-            const backward = v.impactVelocity.clone().negate().normalize();
-            this.sharedBuffer[offset++] = backward.x;
-            this.sharedBuffer[offset++] = backward.z;
-        } else {
-            this.sharedBuffer[offset++] = 0;
-            this.sharedBuffer[offset++] = 0;
-        }
-        
-        this.sharedBuffer[offset++] = 0; // Padding
-        this.sharedBuffer[offset++] = 0; // Padding
-      } else {
-        // Inactive slot
-        this.sharedBuffer[offset] = -1; // ID = -1 means empty
-        this.sharedBuffer[offset + 9] = 0.0; // Opacity 0
-        offset += 16;
-      }
-    }
-    
-    // Sync Parked Vehicles
-    for (let i = 0; i < this.maxParkedVehicles; i++) {
-      const v = this.parkedVehicles[i];
-      if (v) {
-        this.sharedBuffer[offset++] = v.id;
-        this.sharedBuffer[offset++] = v.type === 'cab' ? 0 : (v.type === 'sedan' ? 1 : 2);
-        this.sharedBuffer[offset++] = v.colorHex;
-        this.sharedBuffer[offset++] = v.position.x;
-        this.sharedBuffer[offset++] = v.position.y;
-        this.sharedBuffer[offset++] = v.position.z;
-        this.sharedBuffer[offset++] = v.heading;
-        this.sharedBuffer[offset++] = v.pitch || 0;
-        this.sharedBuffer[offset++] = v.roll || 0;
-        this.sharedBuffer[offset++] = v.opacity !== undefined ? v.opacity : 1.0;
-
-        // Parked cars logic
-        this.sharedBuffer[offset++] = v.impactVelocity ? v.impactVelocity.length() : 0; // speed
-        const isSkidding = v.impactVelocity && v.impactVelocity.lengthSq() > 0.1;
-        this.sharedBuffer[offset++] = isSkidding ? 1.0 : 0.0;
-
-        if (isSkidding) {
-            const backward = v.impactVelocity.clone().negate().normalize();
-            this.sharedBuffer[offset++] = backward.x;
-            this.sharedBuffer[offset++] = backward.z;
-        } else {
-            this.sharedBuffer[offset++] = 0;
-            this.sharedBuffer[offset++] = 0;
-        }
-
-        this.sharedBuffer[offset++] = 1.0; // Is Parked flag in padding slot
-        this.sharedBuffer[offset++] = 0; // Padding
-      } else {
-        this.sharedBuffer[offset] = -1;
-        this.sharedBuffer[offset + 9] = 0.0;
-        offset += 16;
-      }
-    }
   }
 
   clear() {

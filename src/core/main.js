@@ -19,6 +19,7 @@ import { formatTime, showBanner, initNotifications, showNotification, removeNoti
 import { checkBreakablesCollision } from '../gameplay/breakables.js';
 import { checkSlipstream, checkNearMisses, updateDriftNitro } from '../gameplay/stunts.js';
 import { handleCrashDamage } from './carMesh.js';
+import { testOBBCollision } from './obb.js';
 
 // Global scratch variables for zero-alloc math in game loop to prevent GC stutters
 const _scratchV3_1 = new THREE.Vector3();
@@ -2408,14 +2409,13 @@ class Game {
     allCivilians.forEach(v => {
       // Collision Check: Player vs Traffic
       const distToPlayer = this.physics.position.distanceTo(v.position);
-      if (distToPlayer < 4.0) {
+      const obb = (distToPlayer < 6.0) ? testOBBCollision(this.physics, v) : { collision: false };
+      if (obb.collision) {
         if (this.physics.speed > 16.0 && this.pursuit) {
           this.pursuit.triggerPursuit(1);
         }
-        const pushDir = this.physics.position.clone().sub(v.position).normalize();
-        pushDir.y = 0;
-        
-        const overlap = 4.0 - distToPlayer;
+        const pushDir = obb.pushDir;
+        const overlap = obb.overlap;
         // Position resolution: push both out of collision proportional to mass
         // Player mass = 1350, Traffic mass = 1500. Total = 2850.
         this.physics.position.addScaledVector(pushDir, overlap * 0.52);
@@ -2493,11 +2493,10 @@ class Game {
       if (this.race.active) {
         this.race.aiRacers.forEach(ai => {
           const distToAI = ai.position.distanceTo(v.position);
-          if (distToAI < 4.0) {
-            const pushDir = ai.position.clone().sub(v.position).normalize();
-            pushDir.y = 0;
-            
-            const overlap = 4.0 - distToAI;
+          const obb = (distToAI < 6.0) ? testOBBCollision(ai, v) : { collision: false };
+          if (obb.collision) {
+            const pushDir = obb.pushDir;
+            const overlap = obb.overlap;
             // Position resolution
             ai.position.addScaledVector(pushDir, overlap * 0.5);
             v.position.addScaledVector(pushDir, -overlap * 0.5);
@@ -2569,11 +2568,10 @@ class Game {
         if (v2.opacity < 0.5) continue;
 
         const dist = v1.position.distanceTo(v2.position);
-        if (dist < 4.0) {
-          const pushDir = v1.position.clone().sub(v2.position).normalize();
-          pushDir.y = 0;
-
-          const overlap = 4.0 - dist;
+        const obb = (dist < 6.0) ? testOBBCollision(v1, v2) : { collision: false };
+        if (obb.collision) {
+          const pushDir = obb.pushDir;
+          const overlap = obb.overlap;
           // Resolve overlap equally (0.5 weight each)
           v1.position.addScaledVector(pushDir, overlap * 0.5);
           v2.position.addScaledVector(pushDir, -overlap * 0.5);
@@ -2669,11 +2667,10 @@ class Game {
         
         // Cop vs Player
         const distToPlayer = this.physics.position.distanceTo(cop.position);
-        if (distToPlayer < 4.0) {
-          const pushDir = this.physics.position.clone().sub(cop.position).normalize();
-          pushDir.y = 0;
-          
-          const overlap = 4.0 - distToPlayer;
+        const obb = (distToPlayer < 6.0) ? testOBBCollision(this.physics, cop) : { collision: false };
+        if (obb.collision) {
+          const pushDir = obb.pushDir;
+          const overlap = obb.overlap;
           this.physics.position.addScaledVector(pushDir, overlap * 0.52);
           cop.position.addScaledVector(pushDir, -overlap * 0.48);
 
@@ -2741,11 +2738,10 @@ class Game {
         if (this.race.active) {
           this.race.aiRacers.forEach(ai => {
             const distToAI = ai.position.distanceTo(cop.position);
-            if (distToAI < 4.0) {
-              const pushDir = ai.position.clone().sub(cop.position).normalize();
-              pushDir.y = 0;
-              
-              const overlap = 4.0 - distToAI;
+            const obb = (distToAI < 6.0) ? testOBBCollision(ai, cop) : { collision: false };
+            if (obb.collision) {
+              const pushDir = obb.pushDir;
+              const overlap = obb.overlap;
               ai.position.addScaledVector(pushDir, overlap * 0.5);
               cop.position.addScaledVector(pushDir, -overlap * 0.5);
 
@@ -2789,11 +2785,10 @@ class Game {
           const allCivilians = this.traffic.vehicles.concat(this.traffic.parkedVehicles || []);
           allCivilians.forEach(v => {
             const distToTraffic = v.position.distanceTo(cop.position);
-            if (distToTraffic < 4.0) {
-              const pushDir = v.position.clone().sub(cop.position).normalize();
-              pushDir.y = 0;
-
-              const overlap = 4.0 - distToTraffic;
+            const obb = (distToTraffic < 6.0) ? testOBBCollision(v, cop) : { collision: false };
+            if (obb.collision) {
+              const pushDir = obb.pushDir;
+              const overlap = obb.overlap;
               v.position.addScaledVector(pushDir, overlap * 0.5);
               cop.position.addScaledVector(pushDir, -overlap * 0.5);
 
@@ -2849,11 +2844,10 @@ class Game {
           if (!cop2.active) continue;
 
           const dist = cop1.position.distanceTo(cop2.position);
-          if (dist < 4.0) {
-            const pushDir = cop1.position.clone().sub(cop2.position).normalize();
-            pushDir.y = 0;
-
-            const overlap = 4.0 - dist;
+          const obb = (dist < 6.0) ? testOBBCollision(cop1, cop2) : { collision: false };
+          if (obb.collision) {
+            const pushDir = obb.pushDir;
+            const overlap = obb.overlap;
             // Push both cops out of collision equally
             cop1.position.addScaledVector(pushDir, overlap * 0.5);
             cop2.position.addScaledVector(pushDir, -overlap * 0.5);
@@ -3048,11 +3042,10 @@ class Game {
       // Collision Check: Player vs AI Opponents
       this.race.aiRacers.forEach(ai => {
         const dist = this.physics.position.distanceTo(ai.position);
-        if (dist < 4.0) {
-          const pushDir = this.physics.position.clone().sub(ai.position).normalize();
-          pushDir.y = 0;
-          
-          const overlap = 4.0 - dist;
+        const obb = (dist < 6.0) ? testOBBCollision(this.physics, ai) : { collision: false };
+        if (obb.collision) {
+          const pushDir = obb.pushDir;
+          const overlap = obb.overlap;
           this.physics.position.addScaledVector(pushDir, overlap * 0.5);
           ai.position.addScaledVector(pushDir, -overlap * 0.5);
 
@@ -3102,11 +3095,10 @@ class Game {
           const ai1 = this.race.aiRacers[i];
           const ai2 = this.race.aiRacers[j];
           const dist = ai1.position.distanceTo(ai2.position);
-          if (dist < 4.0) {
-            const pushDir = ai1.position.clone().sub(ai2.position).normalize();
-            pushDir.y = 0;
-            
-            const overlap = 4.0 - dist;
+          const obb = (dist < 6.0) ? testOBBCollision(ai1, ai2) : { collision: false };
+          if (obb.collision) {
+            const pushDir = obb.pushDir;
+            const overlap = obb.overlap;
             ai1.position.addScaledVector(pushDir, overlap * 0.5);
             ai2.position.addScaledVector(pushDir, -overlap * 0.5);
 

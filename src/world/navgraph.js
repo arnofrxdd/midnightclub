@@ -11,9 +11,52 @@ import * as THREE from 'three';
 //    • An EDGE           = two adjacent intersections sharing a road segment
 //
 //  findPath() returns a Vector3[] that stays 100% on road intersections.
-//  The AI can NEVER be steered through a building because no waypoint is ever
 //  inside a building — they are all on road intersections.
 // ─────────────────────────────────────────────────────────────────────────────
+
+class MinHeap {
+  constructor() { this.data = []; }
+  push(val) {
+    this.data.push(val);
+    this.up(this.data.length - 1);
+  }
+  pop() {
+    if (this.data.length === 0) return null;
+    const top = this.data[0];
+    const bottom = this.data.pop();
+    if (this.data.length > 0) {
+      this.data[0] = bottom;
+      this.down(0);
+    }
+    return top;
+  }
+  up(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.data[i].f >= this.data[p].f) break;
+      const tmp = this.data[i];
+      this.data[i] = this.data[p];
+      this.data[p] = tmp;
+      i = p;
+    }
+  }
+  down(i) {
+    const len = this.data.length;
+    while ((i << 1) + 1 < len) {
+      let left = (i << 1) + 1;
+      let right = left + 1;
+      let best = i;
+      if (this.data[left].f < this.data[best].f) best = left;
+      if (right < len && this.data[right].f < this.data[best].f) best = right;
+      if (best === i) break;
+      const tmp = this.data[i];
+      this.data[i] = this.data[best];
+      this.data[best] = tmp;
+      i = best;
+    }
+  }
+  get size() { return this.data.length; }
+}
 export class NavGraph {
   constructor(world) {
     this.world = world;
@@ -35,17 +78,50 @@ export class NavGraph {
     return { gx, gz };
   }
 
+  // ── Edge Injection: Find bounding intersections for current position ────
+  _getStartNodes(wx, wz) {
+    const gxNearest = this._bsNearest(this._cols, wx / this.ts);
+    const gzNearest = this._bsNearest(this._rows, wz / this.ts);
+    
+    // Determine if we are on a vertical or horizontal road by seeing which axis we are closer to
+    const dx = Math.abs(wx / this.ts - gxNearest);
+    const dz = Math.abs(wz / this.ts - gzNearest);
+    
+    const nodes = [];
+    
+    if (dx < dz) {
+      // Closer to a vertical road (column gxNearest), bounded by rows
+      const val = wz / this.ts;
+      let ri = 0;
+      while (ri < this._rows.length && this._rows[ri] < val) ri++;
+      if (ri > 0) nodes.push({ gx: gxNearest, gz: this._rows[ri - 1] });
+      if (ri < this._rows.length) nodes.push({ gx: gxNearest, gz: this._rows[ri] });
+    } else {
+      // Closer to a horizontal road (row gzNearest), bounded by columns
+      const val = wx / this.ts;
+      let ci = 0;
+      while (ci < this._cols.length && this._cols[ci] < val) ci++;
+      if (ci > 0) nodes.push({ gx: this._cols[ci - 1], gz: gzNearest });
+      if (ci < this._cols.length) nodes.push({ gx: this._cols[ci], gz: gzNearest });
+    }
+    
+    // Fallback if empty (should never happen on valid grid)
+    if (nodes.length === 0) nodes.push({ gx: gxNearest, gz: gzNearest });
+    
+    // Map to node objects with initial Euclidean distance cost
+    return nodes.map(n => {
+      const dX = n.gx * this.ts - wx;
+      const dZ = n.gz * this.ts - wz;
+      return { ...n, cost: Math.sqrt(dX * dX + dZ * dZ) };
+    });
+  }
+
   // ── A*  from world position (x0,z0) → (x1,z1)  returns Vector3[] ───────
   // All waypoints sit at road intersections → the path never enters a building.
   // variance: per-AI float (0..2) that biases edge costs to create different routes.
   findPath(x0, z0, x1, z1, variance = 0) {
-    const start = this.snapToNode(x0, z0);
-    const goal  = this.snapToNode(x1, z1);
-
-    // Trivial case: already at the same intersection
-    if (start.gx === goal.gx && start.gz === goal.gz) {
-      return [new THREE.Vector3(x1, 0.5, z1)];
-    }
+    const goal       = this.snapToNode(x1, z1);
+    const startNodes = this._getStartNodes(x0, z0);
 
     const key  = (gx, gz) => `${gx},${gz}`;
     const hdx  = goal.gx;
@@ -57,48 +133,49 @@ export class NavGraph {
       return Math.sqrt(dx * dx + dz * dz);
     };
 
-    // open: key → node  (node = { gx, gz, g, f, parent })
-    const open   = new Map();
-    const closed = new Set();
-    const gScore = new Map();
+    const openHeap = new MinHeap();
+    const closed   = new Set();
+    const gScore   = new Map();
 
-    const sk = key(start.gx, start.gz);
-    open.set(sk, { gx: start.gx, gz: start.gz, g: 0, f: heur(start.gx, start.gz), parent: null });
-    gScore.set(sk, 0);
+    // Inject start edges
+    for (const sn of startNodes) {
+      if (sn.gx === goal.gx && sn.gz === goal.gz) {
+        return [new THREE.Vector3(x1, 0.5, z1)]; // Trivial case
+      }
+      const sk = key(sn.gx, sn.gz);
+      gScore.set(sk, sn.cost);
+      openHeap.push({ gx: sn.gx, gz: sn.gz, g: sn.cost, f: sn.cost + heur(sn.gx, sn.gz), parent: null, key: sk });
+    }
 
     const MAX_ITER = 4000;
     let iters = 0;
 
-    while (open.size > 0 && iters++ < MAX_ITER) {
-      // Extract lowest-f node (simple linear scan — open set stays small ~100 nodes)
-      let bestKey = null, bestF = Infinity;
-      for (const [k, n] of open) {
-        if (n.f < bestF) { bestF = n.f; bestKey = k; }
-      }
-
-      const cur = open.get(bestKey);
-      open.delete(bestKey);
-      closed.add(bestKey);
+    while (openHeap.size > 0 && iters++ < MAX_ITER) {
+      const cur = openHeap.pop();
+      
+      // Lazy deletion: skip if we already visited this node via a shorter path
+      if (closed.has(cur.key)) continue;
+      closed.add(cur.key);
 
       // Goal reached → reconstruct path
       if (cur.gx === goal.gx && cur.gz === goal.gz) {
         return this._reconstruct(cur, x1, z1);
       }
 
-      const curG = gScore.get(bestKey) ?? 0;
+      const curG = gScore.get(cur.key) ?? 0;
 
       for (const nb of this._neighbors(cur.gx, cur.gz, variance)) {
-
         const nk = key(nb.gx, nb.gz);
         if (closed.has(nk)) continue;
 
         const ng = curG + nb.cost;
         if (ng < (gScore.get(nk) ?? Infinity)) {
           gScore.set(nk, ng);
-          open.set(nk, {
+          openHeap.push({
             gx: nb.gx, gz: nb.gz,
             g: ng, f: ng + heur(nb.gx, nb.gz),
-            parent: cur
+            parent: cur,
+            key: nk
           });
         }
       }

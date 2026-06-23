@@ -257,24 +257,7 @@ export class AICar {
     const dz  = usePt.z - this.position.z;
     let desiredHdg = Math.atan2(dx, dz);
 
-    // ── 8. Alley centering — wider lateral whiskers to catch edge obstacles ────
-
-    if (inAlley) {
-      // Sample at 2m, 5m, and 8m to the left and right
-      // This catches dumpsters/bins/poles at the alley edges well before contact
-      const lh1 = world.checkCollision(this.position.x - right.x * 2.0, this.position.z - right.z * 2.0, 1.2);
-      const lh2 = world.checkCollision(this.position.x - right.x * 5.0, this.position.z - right.z * 5.0, 1.2);
-      const lh3 = world.checkCollision(this.position.x - right.x * 8.0, this.position.z - right.z * 8.0, 1.4);
-      const rh1 = world.checkCollision(this.position.x + right.x * 2.0, this.position.z + right.z * 2.0, 1.2);
-      const rh2 = world.checkCollision(this.position.x + right.x * 5.0, this.position.z + right.z * 5.0, 1.2);
-      const rh3 = world.checkCollision(this.position.x + right.x * 8.0, this.position.z + right.z * 8.0, 1.4);
-      // Nearest detected obstacle distance on each side
-      const ld  = lh1.collision ? 2.0 : (lh2.collision ? 5.0 : (lh3.collision ? 8.0 : 14.0));
-      const rd  = rh1.collision ? 2.0 : (rh2.collision ? 5.0 : (rh3.collision ? 8.0 : 14.0));
-      // Push heading away from the closer side — stronger correction the closer it is
-      const pushStrength = 0.07;
-      desiredHdg += (rd - ld) * pushStrength;
-    }
+    // ── 8. Removed legacy alley whiskers (Predictive scanner handles this better)
 
     // ── 9. Yaw rate (Pure Pursuit steer) ────────────────────────────────────
     let hdgErr = desiredHdg - this.heading;
@@ -304,10 +287,9 @@ export class AICar {
     // ── 10. Speed control ────────────────────────────────────────────────────
     let targetSpeed = this.maxSpeed;
 
-    // Hard alley speed cap — alleys are ~27m wide with obstacles at the edges.
-    // Even a moderate personality car at 55 m/s cannot safely navigate them.
+    // Hard alley speed cap
     if (inAlley) {
-      targetSpeed = Math.min(targetSpeed, 22);
+      targetSpeed = Math.min(targetSpeed, 28);
     }
 
     // Slow for sharp heading error (cornering)
@@ -320,7 +302,7 @@ export class AICar {
     // At 70 m/s a fixed 12m gives only 0.17s reaction — not enough to stop.
     // Scale lookahead with speed so the car always has time to react.
     const wallLookDist   = inAlley ? 7  : Math.max(14, this.speed * 0.45);
-    const wallCheckRadius = inAlley ? 1.8 : 2.6;
+    const wallCheckRadius = inAlley ? 1.4 : 1.2;
     const fwdCheck = this.position.clone().addScaledVector(fwd, wallLookDist);
     const fwdHit   = world.checkCollision(fwdCheck.x, fwdCheck.z, wallCheckRadius);
     if (fwdHit.collision) {
@@ -331,13 +313,13 @@ export class AICar {
 
     // Medium-range check: extra caution at moderate distance
     const midClose = this.position.clone().addScaledVector(fwd, inAlley ? 5.5 : Math.max(8, this.speed * 0.22));
-    if (world.checkCollision(midClose.x, midClose.z, inAlley ? 1.7 : 2.4).collision) {
+    if (world.checkCollision(midClose.x, midClose.z, inAlley ? 1.4 : 1.2).collision) {
       targetSpeed = Math.min(targetSpeed, inAlley ? 5 : 8);
     }
 
     // Extra close: hard brake for walls
     const veryClose = this.position.clone().addScaledVector(fwd, inAlley ? 4 : 6);
-    if (world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.6 : 2.2).collision) {
+    if (world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.3 : 1.1).collision) {
       targetSpeed = 0;
     }
 
@@ -376,7 +358,7 @@ export class AICar {
     }
 
     // Nitro system update & activation
-    const veryCloseHit = world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.6 : 2.2).collision;
+    const veryCloseHit = world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.3 : 1.1).collision;
     
     if (this.isNitroBoosting) {
       this.nitroLevel = Math.max(0.0, this.nitroLevel - 0.25 * dt);
@@ -690,7 +672,7 @@ export class AICar {
     const scanDist  = Math.max(20, this.speed * 0.70);
     const numSteps  = 8;
     // Wider check radius at high speed (car footprint effective area grows)
-    const checkR    = inAlley ? 1.6 : (this.isNitroBoosting ? 3.0 : 2.4);
+    const checkR    = inAlley ? 1.4 : (this.isNitroBoosting ? 2.2 : 1.8);
     const dynR      = 5.5; // radius for dynamic obstacle detection
 
     let bestOffset = 0;

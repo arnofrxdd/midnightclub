@@ -433,10 +433,10 @@ export function showHype(phrase, comboCount, colorHex) {
   if (!this.hypeContainer) return;
 
   this.hypePhraseEl.textContent = phrase;
-  this.hypePhraseEl.style.textShadow = \`0px 4px 15px rgba(0,0,0,0.8), 0 0 25px \${colorHex}, 0 0 10px \${colorHex}\`;
+  this.hypePhraseEl.style.textShadow = `0px 4px 15px rgba(0,0,0,0.8), 0 0 25px ${colorHex}, 0 0 10px ${colorHex}`;
   
   if (comboCount > 1) {
-    this.hypeComboEl.textContent = \`\${comboCount}X COMBO\`;
+    this.hypeComboEl.textContent = `${comboCount}X COMBO`;
     this.hypeComboEl.style.opacity = '1';
     // Small heartbeat pop for combo
     this.hypeComboEl.style.transform = 'scale(1.2)';

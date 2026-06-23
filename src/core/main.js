@@ -15,7 +15,8 @@ import { PursuitManager } from '../gameplay/pursuitManager.js';
 import { initInput, initDebugVisuals } from './input.js';
 import { updateCamera, cycleCameraFocus, cycleCameraMode, getTargetGameplayCamera } from './camera.js';
 import { getParticleMaterial, getSmokeMaterial, initParticles, initCheckpointSmoke, initSkidmarks, spawnSkidmarkSegment, spawnParticles, spawnCheckpointSmoke, updateParticles, updateCheckpointSmoke, initDebris, spawnDebris, updateDebris } from './particles.js';
-import { formatTime, showBanner, initNotifications, showNotification, removeNotification, showStuntNotification, updateMinimap, initRaceHUD } from './hud.js';
+import { formatTime, showBanner, initNotifications, showNotification, removeNotification, showStuntNotification, updateMinimap, initRaceHUD, initHypeSystem, showHype, hideHype } from './hud.js';
+import { HypeManager } from '../gameplay/hype.js';
 import { checkBreakablesCollision } from '../gameplay/breakables.js';
 import { checkSlipstream, checkNearMisses, updateDriftNitro, updateAirNitro } from '../gameplay/stunts.js';
 import { handleCrashDamage } from './carMesh.js';
@@ -119,6 +120,8 @@ class Game {
     this.initSkidmarks(); // Pooled system for tire skid marks
     this.initNotifications();
     this.initRaceHUD();
+    this.initHypeSystem();
+    this.hypeManager = new HypeManager(this);
     this.initDebugVisuals();
     this.perf = { world: 0, physics: 0, traffic: 0, trafficUpdate: 0, trafficMesh: 0, collisions: 0, playerVisuals: 0, pursuit: 0, race: 0, particles: 0, render: 0, eyeAdaptation: 0, total: 0 };
     this.createPerfHUD();
@@ -948,6 +951,18 @@ class Game {
     return initRaceHUD.call(this);
   }
 
+  initHypeSystem() {
+    return initHypeSystem.call(this);
+  }
+
+  showHype(phrase, comboCount, colorHex) {
+    return showHype.call(this, phrase, comboCount, colorHex);
+  }
+
+  hideHype() {
+    return hideHype.call(this);
+  }
+
   buildAIMeshes() {
     this.clearAIMeshes();
     this.race.aiRacers.forEach(ai => {
@@ -1287,6 +1302,11 @@ class Game {
     }
 
     const scaledDt = dt; // Slow-motion disabled by player request
+    
+    // Update Hype System
+    if (this.hypeManager) {
+      this.hypeManager.update(scaledDt);
+    }
 
     // Update cinematic manager
     if (this.cinematicManager) {
@@ -2791,6 +2811,23 @@ class Game {
             this.physics.velocity.addScaledVector(impulseVec, 1.0 / m1);
             cop.speed = Math.max(-10.0, cop.speed - (impulseScalar * 0.0006));
 
+            // Cop Takedown! If player rams cop hard enough (high impulse)
+            const pSpeed = this.physics.velocity.length();
+            if (impulseScalar > 32000 && pSpeed > 18.0) {
+              cop.active = false;
+              this.spawnDebris(cop.position, new THREE.Vector3(0, 5, 0), 0xdd2222, 25);
+              this.spawnParticles(cop.position, new THREE.Vector3(0, 3, 0), 0xff8800, 30, false, true);
+              this.showNotification('cop_takedown', "COP TAKEDOWN!", 2000);
+              if (this.hypeManager) this.hypeManager.addStunt('cop');
+              
+              // Make the cop car look wrecked (spin/flip it visually)
+              if (cop.meshGroup) {
+                cop.meshGroup.position.y += 0.3;
+                cop.meshGroup.rotation.z = 0.8; // Flip on side
+                cop.meshGroup.rotation.x = 0.3;
+              }
+            }
+
             // Side impact / spin-out logic
             const playerRight = new THREE.Vector3(Math.cos(this.physics.heading), 0, -Math.sin(this.physics.heading));
             const sideImpactSpeed = relativeVel.dot(playerRight);
@@ -3119,6 +3156,18 @@ class Game {
 
     // Spawn player tire skid marks on drift or hard brake
     const isSkidding = this.physics.isDrifting || (isBraking && playerSpeedMag > 4.0);
+    
+    if (this.physics.isDrifting) {
+      this.driftDuration += scaledDt;
+      if (this.hypeManager) this.hypeManager.driftTime = this.driftDuration;
+    } else {
+      if (this.driftDuration > 0.5) {
+        if (this.hypeManager) this.hypeManager.addStunt('drift', this.driftDuration);
+      }
+      this.driftDuration = 0;
+      if (this.hypeManager) this.hypeManager.driftTime = 0;
+    }
+
     if (isSkidding) {
       if (this.prevLeftWheel) this.spawnSkidmarkSegment(this.prevLeftWheel, leftRear);
       if (this.prevRightWheel) this.spawnSkidmarkSegment(this.prevRightWheel, rightRear);
@@ -3350,6 +3399,11 @@ class Game {
       const playerRank = rankings.findIndex(r => r.isPlayer) + 1;
       const posEl = document.getElementById('stats-pos');
       if (posEl) posEl.textContent = `${playerRank}/${rankings.length}`;
+
+      if (this.prevPlayerRank !== undefined && playerRank < this.prevPlayerRank) {
+        if (this.hypeManager) this.hypeManager.addStunt('overtake');
+      }
+      this.prevPlayerRank = playerRank;
 
       if (raceResult) {
         if (raceResult.event === 'checkpoint') {
@@ -3613,9 +3667,15 @@ class Game {
       contactPos.y += 0.1;
 
       if (this.physics.landedWipeout) {
+        if (this.hypeManager) this.hypeManager.triggerWipeout();
         this.spawnDebris(contactPos, new THREE.Vector3(0, 4, 0), 0x222222, 16);
         this.crashShake = Math.max(this.crashShake || 0, 0.95);
       } else {
+        // Trigger airborne stunt on clean landing
+        if (this.physics.airTime > 0.5 && this.hypeManager) {
+          this.hypeManager.addStunt('air', this.physics.airTime);
+        }
+        
         // Regular landing smoke
         const count = Math.min(15, Math.floor(this.physics.landingImpact * 1.5));
         if (count > 0) {

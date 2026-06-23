@@ -60,6 +60,7 @@ export function checkSlipstream(dt = 0.016) {
         const pctGained = Math.round(this.draftNitroGained * 100);
         this.removeNotification('draft_active');
         this.showNotification('draft_done', `DRAFT! +${pctGained}%`, 1500, true);
+        if (this.hypeManager) this.hypeManager.addStunt('draft', this.draftNitroGained);
       } else {
         this.removeNotification('draft_active');
       }
@@ -117,6 +118,7 @@ export function checkNearMisses(dt) {
 
           // Show floating notification
           this.showNotification('nearmiss_done', "NEAR MISS! +15%", 1500, true);
+          // if (this.hypeManager) this.hypeManager.addStunt('nearmiss');
         }
       }
     }

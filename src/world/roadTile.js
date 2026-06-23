@@ -525,14 +525,15 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           poolMesh2.position.set(-armDirX * 1.3, -3.89, 0);
           slObject.add(poolMesh2);
 
-          const flare2 = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: this.slFlareTex,
+          const flare2Params = {
             color: lightColor,
             transparent: true,
             opacity: 0.70,
             blending: THREE.AdditiveBlending,
             depthWrite: false
-          }));
+          };
+          if (this.slFlareTex) flare2Params.map = this.slFlareTex;
+          const flare2 = new THREE.Sprite(new THREE.SpriteMaterial(flare2Params));
           flare2.name = `flare_${localFlares.length}`;
           flare2.position.set(-armDirX * 1.3, 4.15, 0);
           flare2.scale.set(3.8, 3.8, 1.0);
@@ -541,14 +542,15 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         }
 
         // Add glowing lens flare sprite
-        const flareSpriteMat = new THREE.SpriteMaterial({
-          map: this.slFlareTex,
+        const flareParams = {
           color: lightColor,
           transparent: true,
           opacity: 0.70,
           blending: THREE.AdditiveBlending,
           depthWrite: false
-        });
+        };
+        if (this.slFlareTex) flareParams.map = this.slFlareTex;
+        const flareSpriteMat = new THREE.SpriteMaterial(flareParams);
         const flare = new THREE.Sprite(flareSpriteMat);
         flare.name = `flare_${localFlares.length}`;
         flare.position.set(armDirX * 1.3, 4.15, 0);

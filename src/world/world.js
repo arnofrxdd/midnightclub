@@ -318,6 +318,52 @@ export class World {
     
     this.tlHousingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
     
+    this.namedMaterials = new Map();
+    this.namedMaterials.set('concreteMat', this.concreteMat);
+    this.namedMaterials.set('yellowLineMat', this.yellowLineMat);
+    this.namedMaterials.set('whiteLineMat', this.whiteLineMat);
+    this.namedMaterials.set('streetlightPoleMat', this.streetlightPoleMat);
+    this.namedMaterials.set('streetlightBulbMat', this.streetlightBulbMat);
+    this.namedMaterials.set('ledGroundLightPoolMat', this.ledGroundLightPoolMat);
+    this.namedMaterials.set('sodiumGroundLightPoolMat', this.sodiumGroundLightPoolMat);
+    this.namedMaterials.set('storefrontGroundLightPoolMat', this.storefrontGroundLightPoolMat);
+    this.namedMaterials.set('lightConeMatLED', this.lightConeMatLED);
+    this.namedMaterials.set('lightConeMatSodium', this.lightConeMatSodium);
+    this.namedMaterials.set('brickMat', this.brickMat);
+    this.namedMaterials.set('buildingConcreteMat', this.buildingConcreteMat);
+    this.namedMaterials.set('slateMat', this.slateMat);
+    this.namedMaterials.set('sandstoneMat', this.sandstoneMat);
+    this.namedMaterials.set('glassySlateMat', this.glassySlateMat);
+    this.namedMaterials.set('darkConcreteMat', this.darkConcreteMat);
+    this.namedMaterials.set('brickDarkMat', this.brickDarkMat);
+    this.namedMaterials.set('windowDetailedMat', this.windowDetailedMat);
+    this.namedMaterials.set('doorMat', this.doorMat);
+    this.namedMaterials.set('accessoryMat', this.accessoryMat);
+    this.namedMaterials.set('dumpsterMat', this.dumpsterMat);
+    this.namedMaterials.set('cardboardMat', this.cardboardMat);
+    this.namedMaterials.set('trashBagMat', this.trashBagMat);
+    this.namedMaterials.set('woodPoleMat', this.woodPoleMat);
+    this.namedMaterials.set('trunkMat', this.trunkMat);
+    this.namedMaterials.set('leafMat', this.leafMat);
+    this.namedMaterials.set('leafCherryMat', this.leafCherryMat);
+    this.namedMaterials.set('leafAutumnMat', this.leafAutumnMat);
+    this.namedMaterials.set('benchWoodMat', this.benchWoodMat);
+    this.namedMaterials.set('benchIronMat', this.benchIronMat);
+    this.namedMaterials.set('phoneBoothFrameMat', this.phoneBoothFrameMat);
+    this.namedMaterials.set('phoneBoothGlassMat', this.phoneBoothGlassMat);
+    this.namedMaterials.set('phoneBoothScreenMat', this.phoneBoothScreenMat);
+    this.namedMaterials.set('trashCanMat', this.trashCanMat);
+    this.namedMaterials.set('trashCanLidMat', this.trashCanLidMat);
+    this.namedMaterials.set('hydrantRedMat', this.hydrantRedMat);
+    this.namedMaterials.set('hydrantCapMat', this.hydrantCapMat);
+    this.namedMaterials.set('newspaperBodyMat', this.newspaperBodyMat);
+    this.namedMaterials.set('newspaperGlassMat', this.newspaperGlassMat);
+    this.namedMaterials.set('newspaperPaperMat', this.newspaperPaperMat);
+    this.namedMaterials.set('tlHousingMat', this.tlHousingMat);
+    this.namedMaterials.set('tlRedOffMat', this.tlRedOffMat);
+    this.namedMaterials.set('tlYellowOffMat', this.tlYellowOffMat);
+    this.namedMaterials.set('tlGreenOffMat', this.tlGreenOffMat);
+    
     this.trafficLights = [];
     this.breakables = [];
 
@@ -1053,11 +1099,12 @@ export class World {
       return this.materials[idx];
     }
 
-    if (this[name]) {
+    const namedMat = this.namedMaterials.get(name);
+    if (namedMat) {
       if (name.includes('LightPoolMat')) {
-        return this[name].clone();
+        return namedMat.clone();
       }
-      return this[name];
+      return namedMat;
     }
 
     console.warn("Could not find material named: ", name);

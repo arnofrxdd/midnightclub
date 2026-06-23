@@ -577,10 +577,10 @@ export class TrafficVehicle {
 
     // 1. Calculate target opacity based on distance, frustum visibility, or force fade
     let targetOpacity = 1.0;
-    if (forceFade || (activeCops.length > 0 && distToPlayer > 100.0 && !inView)) {
-      targetOpacity = 0.0; // Instantly prune far out-of-view cars when pursuit is active
-    } else if (!inView && distToPlayer > 50.0) {
-      // Fade out if outside player frustum and not super close (to avoid popping during quick camera swings)
+    if (forceFade || (activeCops.length > 0 && distToPlayer > 100.0 && !inView && dot < 0.0)) {
+      targetOpacity = 0.0; // Instantly prune far out-of-view cars when pursuit is active (only if behind player)
+    } else if (!inView && distToPlayer > 50.0 && dot < 0.0) {
+      // Fade out if outside player frustum, behind the car, and not super close
       targetOpacity = 0.0;
     } else {
       // Different fade ranges depending on whether the car is in front or behind the player

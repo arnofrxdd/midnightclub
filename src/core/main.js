@@ -659,7 +659,7 @@ class Game {
 
     window.addEventListener('keydown', (e) => {
       // Prevent opening if they are already typing in an input
-      if (e.key.toLowerCase() === 'b' && !this.inFeedbackMenu && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+      if (e.key.toLowerCase() === 'g' && !this.inFeedbackMenu && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
         openFeedback();
       } else if (e.key === 'Escape' && this.inFeedbackMenu) {
         closeFeedback();
@@ -2086,7 +2086,9 @@ class Game {
 
     // Dynamically load/unload infinite chunks around the car and update lights
     const tWorldStart = performance.now();
-    this.world.update(focusTarget.position.x, focusTarget.position.z, focusTarget.heading, dynamicLights, scaledDt);
+    const isLookingBack = this.keys && this.keys['b'];
+    const activeWorldHeading = isLookingBack ? focusTarget.heading + Math.PI : focusTarget.heading;
+    this.world.update(focusTarget.position.x, focusTarget.position.z, activeWorldHeading, dynamicLights, scaledDt);
     this.perf.world = performance.now() - tWorldStart;
     
     if (this.isInitialLoad) {

@@ -141,15 +141,28 @@ export function updateCamera(dt = 0.016) {
       height = baseHeight;
     }
 
+    const isLookingBack = this.keys && this.keys['b'];
+    let camDir = this.camHeading;
+    let lookDir = heading;
+    if (isLookingBack) {
+      camDir += Math.PI;
+      lookDir += Math.PI;
+    }
+
     const offset = new THREE.Vector3(
-      -Math.sin(this.camHeading) * distance,
+      -Math.sin(camDir) * distance,
       height,
-      -Math.cos(this.camHeading) * distance
+      -Math.cos(camDir) * distance
     );
 
     // 4. Lerp camera position smoothly
     const targetCamPos = targetPos.clone().add(offset);
-    if (useLag) {
+    
+    // Snap instantly when toggling the view, otherwise lerp
+    if (this.wasLookingBack !== isLookingBack) {
+      this.camera.position.copy(targetCamPos);
+      this.wasLookingBack = isLookingBack;
+    } else if (useLag) {
       this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
     } else {
       this.camera.position.copy(targetCamPos);
@@ -191,12 +204,14 @@ export function updateCamera(dt = 0.016) {
     }
 
     // 6. LookAt: Look slightly ahead of the car's body center to keep target focused
-    const lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
+    let lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
+    if (isLookingBack) lookAheadDistance = 0.0; // Keep car exactly centered when looking back
+
     const targetLook = targetPos.clone().add(
       new THREE.Vector3(
-        Math.sin(heading) * lookAheadDistance,
+        Math.sin(lookDir) * lookAheadDistance,
         targetLookY,
-        Math.cos(heading) * lookAheadDistance
+        Math.cos(lookDir) * lookAheadDistance
       )
     );
     this.camera.lookAt(targetLook);

@@ -59,8 +59,8 @@ npm run deploy
 | **A / ←** | Steer Left |
 | **D / →** | Steer Right |
 | **Space** | Nitro Boost |
-| **F** | Start nearby race event |
-| **B** | Open Beta Feedback panel |
+| **V** | Cycle chase camera target (Player vs AIs) |
+| **G** | Open Beta Feedback panel |
 | **P** | Toggle performance HUD |
 | **Esc** | Close feedback panel |
 
@@ -161,7 +161,7 @@ midnight club/
 
 ## 💬 Feedback
 
-Found a bug or have a suggestion? Press **B** in-game to open the feedback panel, or rate your race experience with the quick 👍 / 👎 after a race finishes.
+Found a bug or have a suggestion? Press **G** in-game to open the feedback panel, or rate your race experience with the quick 👍 / 👎 after a race finishes.
 
 ---
 

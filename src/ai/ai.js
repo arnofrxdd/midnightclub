@@ -106,7 +106,7 @@ export class AICar {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  update(dt, world, raceManager, traffic, navGraph) {
+  update(dt, world, raceManager, traffic, navGraph, pursuit) {
     this.debugLookahead = null;
     if (this.completed || !raceManager.active) {
       // Smoothly coast and brake to a stop instead of freezing instantly
@@ -227,7 +227,7 @@ export class AICar {
     if (this._dodgeTimer <= 0 && this.speed > 4) {
       this._dodgeTimer = this.isNitroBoosting ? 0.05 : 0.10;
       // Scan 7 future corridors and smoothly interpolate toward the best one
-      const targetOffset = this._scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley);
+      const targetOffset = this._scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley, pursuit);
       // Smooth transition — avoids sudden swerving; faster update at high speed
       const lerpRate = this.isNitroBoosting ? 0.55 : 0.35;
       this._corridorOffset += (targetOffset - this._corridorOffset) * lerpRate;
@@ -351,6 +351,10 @@ export class AICar {
     if (traffic && traffic.vehicles) {
       traffic.vehicles.forEach(v => obstacles.push(v.position));
     }
+    if (pursuit) {
+      if (pursuit.cops) pursuit.cops.forEach(cop => obstacles.push(cop.position));
+      if (pursuit.parkedCops) pursuit.parkedCops.forEach(cop => obstacles.push(cop.position));
+    }
 
     for (const ob of obstacles) {
       const toOb = ob.clone().sub(this.position);
@@ -372,15 +376,17 @@ export class AICar {
     }
 
     // Nitro system update & activation
+    const veryCloseHit = world.checkCollision(veryClose.x, veryClose.z, inAlley ? 1.6 : 2.2).collision;
+    
     if (this.isNitroBoosting) {
       this.nitroLevel = Math.max(0.0, this.nitroLevel - 0.25 * dt);
-      // Immediately cancel nitro if there is an obstacle directly in front of us
-      if (this.nitroLevel <= 0.0 || absErr > 0.35 || this.speed < 5.0 || obstacleInFrontDist < 18.0) {
+      // Immediately cancel nitro if there is an obstacle directly in front of us, or if stuck
+      if (this.nitroLevel <= 0.0 || absErr > 0.35 || this.speed < 5.0 || obstacleInFrontDist < 18.0 || this._stuckTimer > 0 || this._donutTimer > 0 || veryCloseHit) {
         this.isNitroBoosting = false;
       }
     } else {
       this.nitroLevel = Math.min(1.0, this.nitroLevel + (this.isDrifting ? 0.15 : 0.04) * dt);
-      if (absErr < 0.12 && this.speed > 15.0 && this.nitroLevel > 0.25 && !this._escapeTimer && Math.random() < 0.03) {
+      if (absErr < 0.12 && this.speed > 15.0 && this.nitroLevel > 0.25 && !this._escapeTimer && !this._donutTimer && this._stuckTimer === 0 && !veryCloseHit && Math.random() < 0.03) {
         this.isNitroBoosting = true;
       }
     }
@@ -659,7 +665,7 @@ export class AICar {
   //  offsets and scores them across the FULL look-ahead depth so the AI
   //  picks a line that is clear the whole way, not just at one point.
   // ═══════════════════════════════════════════════════════════════════════════
-  _scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley) {
+  _scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley, pursuit) {
     // ─ Build dynamic obstacle list once ───────────────────────────────────
     const dynObs = [];
     if (raceManager.playerPos) dynObs.push(raceManager.playerPos);
@@ -667,6 +673,10 @@ export class AICar {
     if (traffic) {
       if (traffic.vehicles)       traffic.vehicles.forEach(v => dynObs.push(v.position));
       if (traffic.parkedVehicles) traffic.parkedVehicles.forEach(v => dynObs.push(v.position));
+    }
+    if (pursuit) {
+      if (pursuit.cops) pursuit.cops.forEach(cop => dynObs.push(cop.position));
+      if (pursuit.parkedCops) pursuit.parkedCops.forEach(cop => dynObs.push(cop.position));
     }
 
     // ─ Corridor candidates (metres to the right of current heading) ────────

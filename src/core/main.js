@@ -3043,7 +3043,7 @@ class Game {
     // UPDATE RACE SYSTEM — skip entirely during cinematic to prevent AI A* from overwriting headings
     if (this.race.active && !isCinematicActive) {
       this.race.playerVelocity = this.physics.velocity;
-      const raceResult = this.race.update(this.physics.position, scaledDt, this.world, this.traffic);
+      const raceResult = this.race.update(this.physics.position, scaledDt, this.world, this.traffic, this.pursuit);
 
       // Collision Check: Player vs AI Opponents
       this.race.aiRacers.forEach(ai => {

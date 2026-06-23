@@ -341,7 +341,7 @@ export class RaceManager {
 
   }
 
-  update(playerPos, dt, world, traffic) {
+  update(playerPos, dt, world, traffic, pursuit) {
     if (!this.active || this.completed) return null;
     
     this.timeElapsed += dt;
@@ -351,7 +351,7 @@ export class RaceManager {
 
     // Update AI cars (pass navGraph so they can A* their paths)
     this.aiRacers.forEach(ai => {
-      ai.update(dt, world, this, traffic, this.navGraph);
+      ai.update(dt, world, this, traffic, this.navGraph, pursuit);
     });
 
 

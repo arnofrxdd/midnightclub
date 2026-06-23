@@ -11,6 +11,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       
       const highGroup = new THREE.Group();
       const highGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      highGround.isGround = true;
       highGround.receiveShadow = true;
       highGroup.add(highGround);
       const facadeMesh = new THREE.Mesh(cached.facadeGeo, cached.bMat);
@@ -47,6 +48,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
 
       const medGroup = new THREE.Group();
       const medGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      medGround.isGround = true;
       medGround.receiveShadow = true;
       medGroup.add(medGround);
       const medFacade = new THREE.Mesh(cached.facadeGeo, cached.bMat);
@@ -76,6 +78,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
 
       const lowGroup = new THREE.Group();
       const lowGround = new THREE.Mesh(cached.groundGeo, this.concreteMat);
+      lowGround.isGround = true;
       lowGround.receiveShadow = true;
       lowGroup.add(lowGround);
       const lowFacade = new THREE.Mesh(cached.facadeGeo, cached.bMat);
@@ -602,6 +605,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     // --- LOD Level 0: Full Detail (0m to 140m) ---
     const highGroup = new THREE.Group();
     const highGround = new THREE.Mesh(groundGeo, this.concreteMat);
+    highGround.isGround = true;
     highGround.receiveShadow = true;
     highGroup.add(highGround);
     const facadeMesh = new THREE.Mesh(mergedFacade, bMat);
@@ -677,6 +681,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     // --- LOD Level 1: Medium Detail (280m to 400m) ---
     const medGroup = new THREE.Group();
     const medGround = new THREE.Mesh(groundGeo, this.concreteMat);
+    medGround.isGround = true;
     medGround.receiveShadow = true;
     medGroup.add(medGround);
     const medFacade = new THREE.Mesh(mergedFacade, bMat);
@@ -697,6 +702,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     // --- LOD Level 2: Low Detail (400m+) ---
     const lowGroup = new THREE.Group();
     const lowGround = new THREE.Mesh(groundGeo, this.concreteMat);
+    lowGround.isGround = true;
     lowGround.receiveShadow = true;
     lowGroup.add(lowGround);
     const lowFacade = new THREE.Mesh(mergedFacade, bMat);

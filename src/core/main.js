@@ -2088,7 +2088,7 @@ class Game {
     const tWorldStart = performance.now();
     const isLookingBack = this.keys && this.keys['b'];
     const activeWorldHeading = isLookingBack ? focusTarget.heading + Math.PI : focusTarget.heading;
-    this.world.update(focusTarget.position.x, focusTarget.position.z, activeWorldHeading, dynamicLights, scaledDt);
+    this.world.update(focusTarget.position.x, focusTarget.position.z, activeWorldHeading, dynamicLights, scaledDt, this.camera ? this.camera.position : null);
     this.perf.world = performance.now() - tWorldStart;
     
     if (this.isInitialLoad) {

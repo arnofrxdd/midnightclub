@@ -20,6 +20,7 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
     uvs.needsUpdate = true;
 
     const floorMesh = new THREE.Mesh(floorGeo, chosenMat);
+    floorMesh.isGround = true;
     floorMesh.receiveShadow = true;
     group.add(floorMesh);
 

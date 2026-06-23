@@ -476,7 +476,30 @@ export class World {
     return this.materialOpacityPool.get(origMat)[index];
   }
 
-  update(playerX, playerZ, heading = 0, dynamicLightsList = [], dt = 0.016) {
+  segmentIntersectsAABB(p1x, p1z, p2x, p2z, xMin, xMax, zMin, zMax) {
+    const minX = Math.min(p1x, p2x);
+    const maxX = Math.max(p1x, p2x);
+    const minZ = Math.min(p1z, p2z);
+    const maxZ = Math.max(p1z, p2z);
+
+    // Quick bounding box check
+    if (maxX < xMin || minX > xMax || maxZ < zMin || minZ > zMax) return false;
+
+    // Line equation: A*x + B*z + C = 0
+    const A = p1z - p2z;
+    const B = p2x - p1x;
+    const C = p1x * p2z - p2x * p1z;
+
+    const v1 = A * xMin + B * zMin + C;
+    const v2 = A * xMin + B * zMax + C;
+    const v3 = A * xMax + B * zMin + C;
+    const v4 = A * xMax + B * zMax + C;
+
+    if ((v1 > 0 && v2 > 0 && v3 > 0 && v4 > 0) || (v1 < 0 && v2 < 0 && v3 < 0 && v4 < 0)) return false;
+    return true;
+  }
+
+  update(playerX, playerZ, heading = 0, dynamicLightsList = [], dt = 0.016, cameraPos = null) {
     const pTileX = Math.round(playerX / this.tileSize);
     const pTileZ = Math.round(playerZ / this.tileSize);
 
@@ -529,6 +552,30 @@ export class World {
         const show = dot > 0 || (dot * dot < 0.1764 * distSq); // Avoids Math.sqrt (0.42 * 0.42 = 0.1764)
         if (show && !tile.visible)       { this.scene.add(tile.group);    tile.visible = true; }
         else if (!show && tile.visible)  { this.scene.remove(tile.group); tile.visible = false; }
+      }
+    }
+
+    // 2c. Camera Building Occlusion Dithering
+    if (cameraPos) {
+      for (const tile of this.loadedTiles.values()) {
+        tile.isOccluding = false;
+        if (!tile.visible) continue;
+        
+        const dx = tile.posX - playerX;
+        const dz = tile.posZ - playerZ;
+        if (dx * dx + dz * dz < 14400) { // Only check if within 120m
+          if (tile.obstacles) {
+            for (let i = 0; i < tile.obstacles.length; i++) {
+              const obs = tile.obstacles[i];
+              // Expand the bounding box by 1.5m so it triggers just before the camera clips,
+              // preventing the glitchy edge-clipping effect.
+              if (this.segmentIntersectsAABB(cameraPos.x, cameraPos.z, playerX, playerZ, obs.xMin - 1.5, obs.xMax + 1.5, obs.zMin - 1.5, obs.zMax + 1.5)) {
+                tile.isOccluding = true;
+                break;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -676,13 +723,21 @@ export class World {
     });
 
     // 4b. Update tile fade-in transitions using the material pool
-    const fadeSpeed = 2.0; // Fades in over 0.5 seconds
+    const fadeSpeed = 3.0; // Fast fading
     for (const tile of this.loadedTiles.values()) {
-      if (tile.isFading) {
-        if (tile.fadeProgress === undefined) tile.fadeProgress = 0.0;
-        tile.fadeProgress += dt * fadeSpeed;
-        if (tile.fadeProgress >= 1.0) {
-          tile.fadeProgress = 1.0;
+      const targetOpacity = tile.isOccluding ? 0.2 : 1.0;
+      if (tile.fadeProgress === undefined) tile.fadeProgress = 1.0;
+      const isOpacityCorrect = tile.fadeProgress === targetOpacity;
+
+      if (tile.isFading || !isOpacityCorrect) {
+        // Move towards target
+        if (tile.fadeProgress < targetOpacity) {
+          tile.fadeProgress = Math.min(targetOpacity, tile.fadeProgress + dt * fadeSpeed);
+        } else if (tile.fadeProgress > targetOpacity) {
+          tile.fadeProgress = Math.max(targetOpacity, tile.fadeProgress - dt * fadeSpeed * 1.5);
+        }
+
+        if (tile.fadeProgress === 1.0) {
           tile.isFading = false;
           tile.group.traverse(child => {
             if (child.isMesh && child._origMaterial) {
@@ -691,16 +746,27 @@ export class World {
             }
           });
         } else {
+          tile.isFading = true; // Still processing fade
           tile.group.traverse(child => {
-            if (child.isMesh && child._origMaterial) {
-              if (Array.isArray(child.material)) {
-                child.material = child.material.map((m, idx) => {
-                  const origOpacity = child._origMaterial[idx].opacity !== undefined ? child._origMaterial[idx].opacity : 1.0;
-                  return this.getFadedMaterial(child._origMaterial[idx], origOpacity * tile.fadeProgress);
+            if (child.isMesh) {
+              // Ensure we cache original material before modifying
+              if (!child._origMaterial) {
+                child._origMaterial = child.material;
+              }
+              
+              // If it's a ground mesh and the tile is currently occluding,
+              // don't drop the ground opacity below 1.0 (unless it's still fading in from initial load).
+              // Since occluding pulls fadeProgress to 0.2, we override it to 1.0 for the ground.
+              const finalProgress = (child.isGround && tile.isOccluding) ? 1.0 : tile.fadeProgress;
+
+              if (Array.isArray(child._origMaterial)) {
+                child.material = child._origMaterial.map((m, idx) => {
+                  const origOpacity = m.opacity !== undefined ? m.opacity : 1.0;
+                  return this.getFadedMaterial(m, origOpacity * finalProgress);
                 });
               } else {
                 const origOpacity = child._origMaterial.opacity !== undefined ? child._origMaterial.opacity : 1.0;
-                child.material = this.getFadedMaterial(child._origMaterial, origOpacity * tile.fadeProgress);
+                child.material = this.getFadedMaterial(child._origMaterial, origOpacity * finalProgress);
               }
             }
           });

@@ -2196,7 +2196,7 @@ class Game {
         // At speed <= 25 m/s, keep 100% density. At higher speeds, reduce to 70% density.
         densityScale = Math.max(0.70, 1.0 - (playerSpeed - 25.0) / 100.0);
       }
-      this.traffic.maxVehicles = Math.round(baseMax * densityScale);
+      this.traffic.dynamicActiveMax = Math.round(baseMax * densityScale);
     }
     
     this.traffic.update(
@@ -2495,9 +2495,10 @@ class Game {
     // Combined Collision Checks for active & parked civilian vehicles
     const allCivilians = this.traffic.vehicles.concat(this.traffic.parkedVehicles || []);
     allCivilians.forEach(v => {
+      if (v.opacity < 0.1 || v.isActive === false) return;
       // Collision Check: Player vs Traffic
       const distToPlayer = this.physics.position.distanceTo(v.position);
-      const obb = (distToPlayer < 6.0) ? testOBBCollision(this.physics, v) : { collision: false };
+      const obb = (distToPlayer < 8.5) ? testOBBCollision(this.physics, v) : { collision: false };
       if (obb.collision) {
         if (this.physics.speed > 16.0 && this.pursuit) {
           this.pursuit.triggerPursuit(1);
@@ -2519,9 +2520,9 @@ class Game {
         const velAlongNormal = relativeVel.dot(pushDir);
 
         if (velAlongNormal < 0) {
-          const restitution = 0.48; // partially elastic crash
+          const restitution = 0.65; // partially elastic crash
           const m1 = 1350;
-          const m2 = 1500;
+          const m2 = 1100;
           
           const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
           const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
@@ -2581,7 +2582,7 @@ class Game {
       if (this.race.active) {
         this.race.aiRacers.forEach(ai => {
           const distToAI = ai.position.distanceTo(v.position);
-          const obb = (distToAI < 6.0) ? testOBBCollision(ai, v) : { collision: false };
+          const obb = (distToAI < 8.5) ? testOBBCollision(ai, v) : { collision: false };
           if (obb.collision) {
             const pushDir = obb.pushDir;
             const overlap = obb.overlap;
@@ -2598,9 +2599,9 @@ class Game {
             const velAlongNormal = relativeVel.dot(pushDir);
 
             if (velAlongNormal < 0) {
-              const restitution = 0.45;
+              const restitution = 0.65;
               const m1 = 1350; // AI mass
-              const m2 = 1500; // Traffic mass
+              const m2 = 1100; // Traffic mass
               const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
               const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
@@ -2656,7 +2657,7 @@ class Game {
         if (v2.opacity < 0.5) continue;
 
         const dist = v1.position.distanceTo(v2.position);
-        const obb = (dist < 6.0) ? testOBBCollision(v1, v2) : { collision: false };
+        const obb = (dist < 8.5) ? testOBBCollision(v1, v2) : { collision: false };
         if (obb.collision) {
           const pushDir = obb.pushDir;
           const overlap = obb.overlap;

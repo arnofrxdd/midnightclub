@@ -848,7 +848,10 @@ export class TrafficVehicle {
     const lateralSpeed = totalVelX * rgtCos + totalVelZ * rgtSin;
 
     // Apply lateral tire grip resistance (friction) to reduce side-sliding over time
-    const gripDecay = 7.0; // Higher = tighter tire grip
+    let gripDecay = 7.0; // Higher = tighter tire grip
+    if (this.isRecovering && Math.abs(lateralSpeed) > 2.0) {
+      gripDecay = 1.2; // Significantly lower friction when sliding from a high-impact crash
+    }
     const newLateralSpeed = lateralSpeed * Math.exp(-gripDecay * dt);
 
     // Update the position physically
@@ -901,9 +904,9 @@ export class TrafficVehicle {
     }
 
     // Decay the external impact velocity forces and spin over time
-    this.impactVelocity.multiplyScalar(Math.exp(-2.2 * dt));
+    this.impactVelocity.multiplyScalar(Math.exp(-1.1 * dt)); // Reduced decay so they slide further
     this.heading += this.impactSpin * dt;
-    this.impactSpin *= Math.exp(-3.5 * dt);
+    this.impactSpin *= Math.exp(-1.4 * dt); // Reduced decay so they spin longer and more wildly
 
     if (this.isRecovering) {
       if (this.impactVelocity.lengthSq() < 1.5) {

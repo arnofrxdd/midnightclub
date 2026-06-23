@@ -53,7 +53,8 @@ export class TrafficManager {
 
   update(dt, playerPos, playerHeading = 0, aiRacers = [], camera = null, world = null, roadblocks = [], heatLevel = 0, activeCops = []) {
     // Dynamic traffic density based on heat level (clears the streets as things get wilder)
-    const activeMax = Math.max(2, this.maxVehicles - heatLevel * 3);
+    const baseLimit = this.dynamicActiveMax !== undefined ? this.dynamicActiveMax : this.maxVehicles;
+    const activeMax = Math.max(2, baseLimit - heatLevel * 3);
 
     // Object Pool Spawning: Wake up inactive vehicles if we are below activeMax
     let activeCount = 0;

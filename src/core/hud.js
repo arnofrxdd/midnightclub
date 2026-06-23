@@ -395,31 +395,35 @@ export function initHypeSystem() {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 2px;
   `;
 
   // Phrase text
   this.hypePhraseEl = document.createElement('div');
   this.hypePhraseEl.style.cssText = `
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 52px;
+    font-weight: 900;
     font-style: italic;
-    font-weight: 800;
-    color: #fff;
-    text-shadow: 0px 4px 15px rgba(0,0,0,0.8), 0 0 20px #ffc600;
-    letter-spacing: 2px;
-    margin-bottom: -10px;
+    font-size: 56px;
+    letter-spacing: 1px;
+    color: #ffffff;
+    text-shadow: 0 4px 15px rgba(0, 0, 0, 0.9), 0 0 20px #ffc600;
+    text-transform: uppercase;
+    margin: 0;
   `;
 
   // Combo multiplier text
   this.hypeComboEl = document.createElement('div');
   this.hypeComboEl.style.cssText = `
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 32px;
+    font-weight: 900;
     font-style: italic;
-    font-weight: 700;
-    color: #ff3b30;
-    text-shadow: 0px 2px 10px rgba(0,0,0,0.8), 0 0 15px #ff3b30;
+    font-size: 32px;
     letter-spacing: 1px;
+    color: #ff3b30;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 15px #ff3b30;
+    text-transform: uppercase;
+    margin: 0;
     opacity: 0;
     transition: opacity 0.2s, transform 0.1s;
   `;
@@ -433,10 +437,11 @@ export function showHype(phrase, comboCount, colorHex) {
   if (!this.hypeContainer) return;
 
   this.hypePhraseEl.textContent = phrase;
-  this.hypePhraseEl.style.textShadow = `0px 4px 15px rgba(0,0,0,0.8), 0 0 25px ${colorHex}, 0 0 10px ${colorHex}`;
+  this.hypePhraseEl.style.textShadow = `0 4px 15px rgba(0,0,0,0.9), 0 0 25px ${colorHex}, 0 0 10px ${colorHex}`;
   
   if (comboCount > 1) {
     this.hypeComboEl.textContent = `${comboCount}X COMBO`;
+    this.hypeComboEl.style.color = colorHex;
     this.hypeComboEl.style.opacity = '1';
     // Small heartbeat pop for combo
     this.hypeComboEl.style.transform = 'scale(1.2)';

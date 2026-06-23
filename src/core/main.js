@@ -308,8 +308,8 @@ class Game {
   }
 
   createCarMesh() {
-    // Voxel Tuner Car for the player (Bayside Blue)
-    const { carGroup, wheels } = this.createVoxelCarMesh(0x1a3d8c, 'sports');
+    // Voxel Tuner Car for the player (Less sporty, more 'car' look per user request)
+    const { carGroup, wheels } = this.createVoxelCarMesh(0x1a3d8c, 'sedan');
     const playerHeadlightPool = carGroup.getObjectByName("headlightPool");
     if (playerHeadlightPool) {
       playerHeadlightPool.material.opacity = 0.0;
@@ -935,8 +935,8 @@ class Game {
     return initNotifications.call(this);
   }
 
-  showNotification(id, text, duration = 2000) {
-    return showNotification.call(this, id, text, duration);
+  showNotification(id, text, duration = 2000, increment = false) {
+    return showNotification.call(this, id, text, duration, increment);
   }
 
   removeNotification(id) {
@@ -967,7 +967,7 @@ class Game {
     this.clearAIMeshes();
     this.race.aiRacers.forEach(ai => {
       const container = new THREE.Group();
-      const { carGroup, wheels } = this.createVoxelCarMesh(ai.colorHex, 'sports');
+      const { carGroup, wheels } = this.createVoxelCarMesh(ai.colorHex, 'sedan');
 
       const aiNitroLeftSprite = new THREE.Sprite(this.nitroSpriteMat);
       aiNitroLeftSprite.position.set(-0.6, 0.2, -2.1);
@@ -1677,8 +1677,7 @@ class Game {
     this.rightSpotTarget.position.copy(_scratchV3_3).addScaledVector(_scratchV3_1, 15.0);
 
     // Update rear tail/brake light glow intensity dynamically (single point light for performance)
-    const wantsHandbrake = this.keys[' '] || this.keys['spacebar'];
-    const isBraking = this.keys['s'] || this.keys['arrowdown'] || wantsHandbrake;
+    const isBraking = this.keys['s'] || this.keys['arrowdown'];
 
     if (isBraking) {
       this.tailLight.intensity = 5.5; // Bright red brake light
@@ -2104,24 +2103,6 @@ class Game {
       });
     }
 
-    if (this.physics.isDrifting) {
-      const leftRearTire = new THREE.Vector3(-0.95, 0.22, -1.3).applyMatrix4(this.carVisualContainer.matrixWorld);
-      const rightRearTire = new THREE.Vector3(0.95, 0.22, -1.3).applyMatrix4(this.carVisualContainer.matrixWorld);
-      dynamicLights.push({
-        x: leftRearTire.x,
-        y: 0.25 + this.world.getBaseHeight(leftRearTire.x, leftRearTire.z),
-        z: leftRearTire.z,
-        intensity: 6.5,
-        color: 0xff4400 // Orange/red friction heat glow
-      });
-      dynamicLights.push({
-        x: rightRearTire.x,
-        y: 0.25 + this.world.getBaseHeight(rightRearTire.x, rightRearTire.z),
-        z: rightRearTire.z,
-        intensity: 6.5,
-        color: 0xff4400
-      });
-    }
     this.perf.pursuit = performance.now() - tPursuitStart;
 
     // Dynamically load/unload infinite chunks around the car and update lights
@@ -2817,8 +2798,8 @@ class Game {
               cop.active = false;
               this.spawnDebris(cop.position, new THREE.Vector3(0, 5, 0), 0xdd2222, 25);
               this.spawnParticles(cop.position, new THREE.Vector3(0, 3, 0), 0xff8800, 30, false, true);
-              this.showNotification('cop_takedown', "COP TAKEDOWN!", 2000);
-              if (this.hypeManager) this.hypeManager.addStunt('cop');
+              this.showNotification('cop_takedown', "COP TAKEDOWN!", 2000, true);
+              // if (this.hypeManager) this.hypeManager.addStunt('cop');
               
               // Make the cop car look wrecked (spin/flip it visually)
               if (cop.meshGroup) {
@@ -3401,7 +3382,7 @@ class Game {
       if (posEl) posEl.textContent = `${playerRank}/${rankings.length}`;
 
       if (this.prevPlayerRank !== undefined && playerRank < this.prevPlayerRank) {
-        if (this.hypeManager) this.hypeManager.addStunt('overtake');
+        if (this.hypeManager) this.hypeManager.addStunt('overtake', playerRank);
       }
       this.prevPlayerRank = playerRank;
 
@@ -3661,54 +3642,64 @@ class Game {
       }
     }
 
-    // Handle every landing (smoke and shake) regardless of tricks
-    if (this.physics.justLanded) {
-      const contactPos = this.physics.position.clone();
-      contactPos.y += 0.1;
+    // Handle every landing (smoke and shake) regardless of tricks using Bulletproof Event Queue
+    if (this.physics.landingEvents && this.physics.landingEvents.length > 0) {
+      this.physics.landingEvents.forEach(event => {
+        const contactPos = event.position.clone();
+        contactPos.y += 0.1;
 
-      if (this.physics.landedWipeout) {
-        if (this.hypeManager) this.hypeManager.triggerWipeout();
-        this.spawnDebris(contactPos, new THREE.Vector3(0, 4, 0), 0x222222, 16);
-        this.crashShake = Math.max(this.crashShake || 0, 0.95);
-      } else {
-        // Trigger airborne stunt on clean landing
-        if (this.physics.airTime > 0.5 && this.hypeManager) {
-          this.hypeManager.addStunt('air', this.physics.airTime);
-        }
-        
-        // Regular landing smoke
-        const count = Math.min(15, Math.floor(this.physics.landingImpact * 1.5));
-        if (count > 0) {
+        if (this.physics.landedWipeout) {
+          if (this.hypeManager) this.hypeManager.triggerWipeout();
+          this.spawnDebris(contactPos, new THREE.Vector3(0, 4, 0), 0x222222, 16);
+          this.crashShake = Math.max(this.crashShake || 0, 0.95);
+        } else {
+          // Trigger airborne stunt on clean landing
+          if (event.airTime > 0.3 && this.hypeManager) {
+            this.hypeManager.addStunt('air', event.airTime);
+          }
+          
+          // Bulletproof Fix: Remove gates/thresholds. ALWAYS trigger visual feedback!
+          // We guarantee a minimum impact value of 2.5 so effects always visibly pop.
+          const impact = Math.max(2.5, event.impact);
+
+          // Trigger camera landing punch (wider FOV and suspension squash)
+          this.landingPunch = Math.min(2.0, impact * 0.25 + 0.5);
+
+          // Regular landing smoke (increased density)
+          const count = Math.min(65, Math.floor(impact * 4.0) + 20);
           this.spawnParticles(contactPos, new THREE.Vector3(0, 2, 0), 0xaaaaaa, count);
-        }
 
-        // Bright landing sparks requested by user
-        if (this.physics.landingImpact > 2.0) {
-          const sparkCount = Math.min(45, Math.floor(this.physics.landingImpact * 3.5));
-          this.spawnParticles(contactPos, new THREE.Vector3(0, 4, 0), 0xffee88, sparkCount, false, true);
+          // Bright landing sparks (increased count)
+          const sparkCount = Math.min(90, Math.floor(impact * 6.0) + 30);
+          this.spawnParticles(contactPos, new THREE.Vector3(0, 5, 0), 0xffee88, sparkCount, false, true);
 
-          // Also spawn sparks at the back of the car
-          const backDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0, -Math.cos(this.physics.heading));
-          const backPos = contactPos.clone().addScaledVector(backDir, 1.5);
-          this.spawnParticles(backPos, new THREE.Vector3(0, 3.5, 0), 0xffee88, Math.floor(sparkCount * 0.8), false, true);
+          // Spawn sparks at the front and back tires to frame the vehicle
+          const headingDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0, -Math.cos(this.physics.heading));
+          const backPos = contactPos.clone().addScaledVector(headingDir, 1.5);
+          const frontPos = contactPos.clone().addScaledVector(headingDir, -1.5);
+          this.spawnParticles(backPos, new THREE.Vector3(0, 4.0, 0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
+          this.spawnParticles(frontPos, new THREE.Vector3(0, 4.0, 0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
+
+          // Spawn physical dirt/rocks debris on landing impact
+          const debrisCount = Math.min(20, Math.floor(impact * 1.5) + 5);
+          this.spawnDebris(contactPos, new THREE.Vector3(0, 3.5, 0), 0x554433, debrisCount);
 
           // Flash the realtime spark light
           if (this.sparkLight) {
             this.sparkLight.position.copy(contactPos);
             this.sparkLight.position.y += 1.0;
-            this.sparkLight.intensity = Math.min(15.0, this.physics.landingImpact * 2.0);
+            this.sparkLight.intensity = Math.min(25.0, impact * 3.5 + 5.0);
           }
-        }
 
-        // Camera shake scales with landing impact
-        if (this.physics.landingImpact > 5.0) {
-          const shakeFactor = Math.min(0.65, this.physics.landingImpact * 0.04);
+          // Camera shake always triggers with higher intensity
+          const shakeFactor = Math.min(0.9, impact * 0.08 + 0.25);
           this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
         }
-      }
+      });
 
-      // Consume the event! This is bulletproof because it guarantees main.js sees it
+      // Consume the events! This is bulletproof because it processes every landing 
       // even if physics sub-stepped multiple times in the background.
+      this.physics.landingEvents = [];
       this.physics.justLanded = false;
       this.physics.landingImpact = 0;
     }

@@ -209,7 +209,7 @@ export function checkBreakablesCollision(dt) {
               this.crashShake = Math.min(0.5, speed * 0.025);
               // Deduct a little forward speed from player on impact (heavy pole resistance)
               this.physics.velocity.multiplyScalar(0.92);
-              if (this.hypeManager) this.hypeManager.addStunt('smash');
+              // if (this.hypeManager) this.hypeManager.addStunt('smash'); // Disabled per user request
             }
 
             // Spawn sparks and wood/metal debris or water splashes

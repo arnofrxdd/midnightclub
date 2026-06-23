@@ -86,12 +86,13 @@ export class CarPhysics {
     // Preallocated scratch vectors (avoid per-frame heap allocation in update)
     this._fwdVec = new THREE.Vector3();
     this._rightVec = new THREE.Vector3();
-    this.isBoosting = false;
     this.driftDuration = 0.0;
+    this.landingEvents = [];
   }
 
   update(dt, keys, world) {
     if (dt <= 0) return;
+    const preCollisionVelocityY = this.velocityY; // Capture vertical velocity before ground collision
     // DO NOT reset justLanded here! It must be consumed by main.js at the end of the frame
     // because physics.update may run multiple sub-steps per frame!
     
@@ -359,7 +360,14 @@ export class CarPhysics {
     }
     
     // 7. Yaw Rotation (Steering turns the car based on forward speed)
-    if (speedMagnitude > 0.5) {
+    if (this.isAirborne) {
+      // In mid-air, conserve rotation speed (momentum) but allow steering to apply a gentle torque
+      if (Math.abs(this.steeringAngle) > 0.1) {
+        this.angularVelocity += this.steeringAngle * 1.5 * dt;
+      }
+      // Slowly decay rotation speed in mid-air due to aerodynamic drag
+      this.angularVelocity *= Math.exp(-0.8 * dt);
+    } else if (speedMagnitude > 0.5) {
       // Handbrake or brake slide increases rotational rotation
       const slideFactor = this.isDrifting ? 1.95 : 1.0;
       const turnFactor = Math.min(1.0, forwardSpeed / 8.0);
@@ -584,7 +592,14 @@ export class CarPhysics {
       while (this.bodyRoll > Math.PI) this.bodyRoll -= Math.PI * 2;
       
       this.justLanded = true;
-      this.landingImpact = Math.abs(this.velocityY);
+      this.landingImpact = Math.abs(preCollisionVelocityY);
+
+      // Bulletproof Event Queue: guarantees main.js never misses a landing frame
+      this.landingEvents.push({
+        impact: this.landingImpact,
+        position: this.position.clone(),
+        airTime: prevAirTime
+      });
 
       // Stunt/Trick detection
       let trickName = "";

@@ -60,6 +60,23 @@ export function updateCamera(dt = 0.016) {
     if (this.camPitchOffset === undefined) this.camPitchOffset = 0.0;
     if (this.camBungeeOffset === undefined) this.camBungeeOffset = 0.0;
     if (this.lastCamSpeed === undefined) this.lastCamSpeed = 0.0;
+    if (this.camAirTransition === undefined) this.camAirTransition = 0.0;
+    if (this.landingPunch === undefined) this.landingPunch = 0.0;
+
+    // Disabled Midnight Club airborne camera effect for now
+    /*
+    // Smoothly transition airborne camera factor immediately upon leaving ground
+    // Use asymmetric rates: moderate sweep up, fast snappy return upon landing
+    const targetAirTransition = isAirborne ? 1.0 : 0.0;
+    const airRate = isAirborne ? 3.5 : 7.0;
+    this.camAirTransition += (targetAirTransition - this.camAirTransition) * (1 - Math.exp(-airRate * dt));
+    */
+    this.camAirTransition = 0.0;
+
+    // Decay landingPunch over time
+    if (this.landingPunch > 0.0) {
+      this.landingPunch = Math.max(0.0, this.landingPunch - 4.5 * dt);
+    }
 
     // Calculate longitudinal acceleration (G-Force pitching & bungee distance lag)
     const accelLong = dt > 0 ? (speed - this.lastCamSpeed) / dt : 0;
@@ -85,10 +102,10 @@ export function updateCamera(dt = 0.016) {
     const targetRoll = -lateralVel * 0.005; // Rolls slightly into the turn/slide
     this.camRoll += (targetRoll - this.camRoll) * (1 - Math.exp(-5 * dt));
 
-    // 1. Dynamic FOV: Opens up at high speed to emphasize velocity + NFS shift punch, Nitro warp, and mid-air flight
+    // 1. Dynamic FOV: Opens up at high speed, nitro, gear shifts, and landing impact punches
     const boostFOVOffset = this.physics.isBoosting ? 16.0 : 0.0;
     const airFOVOffset = this.physics.isAirborne ? Math.min(12.0, this.physics.airTime * 15.0) : 0.0;
-    const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + boostFOVOffset + airFOVOffset;
+    const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + (this.landingPunch * 14.0) + boostFOVOffset + airFOVOffset;
     this.camera.fov += (targetFOV - this.camera.fov) * (1 - Math.exp(-6 * dt));
     this.camera.updateProjectionMatrix();
 
@@ -134,8 +151,8 @@ export function updateCamera(dt = 0.016) {
     // 3. Dynamic Distance & Height: Chase cam parameters with G-Force Pitching & Bungee Lag
     let distance, height;
     if (useLag) {
-      distance = baseDist + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8);
-      height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset;
+      distance = baseDist + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8) + (this.landingPunch * 2.5);
+      height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset - (this.landingPunch * 0.8);
     } else {
       distance = baseDist;
       height = baseHeight;
@@ -149,11 +166,34 @@ export function updateCamera(dt = 0.016) {
       lookDir += Math.PI;
     }
 
-    const offset = new THREE.Vector3(
-      -Math.sin(camDir) * distance,
-      height,
-      -Math.cos(camDir) * distance
-    );
+    // Compute camera offset with airborne blending
+    let offset;
+    if (useLag && this.camAirTransition > 0.001) {
+      const stdOffset = new THREE.Vector3(
+        -Math.sin(camDir) * distance,
+        height,
+        -Math.cos(camDir) * distance
+      );
+
+      // Midnight Club style top-diagonal offset (higher angle, slightly shifted laterally, pulled in)
+      const airAngle = camDir + 0.4;
+      const airDist = distance * 0.85;
+      const airHeight = height + 8.5;
+
+      const airOffset = new THREE.Vector3(
+        -Math.sin(airAngle) * airDist,
+        airHeight,
+        -Math.cos(airAngle) * airDist
+      );
+
+      offset = new THREE.Vector3().lerpVectors(stdOffset, airOffset, this.camAirTransition);
+    } else {
+      offset = new THREE.Vector3(
+        -Math.sin(camDir) * distance,
+        height,
+        -Math.cos(camDir) * distance
+      );
+    }
 
     // 4. Lerp camera position smoothly
     const targetCamPos = targetPos.clone().add(offset);
@@ -162,6 +202,15 @@ export function updateCamera(dt = 0.016) {
     if (this.wasLookingBack !== isLookingBack) {
       this.camera.position.copy(targetCamPos);
       this.wasLookingBack = isLookingBack;
+      // Also snap the lookAt target to avoid slow rotation transition when switching views
+      const instantLook = targetPos.clone().add(
+        new THREE.Vector3(
+          Math.sin(lookDir) * lookAheadDistance,
+          targetLookY,
+          Math.cos(lookDir) * lookAheadDistance
+        )
+      );
+      this.camCurrentLookAt = instantLook;
     } else if (useLag) {
       this.camera.position.lerp(targetCamPos, 1 - Math.exp(-9 * dt));
     } else {
@@ -207,6 +256,11 @@ export function updateCamera(dt = 0.016) {
     let lookAheadDistance = (mode === 'bonnet') ? (15.0 + speed * 0.1) : (4.0 + speed * 0.08);
     if (isLookingBack) lookAheadDistance = 0.0; // Keep car exactly centered when looking back
 
+    // Pull look-ahead point closer to the car when airborne to center the vehicle
+    if (useLag && this.camAirTransition > 0.001) {
+      lookAheadDistance = THREE.MathUtils.lerp(lookAheadDistance, 0.5, this.camAirTransition);
+    }
+
     const targetLook = targetPos.clone().add(
       new THREE.Vector3(
         Math.sin(lookDir) * lookAheadDistance,
@@ -214,7 +268,13 @@ export function updateCamera(dt = 0.016) {
         Math.cos(lookDir) * lookAheadDistance
       )
     );
-    this.camera.lookAt(targetLook);
+
+    if (!this.camCurrentLookAt) {
+      this.camCurrentLookAt = targetLook.clone();
+    } else {
+      this.camCurrentLookAt.lerp(targetLook, 1 - Math.exp(-12 * dt));
+    }
+    this.camera.lookAt(this.camCurrentLookAt);
 
     // Apply Camera Roll (Lean) after lookAt
     if (useLag) {

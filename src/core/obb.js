@@ -12,7 +12,12 @@ import * as THREE from 'three';
  * @param {number} lengthB - Length of carB in meters
  * @returns {Object} { collision: boolean, overlap: number, pushDir: THREE.Vector3 }
  */
-export function testOBBCollision(carA, carB, widthA = 1.9, lengthA = 4.6, widthB = 1.9, lengthB = 4.6) {
+export function testOBBCollision(carA, carB, widthA = 1.9, lengthA = 4.6, widthB = 1.9, lengthB = 4.6, heightThreshold = 1.8) {
+  // Prevent collision if one car is significantly above/below another
+  if (Math.abs(carA.position.y - carB.position.y) > heightThreshold) {
+    return { collision: false };
+  }
+
   const posA = { x: carA.position.x, z: carA.position.z };
   const posB = { x: carB.position.x, z: carB.position.z };
 

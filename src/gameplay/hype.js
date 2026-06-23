@@ -52,6 +52,7 @@ export class HypeManager {
         this.nearMissCooldown = 0.5;
         break;
       case 'draft':
+        return; // Disabled per user request
         if (value > 2.0) phrase = "SLIPSTREAMING";
         else phrase = "DRAFTING";
         color = "#39ff14"; // Neon Green
@@ -67,7 +68,13 @@ export class HypeManager {
         color = "#0066ff"; // Blue
         break;
       case 'overtake':
-        phrase = "OVERTAKE!";
+        const getOrdinal = (n) => {
+          if (n === 1) return '1st';
+          if (n === 2) return '2nd';
+          if (n === 3) return '3rd';
+          return n + 'th';
+        };
+        phrase = `GOT ${getOrdinal(value)}!`;
         color = "#ff3b30"; // Red
         break;
     }
@@ -75,20 +82,22 @@ export class HypeManager {
     if (!phrase) return;
 
     this.currentStunts.add(type);
-    this.comboCount++;
-    this.comboTimer = this.maxComboTime;
+    // this.comboCount++; // Disabled combo system per user request
+    // this.comboTimer = this.maxComboTime;
 
     // Combine phrases if combo > 1
     let finalPhrase = phrase;
+    /* 
     if (this.comboCount >= 3) {
       finalPhrase = "UNSTOPPABLE!";
       color = "#ff00ff"; // Magenta
     } else if (this.comboCount == 2) {
       finalPhrase = "SUPER COMBO!";
     }
+    */
 
     if (this.game.showHype) {
-      this.game.showHype(finalPhrase, this.comboCount, color);
+      this.game.showHype(finalPhrase, 0, color); // Passing 0 for comboCount to hide UI
     }
   }
 

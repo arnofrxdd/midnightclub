@@ -477,7 +477,23 @@ export class AICar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+    
+    if (this.velocityY === undefined) this.velocityY = 0;
+    const prevY = this.position.y;
+    
+    // Predict next Y position based on current velocity and gravity
+    this.velocityY -= 6.0 * dt; 
+    const nextY = this.position.y + this.velocityY * dt;
+
+    if (nextY < targetY || (!this.isAirborne && Math.abs(this.position.y - targetY) < 0.25)) {
+      // Grounded - stick to slope and calculate upward momentum for jumps
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      this.velocityY = (this.position.y - prevY) / dt;
+      if (this.position.y < targetY) this.position.y = targetY;
+    } else {
+      // Airborne - floaty gravity
+      this.position.y = nextY;
+    }
 
     // ── 14. Wall pushback ────────────────────────────────────────────────────
     this._applyWallPushback(world);

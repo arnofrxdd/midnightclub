@@ -2559,7 +2559,7 @@ class Game {
         // Spawn bright crash sparks and debris
         const contactPos = this.physics.position.clone().add(v.position).multiplyScalar(0.5);
         contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-        this.spawnParticles(contactPos, pushDir, 0xffaa00, 16, false, true);
+        this.spawnParticles(contactPos, pushDir, 0xffe6a8, 16, false, true);
 
         // Crash physics: vertex dent damage and 3D bouncing debris particles
         const relativeVelVec = this.physics.velocity.clone().sub(tForward.clone().multiplyScalar(v.speed).add(v.impactVelocity));
@@ -2632,7 +2632,7 @@ class Game {
 
             const contactPos = ai.position.clone().add(v.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
+            this.spawnParticles(contactPos, pushDir, 0xffe6a8, 8, false, true);
 
             // Crash physics: vertex damage and 3D debris
             const relativeVelVec = ai.velocity.clone().sub(tForward.clone().multiplyScalar(v.speed).add(v.impactVelocity));
@@ -2735,7 +2735,7 @@ class Game {
           // Spawn sparks and crash damage
           const contactPos = v1.position.clone().add(v2.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
+          this.spawnParticles(contactPos, pushDir, 0xffe6a8, 8, false, true);
 
           const relativeVelVec = vel1.clone().sub(vel2);
           const relSpeed = relativeVelVec.length();
@@ -2804,7 +2804,7 @@ class Game {
 
           const contactPos = this.physics.position.clone().add(cop.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 16, false, true);
+          this.spawnParticles(contactPos, pushDir, 0xffe6a8, 16, false, true);
 
           // Crash damage and debris
           const relativeVelVec = this.physics.velocity.clone().sub(copForward.clone().multiplyScalar(cop.speed));
@@ -2854,7 +2854,7 @@ class Game {
 
               const contactPos = ai.position.clone().add(cop.position).multiplyScalar(0.5);
               contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-              this.spawnParticles(contactPos, pushDir, 0xffaa00, 12, false, true);
+              this.spawnParticles(contactPos, pushDir, 0xffe6a8, 12, false, true);
 
               // Crash damage and debris
               const relativeVelVec = ai.velocity.clone().sub(copForward.clone().multiplyScalar(cop.speed));
@@ -2904,7 +2904,7 @@ class Game {
                 
                 const contactPos = v.position.clone().add(cop.position).multiplyScalar(0.5);
                 contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-                this.spawnParticles(contactPos, pushDir, 0xffaa00, 10, false, true);
+                this.spawnParticles(contactPos, pushDir, 0xffe6a8, 10, false, true);
 
                 // Crash damage and debris
                 const relativeVelVec = trafficVel.clone().sub(copVel);
@@ -2968,7 +2968,7 @@ class Game {
             // Spawn sparks and crash damage/debris
             const contactPos = cop1.position.clone().add(cop2.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 8, false, true);
+            this.spawnParticles(contactPos, pushDir, 0xffe6a8, 8, false, true);
 
             const relativeVelVec = v1.clone().sub(v2);
             const relSpeed = relativeVelVec.length();
@@ -3158,7 +3158,7 @@ class Game {
 
           const contactPos = this.physics.position.clone().add(ai.position).multiplyScalar(0.5);
           contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-          this.spawnParticles(contactPos, pushDir, 0xffaa00, 10, false, true);
+          this.spawnParticles(contactPos, pushDir, 0xffe6a8, 10, false, true);
 
           // Crash damage and debris
           const relativeVelVec = this.physics.velocity.clone().sub(ai.velocity);
@@ -3209,7 +3209,7 @@ class Game {
 
             const contactPos = ai1.position.clone().add(ai2.position).multiplyScalar(0.5);
             contactPos.y = 0.55 + this.world.getBaseHeight(contactPos.x, contactPos.z);
-            this.spawnParticles(contactPos, pushDir, 0xffaa00, 6, false, true);
+            this.spawnParticles(contactPos, pushDir, 0xffe6a8, 6, false, true);
 
             // Crash damage and debris
             const relativeVelVec = ai1.velocity.clone().sub(ai2.velocity);

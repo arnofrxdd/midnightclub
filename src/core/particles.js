@@ -257,11 +257,11 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
           );
           p.mesh.scale.setScalar(0.6 + Math.random() * 0.6);
         } else if (isSpark) {
-          // Sparks are high speed streaks of light
+          // Sparks are high speed streaks of light bursting outward
           p.velocity.set(
-            (Math.random() - 0.5) * 4.5 + dir.x * (10.0 + Math.random() * 6.0),
-            Math.random() * 5.0 + 3.0 + dir.y * (6.0 + Math.random() * 4.0),
-            (Math.random() - 0.5) * 4.5 + dir.z * (10.0 + Math.random() * 6.0)
+            (Math.random() - 0.5) * 10.0 + dir.x * 10.0,
+            Math.random() * 6.0 + 3.0 + (dir.y || 0) * 5.0,
+            (Math.random() - 0.5) * 10.0 + dir.z * 10.0
           );
           p.mesh.scale.set(0.04, 0.04, 0.35);
           
@@ -345,7 +345,28 @@ export function updateParticles(dt) {
             p.velocity.x *= 0.85;
             p.velocity.z *= 0.85;
           }
+        } else if (p.isSpark) {
+          p.velocity.y -= 25.0 * dt; // Gravity
+          
+          const baseHeight = this.world.getBaseHeight(p.mesh.position.x, p.mesh.position.z);
+          const floorY = 0.24 + baseHeight;
+          if (p.mesh.position.y < floorY) {
+            p.mesh.position.y = floorY + 0.05;
+            p.velocity.y = -p.velocity.y * (0.3 + Math.random() * 0.3); // Bounce
+            p.velocity.x *= 0.6;
+            p.velocity.z *= 0.6;
+          }
+          
+          // Face the velocity vector to look like a streak
+          _skidTarget.copy(p.mesh.position).add(p.velocity);
+          p.mesh.lookAt(_skidTarget);
+          
+          const factor = p.life / p.maxLife;
+          const speed = p.velocity.length();
+          p.mesh.scale.set(0.04, 0.04, Math.max(0.1, speed * 0.06)); // Stretch based on speed
+          p.mat.opacity = factor * factor; // Fade out quickly
         } else {
+          // Smoke logic
           p.velocity.y += 0.2 * dt;
           const factor = p.life / p.maxLife;
           p.mesh.scale.setScalar(1.0 + (1.0 - factor) * 2.0);
@@ -420,15 +441,19 @@ export function spawnDebris(pos, dir, color, count = 5) {
         d.material.opacity = 1.0;
         d.material.transparent = false;
         
-        d.life = 1.2 + Math.random() * 1.2;
+        d.life = 1.2 + Math.random() * 1.5;
         d.maxLife = d.life;
-        d.scale = 0.12 + Math.random() * 0.26;
-        d.mesh.scale.set(d.scale, d.scale, d.scale);
+        // Make debris irregularly shaped to simulate bent metal/plastic
+        d.scaleX = 0.08 + Math.random() * 0.25;
+        d.scaleY = 0.04 + Math.random() * 0.1;
+        d.scaleZ = 0.15 + Math.random() * 0.35;
+        d.scale = Math.max(d.scaleX, d.scaleY, d.scaleZ); // For collision radius
+        d.mesh.scale.set(d.scaleX, d.scaleY, d.scaleZ);
         
         d.velocity.set(
-          dir.x * (6.0 + Math.random() * 6.0) + (Math.random() - 0.5) * 6.0,
-          Math.random() * 8.0 + 3.5,
-          dir.z * (6.0 + Math.random() * 6.0) + (Math.random() - 0.5) * 6.0
+          dir.x * (6.0 + Math.random() * 4.0) + (Math.random() - 0.5) * 8.0,
+          Math.random() * 8.0 + 4.0,
+          dir.z * (6.0 + Math.random() * 4.0) + (Math.random() - 0.5) * 8.0
         );
         
         d.rotVelocity.set(

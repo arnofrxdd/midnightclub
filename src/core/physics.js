@@ -443,7 +443,7 @@ export class CarPhysics {
     const heightAboveGround = this.position.y - avgGroundHeight;
     
     // Only airborne if suspension is fully extended AND center height is significantly above ground
-    if (totalComp <= 0.001 && heightAboveGround > 1.35) {
+    if (totalComp <= 0.001 && heightAboveGround > 1.05) {
       this.isAirborne = true;
       this.airTime += dt;
     } else {
@@ -479,20 +479,23 @@ export class CarPhysics {
 
     if (this.rolloverTimer <= 0) {
       // Apply forces and torques to the rigid body
-      const gravityAcc = -22.0;
+      const gravityAcc = -6.0; // Extremely floaty moon gravity
       const prevY = this.position.y;
       
-      // If we are close to the ground, use stable kinematic matching to follow the terrain smoothly
-      if (heightAboveGround < 1.35) {
-        const targetY = avgGroundHeight + 0.58;
-        // Smoothly lerp towards target ground height (with speed-proportional response)
+      // Predict next Y position based on current velocity and gravity
+      this.velocityY += gravityAcc * dt;
+      const nextY = this.position.y + this.velocityY * dt;
+      const targetY = avgGroundHeight + 0.58;
+
+      // If the parabolic path falls below the ground, or we are very close to it, stick to the terrain
+      if (nextY < targetY || (!this.isAirborne && Math.abs(this.position.y - targetY) < 0.25)) {
+        // Smoothly lerp towards target ground height
         const lerpSpeed = 18.0 + Math.min(12.0, this.velocity.length() * 0.1);
         this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, 1 - Math.exp(-lerpSpeed * dt));
         this.velocityY = (this.position.y - prevY) / dt;
       } else {
-        // Airborne: Normal parabolic gravity path
-        this.velocityY += gravityAcc * dt;
-        this.position.y += this.velocityY * dt;
+        // Airborne: Follow the parabolic gravity path!
+        this.position.y = nextY;
       }
       
       // Only apply suspension and G-force torques when on the ground to prevent automatic nose dipping in mid-air

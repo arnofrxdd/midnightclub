@@ -31,14 +31,16 @@ export class AICar {
     // ── personality (unique per car, drives behaviour differences) ──────────
     // Each AI gets randomly seeded traits so they drive differently
     this.navVariance     = id * 0.37 + Math.random() * 1.8; // biases A* route choices
-    this.cornerCutBias   = 0.4 + Math.random() * 0.6;       // 0=no cuts, 1=aggressive cuts
+    this.cornerCutBiasBase = 0.4 + Math.random() * 0.6;       // 0=no cuts, 1=aggressive cuts
+    this.cornerCutBias   = this.cornerCutBiasBase;
     this.alleyHunger     = 0.3 + Math.random() * 0.7;       // how eagerly it hunts alleys
     this.aggression      = 0.8 + Math.random() * 0.5;       // speed/braking aggression
 
     // ── tuning (scaled by personality) ───────────────────────────────────────
     this.maxSpeedBase = (55 + Math.random() * 22) * speedMultiplier; // 55–77 m/s
     this.maxSpeed     = this.maxSpeedBase;
-    this.accel        = (28 + Math.random() * 10) * speedMultiplier;
+    this.accelBase    = (28 + Math.random() * 10) * speedMultiplier;
+    this.accel        = this.accelBase;
     this.braking      = 55 + Math.random() * 20;
     this.drag         = 0.018 + Math.random() * 0.008;
 
@@ -143,16 +145,47 @@ export class AICar {
       return;
     }
 
-    // ── 2. Rubber-band speed scaling ─────────────────────────────────────────
-    if (raceManager.playerPos) {
+    // ── 2. Advanced Distance-Based Rubber-Banding ────────────────────────────
+    if (raceManager.playerPos && targetPos) {
       const tc  = raceManager.checkpoints.length || 1;
       const pp  = raceManager.lapCurrent * tc + raceManager.currentIndex;
       const ap  = this.lapCurrent       * tc + this.currentIndex;
-      const dif = pp - ap;
-      const rb  = dif > 0
-        ? 1.0 + Math.min(0.30, dif * 0.08)
-        : Math.max(0.78, 1.0 + dif * 0.06);
-      this.maxSpeed = this.maxSpeedBase * rb;
+      
+      // Macro difference (checkpoints) + micro difference (exact meters)
+      const macroDif = (pp - ap) * 150.0; 
+      const aiDistToCp = this.position.distanceTo(targetPos);
+      const playerDistToCp = raceManager.playerPos.distanceTo(targetPos);
+      const microDif = aiDistToCp - playerDistToCp;
+      
+      const totalDistanceBehind = macroDif + microDif;
+      
+      let rbSpeed = 1.0;
+      let rbAccel = 1.0;
+      let rbAggro = 1.0;
+
+      if (totalDistanceBehind > 0) {
+        // AI is behind: "Catch-up Mode"
+        const intensity = Math.min(1.0, totalDistanceBehind / 400.0);
+        rbSpeed = 1.0 + (0.45 * intensity); 
+        rbAccel = 1.0 + (0.80 * intensity); 
+        rbAggro = 1.0 + (0.30 * intensity); 
+        
+        // Desperation Nitro
+        if (totalDistanceBehind > 250 && Math.random() < 0.05 * dt) {
+          this.nitroLevel = 1.0;
+        }
+      } else {
+        // AI is ahead: "Wait-up Mode"
+        const leadDist = -totalDistanceBehind;
+        const intensity = Math.min(1.0, leadDist / 300.0);
+        rbSpeed = 1.0 - (0.35 * intensity); 
+        rbAccel = 1.0 - (0.20 * intensity);
+        rbAggro = 1.0 - (0.20 * intensity);
+      }
+
+      this.maxSpeed = this.maxSpeedBase * rbSpeed;
+      this.accel = this.accelBase * rbAccel;
+      this.cornerCutBias = this.cornerCutBiasBase * rbAggro;
     }
 
     // ── 3. Compute (or reuse) A* path to current checkpoint ─────────────────

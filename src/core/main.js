@@ -2202,7 +2202,44 @@ class Game {
     this.perf.trafficUpdate = performance.now() - tTrafficUpdateStart;
 
     const tTrafficMeshStart = performance.now();
-    this.traffic.vehicles.forEach(v => {
+    
+    if (!this._fauxTraffic) this._fauxTraffic = [];
+    const fauxVehicles = [];
+    if (this.traffic && this.traffic.sharedBuffer) {
+      for (let i = 0; i < this.traffic.maxVehicles; i++) {
+        const offset = i * 16;
+        if (this.traffic.sharedBuffer[offset] === -1) {
+          if (this._fauxTraffic[i] && this._fauxTraffic[i].meshGroup) {
+            this._fauxTraffic[i].meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+            this.scene.remove(this._fauxTraffic[i].meshGroup);
+            this._fauxTraffic[i].meshGroup = null;
+          }
+          continue;
+        }
+        
+        let v = this._fauxTraffic[i];
+        if (!v) v = this._fauxTraffic[i] = { id: i, position: new THREE.Vector3(), impactVelocity: new THREE.Vector3() };
+        
+        v.type = this.traffic.sharedBuffer[offset + 1] === 0 ? 'cab' : (this.traffic.sharedBuffer[offset + 1] === 1 ? 'sedan' : 'suv');
+        v.colorHex = this.traffic.sharedBuffer[offset + 2];
+        v.position.set(this.traffic.sharedBuffer[offset + 3], this.traffic.sharedBuffer[offset + 4], this.traffic.sharedBuffer[offset + 5]);
+        v.heading = this.traffic.sharedBuffer[offset + 6];
+        v.pitch = this.traffic.sharedBuffer[offset + 7];
+        v.roll = this.traffic.sharedBuffer[offset + 8];
+        v.opacity = this.traffic.sharedBuffer[offset + 9];
+        v.speed = this.traffic.sharedBuffer[offset + 10];
+        
+        const isSkidding = this.traffic.sharedBuffer[offset + 11] === 1.0;
+        if (isSkidding) {
+          v.impactVelocity.set(-this.traffic.sharedBuffer[offset + 12] * 4, 0, -this.traffic.sharedBuffer[offset + 13] * 4);
+        } else {
+          v.impactVelocity.set(0,0,0);
+        }
+        fauxVehicles.push(v);
+      }
+    }
+
+    fauxVehicles.forEach(v => {
       if (!v.meshGroup) {
         const { carGroup, wheels } = this.createVoxelCarMesh(v.colorHex, v.type);
         
@@ -2221,6 +2258,7 @@ class Game {
         v.wheels = wheels;
       }
       
+      const isTeleport = v.meshGroup.position.distanceToSquared(v.position) > 100.0;
       v.meshGroup.position.copy(v.position);
 
       const dist = v.position.distanceTo(focusTarget.position);
@@ -2229,10 +2267,10 @@ class Game {
       if (!v._frameCounter) v._frameCounter = 0;
       v._frameCounter++;
       const isDistant = dist > 90.0;
-      const shouldUpdateThisFrame = !isDistant || (v._frameCounter % 3 === 0);
+      const shouldUpdateThisFrame = !isDistant || isTeleport || (v._frameCounter % 3 === 0);
 
       if (shouldUpdateThisFrame) {
-        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
+        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, isTeleport ? 999.0 : scaledDt);
         if (v.roll || v.pitch) {
           _scratchQuat.setFromAxisAngle(_scratchV3_1.set(0, 0, 1), v.roll || 0); // rollQ
           _scratchQuat2.setFromAxisAngle(_scratchV3_2.set(1, 0, 0), v.pitch || 0); // pitchQ
@@ -2311,8 +2349,44 @@ class Game {
     });
 
     // Render / update parked vehicles
-    if (this.traffic && this.traffic.parkedVehicles) {
-      this.traffic.parkedVehicles.forEach(v => {
+    if (!this._fauxParked) this._fauxParked = [];
+    const fauxParked = [];
+    if (this.traffic && this.traffic.sharedBuffer) {
+      for (let i = 0; i < this.traffic.maxParkedVehicles; i++) {
+        const offset = (this.traffic.maxVehicles + i) * 16;
+        if (this.traffic.sharedBuffer[offset] === -1) {
+          if (this._fauxParked[i] && this._fauxParked[i].meshGroup) {
+            this._fauxParked[i].meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+            this.scene.remove(this._fauxParked[i].meshGroup);
+            this._fauxParked[i].meshGroup = null;
+          }
+          continue;
+        }
+        
+        let v = this._fauxParked[i];
+        if (!v) v = this._fauxParked[i] = { id: i, position: new THREE.Vector3(), impactVelocity: new THREE.Vector3() };
+        
+        v.type = this.traffic.sharedBuffer[offset + 1] === 0 ? 'cab' : (this.traffic.sharedBuffer[offset + 1] === 1 ? 'sedan' : 'suv');
+        v.colorHex = this.traffic.sharedBuffer[offset + 2];
+        v.position.set(this.traffic.sharedBuffer[offset + 3], this.traffic.sharedBuffer[offset + 4], this.traffic.sharedBuffer[offset + 5]);
+        v.heading = this.traffic.sharedBuffer[offset + 6];
+        v.pitch = this.traffic.sharedBuffer[offset + 7];
+        v.roll = this.traffic.sharedBuffer[offset + 8];
+        v.opacity = this.traffic.sharedBuffer[offset + 9];
+        v.speed = this.traffic.sharedBuffer[offset + 10];
+        
+        const isSkidding = this.traffic.sharedBuffer[offset + 11] === 1.0;
+        if (isSkidding) {
+          v.impactVelocity.set(-this.traffic.sharedBuffer[offset + 12] * 4, 0, -this.traffic.sharedBuffer[offset + 13] * 4);
+        } else {
+          v.impactVelocity.set(0,0,0);
+        }
+        fauxParked.push(v);
+      }
+    }
+
+    if (fauxParked.length > 0) {
+      fauxParked.forEach(v => {
         if (!v.meshGroup) {
           const { carGroup, wheels } = this.createVoxelCarMesh(v.colorHex, v.type);
           
@@ -2340,8 +2414,9 @@ class Game {
         const targetOpacity = v.opacity !== undefined ? v.opacity : 1.0;
         this.updateVehicleLOD(v, dist, targetOpacity);
 
+        const isTeleport = v.meshGroup.position.distanceToSquared(v.position) > 100.0;
         v.meshGroup.position.copy(v.position);
-        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, scaledDt);
+        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, isTeleport ? 999.0 : scaledDt);
         if (v.roll || v.pitch) {
           const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
           const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);

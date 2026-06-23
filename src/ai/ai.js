@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 
+const _copPos = new THREE.Vector3();
+const _copFwd = new THREE.Vector3();
+const _copRight = new THREE.Vector3();
+const _tempFwd = new THREE.Vector3();
+const _tempRight = new THREE.Vector3();
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  AICar  —  Pure Pursuit navigation on the NavGraph road network
 //
@@ -114,7 +122,7 @@ export class AICar {
       // Smoothly coast and brake to a stop instead of freezing instantly
       this.speed = Math.max(0, this.speed - this.braking * 0.4 * dt);
       
-      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const fwd = _tempFwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
       this.velocity.copy(fwd).multiplyScalar(this.speed);
       
       this.position.addScaledVector(this.velocity, dt);
@@ -250,8 +258,8 @@ export class AICar {
     }
 
     // ── 6. Dynamic obstacle dodge (lateral only, cars/traffic) ────────────────
-    const fwd   = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
-    const right  = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+    const fwd   = _tempFwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const right  = _tempRight.set(Math.cos(this.heading), 0, -Math.sin(this.heading));
 
     // Apply lane offset (different driving line per car, drifts over time)
     // In alleys there is no room for a lane drift — zero it out to keep to the center.
@@ -504,7 +512,7 @@ export class AICar {
       if (this.position.y < targetY) this.position.y = targetY;
 
       // Calculate vertical velocity using vector projection at the rear wheels
-      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const fwd = _tempFwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
       const rearWheelX = this.position.x - fwd.x * 1.3;
       const rearWheelZ = this.position.z - fwd.z * 1.3;
       const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
@@ -950,14 +958,14 @@ export class AICar {
     //           This steers the car away while it still has room to correct.
     // Tier B — Hard contact (2.0m): eject + kill momentum (original behaviour).
 
-    const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
-    const right = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+    const fwd = _v1.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const right = _v2.set(Math.cos(this.heading), 0, -Math.sin(this.heading));
 
     // Tier A: soft repulsion zone — don't need actual contact for this
     const nearHit = world.checkCollision(this.position.x, this.position.z, 3.5);
     if (nearHit.collision && !world.checkCollision(this.position.x, this.position.z, 2.0).collision) {
       // Apply a gentle lateral nudge away from the wall
-      const n = new THREE.Vector3(nearHit.normalX, 0, nearHit.normalZ);
+      const n = _v1.set(nearHit.normalX, 0, nearHit.normalZ);
       const lateralDot = n.dot(right);
       // Nudge position slightly away — 0.4m per frame at most
       const nudge = Math.min(0.4, nearHit.overlap * 0.5);

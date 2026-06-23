@@ -48,14 +48,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 2 + Math.floor(rand * 3); // Spacing of 2 to 4 tiles
+      curr += 3 + Math.floor(rand * 5); // Spacing of 3 to 7 tiles
       this.mainRoadColumns.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (2 + Math.floor(rand * 3));
+      curr -= (3 + Math.floor(rand * 5));
       this.mainRoadColumns.add(curr);
     }
 
@@ -63,14 +63,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 2 + Math.floor(rand * 3);
+      curr += 3 + Math.floor(rand * 5);
       this.mainRoadRows.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (2 + Math.floor(rand * 3));
+      curr -= (3 + Math.floor(rand * 5));
       this.mainRoadRows.add(curr);
     }
 
@@ -317,52 +317,6 @@ export class World {
     this.tlGreenOffMat = new THREE.MeshStandardMaterial({ color: 0x003a00, roughness: 0.8 });
     
     this.tlHousingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
-    
-    this.namedMaterials = new Map();
-    this.namedMaterials.set('concreteMat', this.concreteMat);
-    this.namedMaterials.set('yellowLineMat', this.yellowLineMat);
-    this.namedMaterials.set('whiteLineMat', this.whiteLineMat);
-    this.namedMaterials.set('streetlightPoleMat', this.streetlightPoleMat);
-    this.namedMaterials.set('streetlightBulbMat', this.streetlightBulbMat);
-    this.namedMaterials.set('ledGroundLightPoolMat', this.ledGroundLightPoolMat);
-    this.namedMaterials.set('sodiumGroundLightPoolMat', this.sodiumGroundLightPoolMat);
-    this.namedMaterials.set('storefrontGroundLightPoolMat', this.storefrontGroundLightPoolMat);
-    this.namedMaterials.set('lightConeMatLED', this.lightConeMatLED);
-    this.namedMaterials.set('lightConeMatSodium', this.lightConeMatSodium);
-    this.namedMaterials.set('brickMat', this.brickMat);
-    this.namedMaterials.set('buildingConcreteMat', this.buildingConcreteMat);
-    this.namedMaterials.set('slateMat', this.slateMat);
-    this.namedMaterials.set('sandstoneMat', this.sandstoneMat);
-    this.namedMaterials.set('glassySlateMat', this.glassySlateMat);
-    this.namedMaterials.set('darkConcreteMat', this.darkConcreteMat);
-    this.namedMaterials.set('brickDarkMat', this.brickDarkMat);
-    this.namedMaterials.set('windowDetailedMat', this.windowDetailedMat);
-    this.namedMaterials.set('doorMat', this.doorMat);
-    this.namedMaterials.set('accessoryMat', this.accessoryMat);
-    this.namedMaterials.set('dumpsterMat', this.dumpsterMat);
-    this.namedMaterials.set('cardboardMat', this.cardboardMat);
-    this.namedMaterials.set('trashBagMat', this.trashBagMat);
-    this.namedMaterials.set('woodPoleMat', this.woodPoleMat);
-    this.namedMaterials.set('trunkMat', this.trunkMat);
-    this.namedMaterials.set('leafMat', this.leafMat);
-    this.namedMaterials.set('leafCherryMat', this.leafCherryMat);
-    this.namedMaterials.set('leafAutumnMat', this.leafAutumnMat);
-    this.namedMaterials.set('benchWoodMat', this.benchWoodMat);
-    this.namedMaterials.set('benchIronMat', this.benchIronMat);
-    this.namedMaterials.set('phoneBoothFrameMat', this.phoneBoothFrameMat);
-    this.namedMaterials.set('phoneBoothGlassMat', this.phoneBoothGlassMat);
-    this.namedMaterials.set('phoneBoothScreenMat', this.phoneBoothScreenMat);
-    this.namedMaterials.set('trashCanMat', this.trashCanMat);
-    this.namedMaterials.set('trashCanLidMat', this.trashCanLidMat);
-    this.namedMaterials.set('hydrantRedMat', this.hydrantRedMat);
-    this.namedMaterials.set('hydrantCapMat', this.hydrantCapMat);
-    this.namedMaterials.set('newspaperBodyMat', this.newspaperBodyMat);
-    this.namedMaterials.set('newspaperGlassMat', this.newspaperGlassMat);
-    this.namedMaterials.set('newspaperPaperMat', this.newspaperPaperMat);
-    this.namedMaterials.set('tlHousingMat', this.tlHousingMat);
-    this.namedMaterials.set('tlRedOffMat', this.tlRedOffMat);
-    this.namedMaterials.set('tlYellowOffMat', this.tlYellowOffMat);
-    this.namedMaterials.set('tlGreenOffMat', this.tlGreenOffMat);
     
     this.trafficLights = [];
     this.breakables = [];
@@ -1099,12 +1053,11 @@ export class World {
       return this.materials[idx];
     }
 
-    const namedMat = this.namedMaterials.get(name);
-    if (namedMat) {
+    if (this[name]) {
       if (name.includes('LightPoolMat')) {
-        return namedMat.clone();
+        return this[name].clone();
       }
-      return namedMat;
+      return this[name];
     }
 
     console.warn("Could not find material named: ", name);
@@ -1520,6 +1473,21 @@ export class World {
     const tileX = x / tileSize;
     const tileZ = z / tileSize;
 
+    // Helper binary search
+    const findIntervalIndex = (arr, val) => {
+      let low = 0;
+      let high = arr.length - 1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (arr[mid] < val) {
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      return low - 1;
+    };
+
     const idxX = findIntervalIndex(this.sortedColumnsArray, tileX);
     const idxZ = findIntervalIndex(this.sortedRowsArray, tileZ);
 
@@ -1536,16 +1504,34 @@ export class World {
     const row1 = this.sortedRowsArray[rowIdx1];
     const row2 = this.sortedRowsArray[rowIdx2];
 
+    const hashString = (str) => {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) | 0;
+      }
+      return (Math.abs(hash) % 10000) / 10000;
+    };
+
+    const getIntersectionHeight = (c, r) => {
+      if ((c + r) % 2 !== 0) return 0.0;
+      const key = `I,${c},${r}`;
+      const hash = hashString(key);
+      if (hash < 0.30) {
+        const sign = ((c + r) % 4 === 0) ? 1 : -1;
+        const isSharp = hashString(key + "sharp") < 0.45;
+        const amp = isSharp ? (12.0 + hashString(key + "h") * 4.0) : (7.0 + hashString(key + "h") * 3.0);
+        return sign * amp;
+      }
+      return 0.0;
+    };
+
     const h00 = getIntersectionHeight(colIdx1, rowIdx1);
     const h10 = getIntersectionHeight(colIdx2, rowIdx1);
     const h01 = getIntersectionHeight(colIdx1, rowIdx2);
     const h11 = getIntersectionHeight(colIdx2, rowIdx2);
 
-    let u = (tileX - col1) / (col2 - col1);
-    let v = (tileZ - row1) / (row2 - row1);
-    
-    u = linearRamp(u);
-    v = linearRamp(v);
+    const u = (tileX - col1) / (col2 - col1);
+    const v = (tileZ - row1) / (row2 - row1);
 
     const val = (1 - u) * (1 - v) * h00 + u * (1 - v) * h10 + (1 - u) * v * h01 + u * v * h11;
     return val;
@@ -1611,12 +1597,29 @@ export class World {
   }
 
   alignMeshToTerrain(mesh, position, heading, isAirborne = null, dt = 0.016) {
+    const groundH = this.getGroundHeight(position.x, position.z);
+    const heightAboveGround = Math.max(0, position.y - groundH);
+
+    // Calculate height-based alignment weight
+    let alignmentWeight = 1.0;
+    if (heightAboveGround > 0.85) {
+      const fadeDist = 1.15; // smooth fade from 0.85m to 2.0m height
+      alignmentWeight = 1.0 - Math.min(1.0, (heightAboveGround - 0.85) / fadeDist);
+      // Apply smoothstep
+      alignmentWeight = alignmentWeight * alignmentWeight * (3 - 2 * alignmentWeight);
+    }
+
+    // Force alignment to 0 during rollovers or explicit airborne states
     if (isAirborne === true) {
-      // Airborne: Preserve the exact launch tilt (pitch/roll), but update yaw (heading).
-      // This prevents the car from violently snapping flat the moment it leaves a ramp.
-      const currentEuler = new THREE.Euler().setFromQuaternion(mesh.quaternion, 'YXZ');
-      currentEuler.y = heading;
-      mesh.quaternion.setFromEuler(currentEuler);
+      alignmentWeight = 0.0;
+    }
+
+    // Flat orientation quaternion (yaw only)
+    _qFlat.setFromAxisAngle(_yAxis, heading);
+
+    if (alignmentWeight <= 0.001) {
+      const t = Math.min(1.0, 18.0 * dt);
+      mesh.quaternion.slerp(_qFlat, t);
       return;
     }
 
@@ -1662,9 +1665,10 @@ export class World {
     _matrix.makeBasis(_right, _up, _fwd);
     _qTarget.setFromRotationMatrix(_matrix);
 
-    // Smoothly slerp to terrain slope
+    // Slerp from flat to terrain slope target
+    const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
     const t = 1.0 - Math.exp(-18.0 * dt);
-    mesh.quaternion.slerp(_qTarget, t);
+    mesh.quaternion.slerp(targetQ, t);
   }
 }
 
@@ -1681,54 +1685,7 @@ const _side = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _matrix = new THREE.Matrix4();
+const _qFlat = new THREE.Quaternion();
 const _qTarget = new THREE.Quaternion();
+const _yAxis = new THREE.Vector3(0, 1, 0);
 
-function findIntervalIndex(arr, val) {
-  let low = 0;
-  let high = arr.length - 1;
-  while (low <= high) {
-    const mid = (low + high) >> 1;
-    if (arr[mid] < val) {
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-  return low - 1;
-}
-
-function hashInt(x, y, seed) {
-  let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
-  h ^= h >>> 13;
-  h = Math.imul(h, 0xc2b2ae35);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296.0;
-}
-
-function getIntersectionHeight(c, r) {
-  if ((c + r) % 2 !== 0) return 0.0;
-  const hash = hashInt(c, r, 0);
-  if (hash < 0.25) { // more natural probability (more flat spots)
-    const isHill = ((c + r) % 4 === 0);
-    const sign = isHill ? 1 : -1;
-    const isSharp = hashInt(c, r, 1) < 0.45;
-    
-    let amp;
-    if (isHill) {
-      // Shorter uphill
-      amp = isSharp ? (10.0 + hashInt(c, r, 2) * 5.0) : (6.0 + hashInt(c, r, 3) * 3.0);
-    } else {
-      // Normal downhill
-      amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
-    }
-    return sign * amp;
-  }
-  return 0.0;
-}
-
-function linearRamp(t) {
-  const margin = 0.25;
-  if (t < margin) return 0.0;
-  if (t > 1.0 - margin) return 1.0;
-  return (t - margin) / (1.0 - 2.0 * margin);
-}

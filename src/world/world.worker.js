@@ -387,9 +387,11 @@ function serializeObject(obj) {
     isGround: obj.isGround
   };
 
-  if (obj.isMesh || obj.isSprite || obj.isInstancedMesh) {
+  if (obj.isMesh || obj.isInstancedMesh) {
     data.material = serializeMaterial(obj.material);
     data.geometry = serializeGeometry(obj.geometry);
+  } else if (obj.isSprite) {
+    data.material = serializeMaterial(obj.material);
   }
 
   if (obj.isInstancedMesh) {

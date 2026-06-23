@@ -1054,6 +1054,9 @@ export class World {
     }
 
     if (this[name]) {
+      if (name.includes('LightPoolMat')) {
+        return this[name].clone();
+      }
       return this[name];
     }
 
@@ -1064,6 +1067,7 @@ export class World {
   reconstructObject(data, cache) {
     if (data.type === 'Group') {
       const group = new THREE.Group();
+      group.name = data.name;
       group.position.fromArray(data.position);
       group.quaternion.fromArray(data.quaternion);
       group.scale.fromArray(data.scale);
@@ -1077,6 +1081,7 @@ export class World {
 
     if (data.type === 'LOD') {
       const lod = new THREE.LOD();
+      lod.name = data.name;
       lod.position.fromArray(data.position);
       lod.quaternion.fromArray(data.quaternion);
       lod.scale.fromArray(data.scale);
@@ -1093,7 +1098,7 @@ export class World {
 
     let mat;
     if (data.material) {
-      if (!data.material.name && data.material.type !== 'custom_emissive') {
+      if (!data.material.name && data.material.type !== 'custom_emissive' && data.material.type !== 'sprite') {
         console.warn("Object missing material name:", data.name, data.type, data.material);
       }
       mat = this.reconstructMaterial(data.material);

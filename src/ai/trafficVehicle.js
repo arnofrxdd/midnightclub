@@ -735,6 +735,9 @@ export class TrafficVehicle {
     const rgtCos = Math.cos(this.heading);
     const rgtSin = -Math.sin(this.heading);
 
+    // Minimum safe following distance — scales with current speed so fast cars brake earlier
+    const minFollowDist = Math.max(12.0, this.speed * 1.4);
+
     for (let ci = 0; ci < otherCars.length; ci++) {
       const car = otherCars[ci];
       const cx = car.position.x - this.position.x;
@@ -742,8 +745,8 @@ export class TrafficVehicle {
       const localZ = cx * fwdSin + cz * fwdCos;
       const localX = cx * rgtCos + cz * rgtSin;
 
-      // If the other vehicle is in front of us, within 22 meters, and in the same lane (width 4.0m)
-      if (localZ > 0.5 && localZ < 22.0 && Math.abs(localX) < 4.0) {
+      // If the other vehicle is in front of us within dynamic safe distance and in the same lane (width 4.5m)
+      if (localZ > 0.5 && localZ < minFollowDist && Math.abs(localX) < 4.5) {
         stopForCar = true;
         break;
       }
@@ -908,8 +911,26 @@ export class TrafficVehicle {
           steer = rejoinSteer * (this.roadAxis === 'x' ? -this.dirSign : this.dirSign);
         }
 
-        // Drive forward slowly to execute the turn (e.g. 5.5 m/s)
-        this.speed += (5.5 - this.speed) * 2.5 * dt;
+        // Don't accelerate into another vehicle while recovering
+        let recoverySafe = true;
+        for (let ci = 0; ci < otherCars.length; ci++) {
+          const car = otherCars[ci];
+          const cx = car.position.x - this.position.x;
+          const cz = car.position.z - this.position.z;
+          const localZ = cx * fwdSin + cz * fwdCos;
+          const localX = cx * rgtCos + cz * rgtSin;
+          if (localZ > 0.5 && localZ < 10.0 && Math.abs(localX) < 4.5) {
+            recoverySafe = false;
+            break;
+          }
+        }
+
+        if (recoverySafe) {
+          // Drive forward slowly to execute the turn (e.g. 5.5 m/s)
+          this.speed += (5.5 - this.speed) * 2.5 * dt;
+        } else {
+          this.speed += (0.0 - this.speed) * 6.0 * dt;
+        }
 
         // Heading changes dynamically by driving forward (speed/length * steer)
         this.heading += (this.speed / 4.4) * steer * dt;
@@ -989,6 +1010,30 @@ export class TrafficVehicle {
             chosen = c;
             break;
           }
+        }
+
+        // Only commit the turn if the car is not going straight (axis unchanged).
+        // When actually turning (perpAxis chosen), snap the roadCoord to the intersection
+        // center so the lane re-centering error doesn't spike and whip the car.
+        const isTurning = chosen.axis !== this.roadAxis;
+        if (isTurning) {
+          // Snap position to the intersection center on the road axis we are leaving,
+          // preventing a large lane error that would cause an instant violent swerve.
+          if (this.roadAxis === 'x') {
+            this.position.x = currentBlockX; // center on the column we are entering
+          } else {
+            this.position.z = currentBlockZ; // center on the row we are entering
+          }
+          // Also force the heading to the new road direction immediately
+          // so the rejoinAngle computed next frame starts from the correct baseline.
+          const newBaselineAngle = chosen.axis === 'z'
+            ? (chosen.dir > 0 ? 0 : Math.PI)
+            : (chosen.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+          // Interpolate 80% of the way to avoid an abrupt snap while still correcting fast.
+          let hdgDiff = newBaselineAngle - this.heading;
+          while (hdgDiff < -Math.PI) hdgDiff += Math.PI * 2;
+          while (hdgDiff > Math.PI) hdgDiff -= Math.PI * 2;
+          this.heading += hdgDiff * 0.80;
         }
 
         this.roadAxis = chosen.axis;

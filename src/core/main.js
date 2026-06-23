@@ -3421,7 +3421,6 @@ class Game {
     this.updateDriftNitro(scaledDt);
 
     // Update debug path and lookahead visuals (DISABLED)
-    /*
     let hasPath = false;
     if (this.debugFocusAI && this.race && this.race.aiRacers) {
       const activeAI = this.race.aiRacers.find(ai => ai.id === this.debugFocusAI);
@@ -3453,7 +3452,6 @@ class Game {
       this.debugPathLine.visible = false;
       this.debugLookaheadMarker.visible = false;
     }
-    */
 
     
     // Update skidmarks (Persistent until far away - 220m)

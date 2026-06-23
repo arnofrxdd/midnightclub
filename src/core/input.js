@@ -23,7 +23,7 @@ export function initInput() {
 
       const key = e.key ? e.key.toLowerCase() : '';
       if (key === 'c') this.cycleCameraMode();
-      if (key === 'v') this.cycleCameraFocus();
+      if (key === 'v' || key === 'p') this.cycleCameraFocus();
       if (key === 'm') {
         if (this.debugMenuEnabled && this.racePanelEl) {
           const isHidden = this.racePanelEl.style.display === 'none';

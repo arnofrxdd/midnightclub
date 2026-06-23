@@ -96,6 +96,13 @@ export class AICar {
     // ── Nitro System ─────────────────────────────────────────────────────────
     this.nitroLevel = 0.5 + Math.random() * 0.5;
     this.isNitroBoosting = false;
+
+    // ── Donut U-turn system ───────────────────────────────────────────────────
+    this._donutTimer = 0;   // > 0 while spinning a U-turn donut
+    this._donutDir   = 1;   // +1 = clockwise spin, -1 = counter-clockwise
+
+    // ── Predictive corridor state ─────────────────────────────────────────────
+    this._corridorOffset = 0; // current smoothed lateral offset in metres
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -179,8 +186,18 @@ export class AICar {
       return;
     }
 
+    // ── 4b. DONUT U-TURN MODE ────────────────────────────────────────────────
+    if (this._donutTimer > 0) {
+      this._donutTimer -= dt;
+      this._tickDonut(dt, world);
+      this._applyWallPushback(world);
+      this._checkCheckpoints(target, raceManager, world);
+      this._updateMesh(world, dt);
+      return;
+    }
+
     // ── 5. Pure Pursuit — lookahead point on path ────────────────────────────
-    const lookahead = this._getLookaheadPoint();
+    const lookahead = this._getLookaheadPoint(world);
     if (!lookahead) {
       // No path available — drive straight to target as fallback
       lookahead?.copy(targetPos) ?? targetPos.clone();
@@ -191,8 +208,14 @@ export class AICar {
     const right  = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
 
     // Apply lane offset (different driving line per car, drifts over time)
+    // In alleys there is no room for a lane drift — zero it out to keep to the center.
+    const inAlley = world.isAlley
+      ? world.isAlley(Math.round(this.position.x / world.tileSize),
+                      Math.round(this.position.z / world.tileSize))
+      : false;
+    const effectiveLineOffset = inAlley ? 0 : this.lineOffset;
     const lookaheadShifted = lookahead
-      ? lookahead.clone().addScaledVector(right, this.lineOffset * 0.3)
+      ? lookahead.clone().addScaledVector(right, effectiveLineOffset * 0.3)
       : null;
     const baseLookahead = (lookaheadShifted &&
       !world.checkCollision(lookaheadShifted.x, lookaheadShifted.z, 1.5).collision)
@@ -202,17 +225,28 @@ export class AICar {
     this._dodgeTimer -= dt;
 
     if (this._dodgeTimer <= 0 && this.speed > 4) {
-      // Evaluate dodge faster at high speeds to avoid obstacles in time
       this._dodgeTimer = this.isNitroBoosting ? 0.05 : 0.10;
-      this._dodgeSide  = this._evaluateDodge(raceManager, traffic, fwd, right, world);
+      // Scan 7 future corridors and smoothly interpolate toward the best one
+      const targetOffset = this._scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley);
+      // Smooth transition — avoids sudden swerving; faster update at high speed
+      const lerpRate = this.isNitroBoosting ? 0.55 : 0.35;
+      this._corridorOffset += (targetOffset - this._corridorOffset) * lerpRate;
     }
 
-    // Dodge + line offset applied to the (already lane-shifted) lookahead
-    const dodgeMetres = this._dodgeSide * 5.0;
-    const dodgedPt    = baseLookahead.clone().addScaledVector(right, dodgeMetres);
+    // Corridor offset applied to the lookahead; fade it out mid-corner
+    const baseDx = baseLookahead.x - this.position.x;
+    const baseDz = baseLookahead.z - this.position.z;
+    let tempHdgErr = Math.atan2(baseDx, baseDz) - this.heading;
+    while (tempHdgErr >  Math.PI) tempHdgErr -= Math.PI * 2;
+    while (tempHdgErr < -Math.PI) tempHdgErr += Math.PI * 2;
 
-    // Safety: if dodge pushes point into a building, cancel it
-    const usePt = (world.checkCollision(dodgedPt.x, dodgedPt.z, 1.5).collision)
+    const cornerFade = Math.max(0, 1.0 - (Math.abs(tempHdgErr) - 0.25) * 2.5);
+    const dodgedPt   = baseLookahead.clone().addScaledVector(right, this._corridorOffset * cornerFade);
+
+    // Safety: if dodge pushes point into a building or its path is blocked, cancel it
+    const midPt = this.position.clone().lerp(dodgedPt, 0.5);
+    const usePt = (world.checkCollision(dodgedPt.x, dodgedPt.z, 2.0).collision ||
+                   world.checkCollision(midPt.x, midPt.z, 2.0).collision)
       ? baseLookahead
       : dodgedPt;
 
@@ -223,27 +257,40 @@ export class AICar {
     const dz  = usePt.z - this.position.z;
     let desiredHdg = Math.atan2(dx, dz);
 
-    // ── 8. Alley centering (minor correction, only in alleys) ────────────────
-    const inAlley = world.isAlley
-      ? world.isAlley(Math.round(this.position.x / world.tileSize),
-                      Math.round(this.position.z / world.tileSize))
-      : false;
+    // ── 8. Alley centering — wider lateral whiskers to catch edge obstacles ────
 
     if (inAlley) {
+      // Sample at 2m, 5m, and 8m to the left and right
+      // This catches dumpsters/bins/poles at the alley edges well before contact
       const lh1 = world.checkCollision(this.position.x - right.x * 2.0, this.position.z - right.z * 2.0, 1.2);
-      const lh2 = world.checkCollision(this.position.x - right.x * 3.5, this.position.z - right.z * 3.5, 1.2);
+      const lh2 = world.checkCollision(this.position.x - right.x * 5.0, this.position.z - right.z * 5.0, 1.2);
+      const lh3 = world.checkCollision(this.position.x - right.x * 8.0, this.position.z - right.z * 8.0, 1.4);
       const rh1 = world.checkCollision(this.position.x + right.x * 2.0, this.position.z + right.z * 2.0, 1.2);
-      const rh2 = world.checkCollision(this.position.x + right.x * 3.5, this.position.z + right.z * 3.5, 1.2);
-      const ld  = lh1.collision ? 2.0 : (lh2.collision ? 3.5 : 6.0);
-      const rd  = rh1.collision ? 2.0 : (rh2.collision ? 3.5 : 6.0);
-      // Push heading away from closer wall
-      desiredHdg += (rd - ld) * 0.04;
+      const rh2 = world.checkCollision(this.position.x + right.x * 5.0, this.position.z + right.z * 5.0, 1.2);
+      const rh3 = world.checkCollision(this.position.x + right.x * 8.0, this.position.z + right.z * 8.0, 1.4);
+      // Nearest detected obstacle distance on each side
+      const ld  = lh1.collision ? 2.0 : (lh2.collision ? 5.0 : (lh3.collision ? 8.0 : 14.0));
+      const rd  = rh1.collision ? 2.0 : (rh2.collision ? 5.0 : (rh3.collision ? 8.0 : 14.0));
+      // Push heading away from the closer side — stronger correction the closer it is
+      const pushStrength = 0.07;
+      desiredHdg += (rd - ld) * pushStrength;
     }
 
     // ── 9. Yaw rate (Pure Pursuit steer) ────────────────────────────────────
     let hdgErr = desiredHdg - this.heading;
     while (hdgErr >  Math.PI) hdgErr -= Math.PI * 2;
     while (hdgErr < -Math.PI) hdgErr += Math.PI * 2;
+
+    // ── Donut U-turn trigger ─────────────────────────────────────────────────
+    // When the path requires a near-reversal (>140°) and the car is slow enough,
+    // enter a spinning donut burnout instead of trying to steer the long way round.
+    if (this._donutTimer <= 0 && !this._escapeTimer &&
+        Math.abs(hdgErr) > 2.4 && this.speed < 28) {
+      this._donutDir   = Math.sign(hdgErr);
+      // Duration scales slightly with how far off we are — bigger flip = longer spin
+      this._donutTimer = 0.9 + Math.random() * 0.5;
+      this._stuckTimer = 0;  // don't let stuck-timer fire mid-donut
+    }
 
     const maxYaw    = 1.9;
     const yawTarget = Math.max(-maxYaw, Math.min(maxYaw, hdgErr * 3.2));
@@ -257,18 +304,35 @@ export class AICar {
     // ── 10. Speed control ────────────────────────────────────────────────────
     let targetSpeed = this.maxSpeed;
 
+    // Hard alley speed cap — alleys are ~27m wide with obstacles at the edges.
+    // Even a moderate personality car at 55 m/s cannot safely navigate them.
+    if (inAlley) {
+      targetSpeed = Math.min(targetSpeed, 22);
+    }
+
     // Slow for sharp heading error (cornering)
     const absErr = Math.abs(hdgErr);
     if (absErr > 0.4) {
       targetSpeed *= Math.max(0.35, 1.0 - (absErr - 0.4) * 1.1);
     }
 
-    // Slow for close walls ahead (single front whisker)
-    const fwdCheck = this.position.clone().addScaledVector(fwd, inAlley ? 7 : 12);
-    const fwdHit   = world.checkCollision(fwdCheck.x, fwdCheck.z, inAlley ? 1.8 : 2.4);
+    // ── Fix #1: Speed-proportional wall lookahead ────────────────────────────
+    // At 70 m/s a fixed 12m gives only 0.17s reaction — not enough to stop.
+    // Scale lookahead with speed so the car always has time to react.
+    const wallLookDist   = inAlley ? 7  : Math.max(14, this.speed * 0.45);
+    const wallCheckRadius = inAlley ? 1.8 : 2.6;
+    const fwdCheck = this.position.clone().addScaledVector(fwd, wallLookDist);
+    const fwdHit   = world.checkCollision(fwdCheck.x, fwdCheck.z, wallCheckRadius);
     if (fwdHit.collision) {
-      const safeTop = inAlley ? 10 : 16;
+      // Slow proportionally — closer to wall = lower speed cap
+      const safeTop = inAlley ? 9 : Math.min(16, Math.max(5, this.speed * 0.25));
       targetSpeed   = Math.min(targetSpeed, safeTop);
+    }
+
+    // Medium-range check: extra caution at moderate distance
+    const midClose = this.position.clone().addScaledVector(fwd, inAlley ? 5.5 : Math.max(8, this.speed * 0.22));
+    if (world.checkCollision(midClose.x, midClose.z, inAlley ? 1.7 : 2.4).collision) {
+      targetSpeed = Math.min(targetSpeed, inAlley ? 5 : 8);
     }
 
     // Extra close: hard brake for walls
@@ -448,7 +512,10 @@ export class AICar {
         const cutDist = 4 + this.cornerCutBias * 8;
         const testX = pCurr.x + bx * cutDist;
         const testZ = pCurr.z + bz * cutDist;
-        if (!world.checkCollision(testX, testZ, 2.0).collision) {
+        // ── Fix #3: Larger clearance radius (4.0m vs old 2.0m) ───────────────
+        // A 2m check can leave waypoints dangerously close to building corners.
+        // 4m ensures the car body (plus turning arc) clears the wall cleanly.
+        if (!world.checkCollision(testX, testZ, 4.0).collision) {
           pCurr.x = testX;
           pCurr.z = testZ;
         }
@@ -479,7 +546,7 @@ export class AICar {
   }
 
   // Pure Pursuit: find the point L metres ahead on the current path
-  _getLookaheadPoint() {
+  _getLookaheadPoint(world) {
     const path = this._currentPath;
     if (!path || path.length === 0) return null;
 
@@ -509,12 +576,42 @@ export class AICar {
       this._pathWptIdx = closestIdx;
     }
 
-    // Also advance if we are very close to the current target (under 10m in 2D)
-    while (
-      this._pathWptIdx < path.length - 1 &&
-      dist2D(this.position, path[this._pathWptIdx]) < 10
-    ) {
-      this._pathWptIdx++;
+    // ── Bulletproof Waypoint Clearing ────────────────────────────────────────
+    // Advance to the next waypoint if:
+    // 1. We physically hit it (within 12m)
+    // 2. We drove past its perpendicular plane (it's now behind us) while within 35m
+    // 3. We cut the corner and are now physically closer to the NEXT waypoint
+    while (this._pathWptIdx < path.length - 1) {
+      const targetWpt = path[this._pathWptIdx];
+      const dist = dist2D(this.position, targetWpt);
+
+      if (dist < 12) {
+        this._pathWptIdx++;
+        continue;
+      }
+
+      // If we are somewhat close, check if the waypoint is behind us
+      if (dist < 35) {
+        const toWptX = targetWpt.x - this.position.x;
+        const toWptZ = targetWpt.z - this.position.z;
+        const fwdX = Math.sin(this.heading);
+        const fwdZ = Math.cos(this.heading);
+        
+        // Dot product < 0 means the point is behind the car's forward direction
+        if ((toWptX * fwdX) + (toWptZ * fwdZ) < 0) {
+          this._pathWptIdx++;
+          continue;
+        }
+      }
+
+      // Check if we are physically closer to the NEXT waypoint
+      const nextWpt = path[this._pathWptIdx + 1];
+      if (dist2D(this.position, nextWpt) < dist) {
+        this._pathWptIdx++;
+        continue;
+      }
+
+      break;
     }
 
     // Lookahead distance scales with speed (faster = look further ahead)
@@ -539,51 +636,99 @@ export class AICar {
       pz = next.z;
     }
 
-    // Clamp to last waypoint
-    return path[path.length - 1].clone();
+    // ── Fix #2: Clamp lookahead point away from walls ────────────────────────
+    // If the last waypoint itself is too close to a building, walk backwards
+    // along the path to find a safer point at least 3.5m clear of any wall.
+    const rawPt = path[path.length - 1];
+    if (world.checkCollision(rawPt.x, rawPt.z, 3.5).collision) {
+      // Try walking backwards a few steps to find clearance
+      for (let back = path.length - 2; back >= this._pathWptIdx; back--) {
+        const candidate = path[back];
+        if (!world.checkCollision(candidate.x, candidate.z, 3.5).collision) {
+          return candidate.clone();
+        }
+      }
+    }
+    return rawPt.clone();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  DYNAMIC OBSTACLE DODGE
+  //  PREDICTIVE CORRIDOR SCANNER
+  //  Evaluates N parallel future paths and returns the best lateral offset (m).
+  //  Unlike the old binary dodge (left/center/right), this scans continuous
+  //  offsets and scores them across the FULL look-ahead depth so the AI
+  //  picks a line that is clear the whole way, not just at one point.
   // ═══════════════════════════════════════════════════════════════════════════
-  _evaluateDodge(raceManager, traffic, fwd, right, world) {
-    // Build list of nearby dynamic obstacles
-    const obstacles = [];
-    if (raceManager.playerPos)
-      obstacles.push(raceManager.playerPos);
-    raceManager.aiRacers.forEach(o => {
-      if (o.id !== this.id) obstacles.push(o.position);
-    });
+  _scanBestCorridor(fwd, right, world, traffic, raceManager, inAlley) {
+    // ─ Build dynamic obstacle list once ───────────────────────────────────
+    const dynObs = [];
+    if (raceManager.playerPos) dynObs.push(raceManager.playerPos);
+    raceManager.aiRacers.forEach(o => { if (o.id !== this.id) dynObs.push(o.position); });
     if (traffic) {
-      if (traffic.vehicles) traffic.vehicles.forEach(v => obstacles.push(v.position));
-      if (traffic.parkedVehicles) traffic.parkedVehicles.forEach(v => obstacles.push(v.position));
+      if (traffic.vehicles)       traffic.vehicles.forEach(v => dynObs.push(v.position));
+      if (traffic.parkedVehicles) traffic.parkedVehicles.forEach(v => dynObs.push(v.position));
     }
 
-    // Look further ahead and check a wider safety corridor when boosting at high speed
-    const lookDist   = Math.max(18, this.speed * (this.isNitroBoosting ? 0.95 : 0.8));
-    const corridorW  = this.isNitroBoosting ? 3.8 : 2.8; // half-width of car corridor
+    // ─ Corridor candidates (metres to the right of current heading) ────────
+    // Narrower spread in alleys where there is less lateral room.
+    const offsets = inAlley
+      ? [-4, -2, 0, 2, 4]
+      : [-9, -6, -3, 0, 3, 6, 9];
 
-    // Score each side (-1 left, 0 centre, +1 right)
-    let bestSide = 0, bestScore = Infinity;
-    for (const side of [-1, 0, 1]) {
-      let score = Math.abs(side) * 0.4; // prefer centre
-      for (let s = 1; s <= 5; s++) {
-        const d  = (s / 5) * lookDist;
-        const pt = this.position.clone()
-          .addScaledVector(fwd,   d)
-          .addScaledVector(right, side * corridorW * (d / lookDist));
+    // How far ahead to scan, and how many depth slices to sample per corridor.
+    // More slices = better prediction but more collision queries per frame.
+    const scanDist  = Math.max(20, this.speed * 0.70);
+    const numSteps  = 8;
+    // Wider check radius at high speed (car footprint effective area grows)
+    const checkR    = inAlley ? 1.6 : (this.isNitroBoosting ? 3.0 : 2.4);
+    const dynR      = 5.5; // radius for dynamic obstacle detection
 
-        // Building in this corridor path → very high penalty
-        if (world.checkCollision(pt.x, pt.z, 2.2).collision) { score += 9999; break; }
+    let bestOffset = 0;
+    let bestScore  = Infinity;
 
-        // Dynamic obstacle in path
-        for (const ob of obstacles) {
-          if (pt.distanceTo(ob) < 5.5) { score += 300; break; }
+    for (let ci = 0; ci < offsets.length; ci++) {
+      const offset = offsets[ci];
+      // Small centre bias so the car hugs the middle when all paths are equally clear
+      let score = Math.abs(offset) * 0.3;
+
+      for (let s = 1; s <= numSteps; s++) {
+        const t  = s / numSteps;           // 0..1 depth fraction
+        const d  = t * scanDist;           // world-space distance ahead
+        // Fan the corridor out gradually: at half-depth we are at half-offset.
+        // This mimics how a real vehicle's path curves, not a straight strafe.
+        const lat = offset * Math.min(1.0, t * 1.8);
+
+        const px = this.position.x + fwd.x * d + right.x * lat;
+        const pz = this.position.z + fwd.z * d + right.z * lat;
+
+        // ■ Static obstacle (wall / building / alley prop)
+        if (world.checkCollision(px, pz, checkR).collision) {
+          // Earlier blocks in the corridor are much worse than far ones
+          // so the AI prefers paths blocked only at the very end.
+          score += 8000 * (2.0 - t);
+          break; // Rest of this corridor doesn't matter
+        }
+
+        // ■ Dynamic obstacles (player, other AI, traffic)
+        for (let di = 0; di < dynObs.length; di++) {
+          const ob = dynObs[di];
+          const dx = px - ob.x;
+          const dz = pz - ob.z;
+          if (dx * dx + dz * dz < dynR * dynR) {
+            // Penalty scales with how close (time-wise) the obstacle is
+            score += 350 * (1.5 - t * 0.5);
+            break;
+          }
         }
       }
-      if (score < bestScore) { bestScore = score; bestSide = side; }
+
+      if (score < bestScore) {
+        bestScore  = score;
+        bestOffset = offset;
+      }
     }
-    return bestSide;
+
+    return bestOffset;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -670,9 +815,69 @@ export class AICar {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  DONUT U-TURN
+  // ═══════════════════════════════════════════════════════════════════════════
+  _tickDonut(dt, world) {
+    // Spin rate: ~3.2 rad/s completes ~180° in about 1 second
+    const spinRate = 3.2;
+    this.heading += this._donutDir * spinRate * dt;
+    while (this.heading >  Math.PI) this.heading -= Math.PI * 2;
+    while (this.heading < -Math.PI) this.heading += Math.PI * 2;
+
+    // Drive forward at moderate speed to trace the circular arc (real donut shape)
+    const targetSpeed = 16;
+    this.speed += (targetSpeed - this.speed) * 4.0 * dt;
+    this.speed  = Math.min(this.speed, this.maxSpeed);
+
+    this.velocity.set(
+      Math.sin(this.heading) * this.speed,
+      0,
+      Math.cos(this.heading) * this.speed
+    );
+
+    this.position.addScaledVector(this.velocity, dt);
+
+    const targetY = (world && typeof world.getGroundHeight === 'function')
+      ? world.getGroundHeight(this.position.x, this.position.z)
+      : 0.5;
+    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+
+    // Visual cues — full lock steer, drifting flag set for tire smoke
+    this.isDrifting    = true;
+    this.isBoosting    = false;
+    this.steeringAngle = this._donutDir * this.maxSteerAngle;
+    this.angularVelocity = this._donutDir * spinRate;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  WALL PUSHBACK  (runs every frame as safety net)
   // ═══════════════════════════════════════════════════════════════════════════
   _applyWallPushback(world) {
+    // ── Fix #4: Two-tier wall response ───────────────────────────────────────
+    // Tier A — Early warning (3.5m): gentle steering repulsion BEFORE impact.
+    //           This steers the car away while it still has room to correct.
+    // Tier B — Hard contact (2.0m): eject + kill momentum (original behaviour).
+
+    const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const right = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+
+    // Tier A: soft repulsion zone — don't need actual contact for this
+    const nearHit = world.checkCollision(this.position.x, this.position.z, 3.5);
+    if (nearHit.collision && !world.checkCollision(this.position.x, this.position.z, 2.0).collision) {
+      // Apply a gentle lateral nudge away from the wall
+      const n = new THREE.Vector3(nearHit.normalX, 0, nearHit.normalZ);
+      const lateralDot = n.dot(right);
+      // Nudge position slightly away — 0.4m per frame at most
+      const nudge = Math.min(0.4, nearHit.overlap * 0.5);
+      this.position.x += nearHit.normalX * nudge;
+      this.position.z += nearHit.normalZ * nudge;
+      // Also bias heading away — tiny angular push so the car steers clear
+      // Positive lateralDot means wall is to the right → steer left (negative heading delta)
+      this.heading -= lateralDot * 0.08;
+      return; // Don't run Tier B this frame if only in soft zone
+    }
+
+    // Tier B: hard contact — eject and kill momentum
     const hit = world.checkCollision(this.position.x, this.position.z, 2.0);
     if (!hit.collision) return;
 
@@ -686,7 +891,6 @@ export class AICar {
     if (dv < 0) this.velocity.addScaledVector(n, -dv);
 
     // Cancel forward speed component into wall
-    const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
     if (this.speed > 0 && fwd.dot(n) < -0.4) {
       this.speed *= 0.25;
     }

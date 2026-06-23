@@ -1520,21 +1520,6 @@ export class World {
     const tileX = x / tileSize;
     const tileZ = z / tileSize;
 
-    // Helper binary search
-    const findIntervalIndex = (arr, val) => {
-      let low = 0;
-      let high = arr.length - 1;
-      while (low <= high) {
-        const mid = (low + high) >> 1;
-        if (arr[mid] < val) {
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
-      return low - 1;
-    };
-
     const idxX = findIntervalIndex(this.sortedColumnsArray, tileX);
     const idxZ = findIntervalIndex(this.sortedRowsArray, tileZ);
 
@@ -1551,27 +1536,6 @@ export class World {
     const row1 = this.sortedRowsArray[rowIdx1];
     const row2 = this.sortedRowsArray[rowIdx2];
 
-    const hashInt = (x, y, seed) => {
-      let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
-      h ^= h >>> 13;
-      h = Math.imul(h, 0xc2b2ae35);
-      h ^= h >>> 16;
-      return (h >>> 0) / 4294967296.0;
-    };
-
-    const getIntersectionHeight = (c, r) => {
-      if ((c + r) % 2 !== 0) return 0.0;
-      const hash = hashInt(c, r, 0);
-      if (hash < 0.30) { // natural probability
-        const sign = ((c + r) % 4 === 0) ? 1 : -1;
-        const isSharp = hashInt(c, r, 1) < 0.45;
-        // Natural amplitude for normal jumps
-        const amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
-        return sign * amp;
-      }
-      return 0.0;
-    };
-
     const h00 = getIntersectionHeight(colIdx1, rowIdx1);
     const h10 = getIntersectionHeight(colIdx2, rowIdx1);
     const h01 = getIntersectionHeight(colIdx1, rowIdx2);
@@ -1579,14 +1543,6 @@ export class World {
 
     let u = (tileX - col1) / (col2 - col1);
     let v = (tileZ - row1) / (row2 - row1);
-
-    // Use a piecewise linear function for straight, angular ramps instead of curves
-    const linearRamp = (t) => {
-      const margin = 0.25; // 25% flat at intersections, 50% straight ramp in the middle
-      if (t < margin) return 0.0;
-      if (t > 1.0 - margin) return 1.0;
-      return (t - margin) / (1.0 - 2.0 * margin);
-    };
     
     u = linearRamp(u);
     v = linearRamp(v);
@@ -1725,7 +1681,54 @@ const _side = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _matrix = new THREE.Matrix4();
-const _qFlat = new THREE.Quaternion();
 const _qTarget = new THREE.Quaternion();
-const _yAxis = new THREE.Vector3(0, 1, 0);
 
+function findIntervalIndex(arr, val) {
+  let low = 0;
+  let high = arr.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (arr[mid] < val) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return low - 1;
+}
+
+function hashInt(x, y, seed) {
+  let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296.0;
+}
+
+function getIntersectionHeight(c, r) {
+  if ((c + r) % 2 !== 0) return 0.0;
+  const hash = hashInt(c, r, 0);
+  if (hash < 0.25) { // more natural probability (more flat spots)
+    const isHill = ((c + r) % 4 === 0);
+    const sign = isHill ? 1 : -1;
+    const isSharp = hashInt(c, r, 1) < 0.45;
+    
+    let amp;
+    if (isHill) {
+      // Shorter uphill
+      amp = isSharp ? (10.0 + hashInt(c, r, 2) * 5.0) : (6.0 + hashInt(c, r, 3) * 3.0);
+    } else {
+      // Normal downhill
+      amp = isSharp ? (18.0 + hashInt(c, r, 2) * 8.0) : (12.0 + hashInt(c, r, 3) * 5.0);
+    }
+    return sign * amp;
+  }
+  return 0.0;
+}
+
+function linearRamp(t) {
+  const margin = 0.25;
+  if (t < margin) return 0.0;
+  if (t > 1.0 - margin) return 1.0;
+  return (t - margin) / (1.0 - 2.0 * margin);
+}

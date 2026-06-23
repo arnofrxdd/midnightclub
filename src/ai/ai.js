@@ -121,7 +121,20 @@ export class AICar {
       
       const targetY = (world && typeof world.getGroundHeight === 'function') 
           ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
-      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+          
+      if (this.velocityY === undefined) this.velocityY = 0;
+      this.velocityY -= 14.0 * dt;
+      const nextY = this.position.y + this.velocityY * dt;
+
+      if (nextY < targetY) {
+        this.position.y += (targetY - this.position.y) * 12.0 * dt;
+        if (this.position.y < targetY) this.position.y = targetY;
+        this.velocityY = 0;
+        this.isAirborne = false;
+      } else {
+        this.position.y = nextY;
+        this.isAirborne = true;
+      }
       return;
     }
 
@@ -482,7 +495,7 @@ export class AICar {
     const prevY = this.position.y;
     
     // Predict next Y position based on current velocity and gravity
-    this.velocityY -= 6.0 * dt; 
+    this.velocityY -= 14.0 * dt; // Match player gravity
     const nextY = this.position.y + this.velocityY * dt;
 
     if (nextY < targetY) {
@@ -500,9 +513,11 @@ export class AICar {
       
       const fwdSpeed = this.velocity.dot(fwd);
       this.velocityY = fwdSpeed * rearFwdSlope;
+      this.isAirborne = false;
     } else {
       // Airborne - floaty gravity
       this.position.y = nextY;
+      this.isAirborne = true;
     }
 
     // ── 14. Wall pushback ────────────────────────────────────────────────────
@@ -862,7 +877,20 @@ export class AICar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+    
+    if (this.velocityY === undefined) this.velocityY = 0;
+    this.velocityY -= 14.0 * dt;
+    const nextY = this.position.y + this.velocityY * dt;
+
+    if (nextY < targetY) {
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      if (this.position.y < targetY) this.position.y = targetY;
+      this.velocityY = 0;
+      this.isAirborne = false;
+    } else {
+      this.position.y = nextY;
+      this.isAirborne = true;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -891,7 +919,20 @@ export class AICar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      
+    if (this.velocityY === undefined) this.velocityY = 0;
+    this.velocityY -= 14.0 * dt;
+    const nextY = this.position.y + this.velocityY * dt;
+
+    if (nextY < targetY) {
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      if (this.position.y < targetY) this.position.y = targetY;
+      this.velocityY = 0;
+      this.isAirborne = false;
+    } else {
+      this.position.y = nextY;
+      this.isAirborne = true;
+    }
 
     // Visual cues — full lock steer, drifting flag set for tire smoke
     this.isDrifting    = true;
@@ -1073,7 +1114,7 @@ export class AICar {
     if (!this.meshGroup) return;
     this.meshGroup.position.copy(this.position);
     if (world && typeof world.alignMeshToTerrain === 'function') {
-      world.alignMeshToTerrain(this.meshGroup, this.position, this.heading, false, dt || 0.016);
+      world.alignMeshToTerrain(this.meshGroup, this.position, this.heading, this.isAirborne, dt || 0.016);
     } else {
       this.meshGroup.rotation.y = this.heading;
     }

@@ -313,7 +313,29 @@ export class CopCar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      
+    if (this.velocityY === undefined) this.velocityY = 0;
+    this.velocityY -= 14.0 * dt; // Match player gravity
+    const nextY = this.position.y + this.velocityY * dt;
+
+    if (nextY < targetY) {
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      if (this.position.y < targetY) this.position.y = targetY;
+      
+      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const rearWheelX = this.position.x - fwd.x * 1.3;
+      const rearWheelZ = this.position.z - fwd.z * 1.3;
+      const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
+      const hRearBack = world ? world.getGroundHeight(rearWheelX - fwd.x * 0.5, rearWheelZ - fwd.z * 0.5) : targetY;
+      const rearFwdSlope = (hRearFwd - hRearBack) / 1.0;
+      
+      const fwdSpeed = this.velocity.dot(fwd);
+      this.velocityY = fwdSpeed * rearFwdSlope;
+      this.isAirborne = false;
+    } else {
+      this.position.y = nextY;
+      this.isAirborne = true;
+    }
 
     this._applyWallPushback(world);
     this._updateMesh();
@@ -351,7 +373,29 @@ export class CopCar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-    this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      
+    if (this.velocityY === undefined) this.velocityY = 0;
+    this.velocityY -= 14.0 * dt; // Match player gravity
+    const nextY = this.position.y + this.velocityY * dt;
+
+    if (nextY < targetY) {
+      this.position.y += (targetY - this.position.y) * 12.0 * dt;
+      if (this.position.y < targetY) this.position.y = targetY;
+      
+      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const rearWheelX = this.position.x - fwd.x * 1.3;
+      const rearWheelZ = this.position.z - fwd.z * 1.3;
+      const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
+      const hRearBack = world ? world.getGroundHeight(rearWheelX - fwd.x * 0.5, rearWheelZ - fwd.z * 0.5) : targetY;
+      const rearFwdSlope = (hRearFwd - hRearBack) / 1.0;
+      
+      const fwdSpeed = this.velocity.dot(fwd);
+      this.velocityY = fwdSpeed * rearFwdSlope;
+      this.isAirborne = false;
+    } else {
+      this.position.y = nextY;
+      this.isAirborne = true;
+    }
   }
 
   _applyWallPushback(world) {
@@ -377,7 +421,7 @@ export class CopCar {
     if (!this.meshGroup) return;
     this.meshGroup.position.copy(this.position);
     if (this.app && this.app.world && typeof this.app.world.alignMeshToTerrain === 'function') {
-      this.app.world.alignMeshToTerrain(this.meshGroup, this.position, this.heading);
+      this.app.world.alignMeshToTerrain(this.meshGroup, this.position, this.heading, this.isAirborne);
     } else {
       this.meshGroup.rotation.y = this.heading;
     }

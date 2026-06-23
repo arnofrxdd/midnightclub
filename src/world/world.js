@@ -1667,7 +1667,7 @@ export class World {
 
     // Slerp from flat to terrain slope target
     const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
-    const t = Math.min(1.0, 18.0 * dt);
+    const t = 1.0 - Math.exp(-18.0 * dt);
     mesh.quaternion.slerp(targetQ, t);
   }
 }

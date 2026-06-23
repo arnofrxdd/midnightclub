@@ -293,7 +293,7 @@ class Game {
             if (child.name !== "carBody" && child.name !== "headlightPool") {
               child.traverse(sub => {
                 if (sub.isMesh && sub.material) {
-                  sub.material.transparent = true;
+                  sub.material.transparent = detailOpacity < 1.0;
                   sub.material.opacity = detailOpacity;
                 }
               });
@@ -1091,6 +1091,7 @@ class Game {
         this.traffic.init(this.physics.position, this.world);
       }
       this.clock.getDelta(); // flush accumulated time
+      this.lastFrameTime = performance.now(); // flush rAF time
     }, 0);
   }
 
@@ -1240,14 +1241,23 @@ class Game {
     return formatTime.call(this, seconds);
   }
 
-  animate() {
+  animate(time) {
     const startFrame = performance.now();
-    requestAnimationFrame(() => this.animate());
+    requestAnimationFrame((t) => this.animate(t));
     
+    // Use rAF timestamp for perfect v-sync aligned delta (eliminates wake-up jitter at high refresh rates)
+    const currentTime = time !== undefined ? time : performance.now();
+    if (this.lastFrameTime === undefined) {
+      this.lastFrameTime = currentTime;
+      this.clock.getDelta(); // flush clock just in case
+    }
+    const rawDt = (currentTime - this.lastFrameTime) / 1000;
+    this.lastFrameTime = currentTime;
+
     // Clamp dt to max 50ms (20fps floor). This prevents physics from running
     // in slow-motion after any heavy synchronous work (e.g. mesh creation)
     // that causes the clock to accumulate a large delta in one frame.
-    const dt = Math.min(this.clock.getDelta(), 0.05);
+    const dt = Math.max(0.001, Math.min(rawDt, 0.05));
     const physicsStep = 1 / 60;
     const maxPhysicsSubsteps = 5;
     if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
@@ -1313,6 +1323,7 @@ class Game {
             this.racePanelEl.style.display = 'flex';
           }
           this.clock.getDelta(); // flush delta
+          this.lastFrameTime = performance.now();
         }
       } else {
         // High angled-down view looking down a street at a 45-degree angle (away from player car)

@@ -210,10 +210,12 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
       group.add(poleGroup);
 
       // Baked ground light pool under utility pole
+      const poolMeshName = `poolMesh_${lights.length}`;
       const poolMesh = new THREE.Mesh(
         this.alleyLightPoolGeo,
         this.sodiumGroundLightPoolMat.clone()
       );
+      poolMesh.name = poolMeshName;
       poolMesh.position.set(posX + lx, 0.36 + h, posZ + lz);
       group.add(poolMesh);
 
@@ -224,6 +226,7 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
         z: posZ + lz,
         intensity: 15.0, // Boosted to make it feel bright in the dark alley
         color: 0xffaa44, // Warm amber/orange
+        poolMeshName: poolMeshName,
         poolMesh: poolMesh,
         defaultOpacity: 0.35
       });

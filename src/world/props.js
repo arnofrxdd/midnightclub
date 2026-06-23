@@ -2,8 +2,8 @@ import * as THREE from 'three';
 
 export function createFireHydrantMesh() {
     const fh = new THREE.Group();
-    const redMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.4, metalness: 0.6 });
-    const capMat = new THREE.MeshStandardMaterial({ color: 0xddaa00, roughness: 0.5, metalness: 0.7 });
+    const redMat = this.hydrantRedMat;
+    const capMat = this.hydrantCapMat;
     
     const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.7, 0.35), redMat);
     barrel.position.y = 0.35;
@@ -27,9 +27,9 @@ export function createFireHydrantMesh() {
 
 export function createNewspaperBoxMesh() {
     const box = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1f4e79, roughness: 0.5 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0xeef7ff, transparent: true, opacity: 0.4, metalness: 0.9, roughness: 0.1 });
-    const paperMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.9 });
+    const bodyMat = this.newspaperBodyMat;
+    const glassMat = this.newspaperGlassMat;
+    const paperMat = this.newspaperPaperMat;
     
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.1, 0.8), bodyMat);
     body.position.y = 0.55;

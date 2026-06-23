@@ -303,18 +303,22 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
 
       // Storefronts are highly emissive and glow in the dark naturally. We add storefront ground pools
       // and register their light sources to smoothly transition from baked to real-time light near the player.
+      const poolMeshLName = `poolMesh_l_${lights.length}`;
       const poolMeshL = new THREE.Mesh(
         this.storefrontLightPoolGeo,
         this.storefrontGroundLightPoolMat.clone()
       );
+      poolMeshL.name = poolMeshLName;
       const hPoolL = this.getBaseHeight(posX + centerX - wX / 4, posZ + zMax + 3.0);
       poolMeshL.position.set(posX + centerX - wX / 4, 0.36 + hPoolL, posZ + zMax + 3.0);
       group.add(poolMeshL);
 
+      const poolMeshRName = `poolMesh_r_${lights.length + 1}`;
       const poolMeshR = new THREE.Mesh(
         this.storefrontLightPoolGeo,
         this.storefrontGroundLightPoolMat.clone()
       );
+      poolMeshR.name = poolMeshRName;
       const hPoolR = this.getBaseHeight(posX + centerX + wX / 4, posZ + zMax + 3.0);
       poolMeshR.position.set(posX + centerX + wX / 4, 0.36 + hPoolR, posZ + zMax + 3.0);
       group.add(poolMeshR);
@@ -325,6 +329,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
         z: posZ + zMax + 1.2,
         intensity: 15.0,
         color: 0xffecc4,
+        poolMeshName: poolMeshLName,
         poolMesh: poolMeshL,
         defaultOpacity: 0.30
       };
@@ -336,6 +341,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
         z: posZ + zMax + 1.2,
         intensity: 15.0,
         color: 0xffecc4,
+        poolMeshName: poolMeshRName,
         poolMesh: poolMeshR,
         defaultOpacity: 0.30
       };

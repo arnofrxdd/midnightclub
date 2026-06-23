@@ -331,6 +331,33 @@ export class World {
     // Generate static templates at startup to avoid CPU mid-frame BufferGeometry merging!
     this.templates = {};
     this.generateTemplates();
+
+    // Initialize Web Worker for background world generation
+    this.worker = new Worker(new URL('./world.worker.js', import.meta.url), { type: 'module' });
+    this.loadingTiles = new Set();
+    
+    this.worker.onmessage = (e) => {
+      const { type, data } = e.data;
+      if (type === 'tileGenerated') {
+        this.onTileGenerated(data);
+      }
+    };
+
+    this.worker.postMessage({
+      type: 'init',
+      data: {
+        tileSize: this.tileSize,
+        mainRoadColumns: Array.from(this.mainRoadColumns),
+        mainRoadRows: Array.from(this.mainRoadRows),
+        shortcutColumns: Array.from(this.shortcutColumns),
+        shortcutRows: Array.from(this.shortcutRows),
+        roadColumns: Array.from(this.roadColumns),
+        roadRows: Array.from(this.roadRows),
+        sortedColumnsArray: this.sortedColumnsArray,
+        sortedRowsArray: this.sortedRowsArray,
+        asphaltLocalCircles: this.asphaltLocalCircles
+      }
+    });
   }
 
   initLightPool() {
@@ -502,6 +529,8 @@ export class World {
   update(playerX, playerZ, heading = 0, dynamicLightsList = [], dt = 0.016, cameraPos = null) {
     const pTileX = Math.round(playerX / this.tileSize);
     const pTileZ = Math.round(playerZ / this.tileSize);
+    this._lastPlayerTileX = pTileX;
+    this._lastPlayerTileZ = pTileZ;
 
     // 1. Generate/Load new tiles (Time-sliced/Queued loading: max 1 per frame, closest first)
     let closestTileX = null;
@@ -511,7 +540,7 @@ export class World {
     for (let x = pTileX - this.renderRadius; x <= pTileX + this.renderRadius; x++) {
       for (let z = pTileZ - this.renderRadius; z <= pTileZ + this.renderRadius; z++) {
         const key = `${x},${z}`;
-        if (!this.loadedTiles.has(key)) {
+        if (!this.loadedTiles.has(key) && !this.loadingTiles.has(key)) {
           const dx = x - pTileX;
           const dz = z - pTileZ;
           const distSq = dx * dx + dz * dz;
@@ -882,70 +911,243 @@ export class World {
 
   generateTile(gridX, gridZ) {
     const key = `${gridX},${gridZ}`;
-    const tileGroup = new THREE.Group();
-    const tileObstacles = [];
-    const tileLights = [];
 
-    const posX = gridX * this.tileSize;
-    const posZ = gridZ * this.tileSize;
-    
+    // Optimization: if it's a building tile and cached, construct it synchronously immediately!
     const isAlley = this.isAlley(gridX, gridZ);
     const isRoad = this.roadColumns.has(gridX) || this.roadRows.has(gridZ);
-
-    if (isAlley) {
-      this.buildAlleyTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
-    } else if (isRoad) {
-      this.buildRoadTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+    if (!isAlley && !isRoad && this.buildingGeoCache && this.buildingGeoCache.has(key)) {
+      const tileGroup = new THREE.Group();
+      const tileObstacles = [];
+      const tileLights = [];
+      const posX = gridX * this.tileSize;
+      const posZ = gridZ * this.tileSize;
+      this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
       
-      // Compute and store world-space puddle circles for this tile
-      const tileCircles = [];
-      const matIndex = Math.abs(gridX * 17 + gridZ * 23) % this.asphaltMaterials.length;
-      const localCircles = this.asphaltLocalCircles[matIndex];
-      
-      if (localCircles && localCircles.length > 0) {
-        const ox = Math.abs((gridX * 0.317 + gridZ * 0.713) % 1.0);
-        const oy = Math.abs((gridX * 0.893 + gridZ * 0.149) % 1.0);
-
-        // Determine size of asphalt mesh for this tile (roadWidth is 26 or 14)
-        let sizeX = this.tileSize;
-        let sizeZ = this.tileSize;
-        const isIntersection = this.roadColumns.has(gridX) && this.roadRows.has(gridZ);
-        if (!isIntersection) {
-          const { rwX, rwZ } = this.getRoadWidthForGrid(gridX, gridZ);
-          if (this.roadRows.has(gridZ)) {
-            // Vertical road (runs along X): width along X is tileSize (40), but thickness along Z is roadWidth (rwZ)
-            sizeZ = rwZ;
+      // Initialize tile meshes to 0.0 opacity using the pool
+      tileGroup.traverse(child => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child._origMaterial = child.material;
+            child.material = child.material.map(m => this.getFadedMaterial(m, 0.0));
           } else {
-            // Horizontal road (runs along Z): width along X is roadWidth (rwX), thickness along Z is tileSize (40)
-            sizeX = rwX;
+            child._origMaterial = child.material;
+            child.material = this.getFadedMaterial(child.material, 0.0);
           }
         }
+      });
 
-        localCircles.forEach(c => {
-          // Geometry UV shift was +ox, so texture pixel's local position on the geometry is shifted by -ox
-          const u = c.x / 1024;
-          const v = c.y / 1024;
-          
-          const shiftedU = (u - ox + 2.0) % 1.0;
-          const shiftedV = (v + oy) % 1.0;
-          
-          const localX = shiftedU * sizeX - sizeX / 2;
-          const localZ = shiftedV * sizeZ - sizeZ / 2;
-          
-          tileCircles.push({
-            x: posX + localX,
-            z: posZ + localZ,
-            rx: (c.r / 1024) * sizeX,
-            rz: (c.r / 1024) * sizeZ
-          });
-        });
+      this.scene.add(tileGroup);
+      
+      this.loadedTiles.set(key, {
+        group: tileGroup,
+        obstacles: tileObstacles,
+        lights: tileLights,
+        posX: posX,
+        posZ: posZ,
+        gridX: gridX,
+        gridZ: gridZ,
+        visible: true,
+        fadeProgress: 0.0,
+        isFading: true
+      });
+
+      this.obstacles.push(...tileObstacles);
+      // Insert into spatial hash
+      for (const obs of tileObstacles) {
+        const x0 = Math.floor(obs.xMin / this.spatialCellSize);
+        const x1 = Math.floor(obs.xMax / this.spatialCellSize);
+        const z0 = Math.floor(obs.zMin / this.spatialCellSize);
+        const z1 = Math.floor(obs.zMax / this.spatialCellSize);
+        for (let cx = x0; cx <= x1; cx++) {
+          for (let cz = z0; cz <= z1; cz++) {
+            const k = `${cx},${cz}`;
+            if (!this.obstacleGrid.has(k)) this.obstacleGrid.set(k, []);
+            this.obstacleGrid.get(k).push(obs);
+          }
+        }
       }
-      this.tilePuddles.set(key, tileCircles);
-    } else {
-      this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+      this.lightSources.push(...tileLights);
+      return;
     }
 
-    // Initialize tile meshes to 0.0 opacity using the pool
+    if (this.loadingTiles.has(key)) return;
+    this.loadingTiles.add(key);
+
+    this.worker.postMessage({
+      type: 'generateTile',
+      data: {
+        gridX,
+        gridZ,
+        posX: gridX * this.tileSize,
+        posZ: gridZ * this.tileSize,
+        key
+      }
+    });
+  }
+
+  reconstructGeometry(geomData, cache) {
+    if (geomData.cached) {
+      return cache.get(geomData.uuid);
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.uuid = geomData.uuid;
+
+    for (const name in geomData.attributes) {
+      const attrData = geomData.attributes[name];
+      const attr = new THREE.BufferAttribute(attrData.array, attrData.itemSize, attrData.normalized);
+      geom.setAttribute(name, attr);
+    }
+
+    if (geomData.index) {
+      const indexAttr = new THREE.BufferAttribute(geomData.index.array, geomData.index.itemSize);
+      geom.setIndex(indexAttr);
+    }
+
+    if (geomData.groups && geomData.groups.length > 0) {
+      for (const g of geomData.groups) {
+        geom.addGroup(g.start, g.count, g.materialIndex);
+      }
+    }
+
+    geom.isCached = geomData.isCached;
+    if (geom.isCached) {
+      cache.set(geom.uuid, geom);
+    }
+
+    return geom;
+  }
+
+  reconstructMaterial(matData) {
+    if (Array.isArray(matData)) {
+      return matData.map(m => this.reconstructMaterial(m));
+    }
+    if (!matData) return null;
+
+    if (matData.type === 'sprite') {
+      return new THREE.SpriteMaterial({
+        map: this.slFlareTex,
+        color: matData.color,
+        transparent: true,
+        opacity: matData.opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+    }
+
+    if (matData.type === 'custom_emissive') {
+      return new THREE.MeshStandardMaterial({
+        color: 0x111111,
+        emissive: matData.color,
+        emissiveIntensity: 4.0
+      });
+    }
+
+    const name = matData.name || "";
+    if (name.startsWith('asphaltMaterials_')) {
+      const idx = parseInt(name.split('_')[1], 10);
+      return this.asphaltMaterials[idx];
+    }
+    if (name.startsWith('materials_')) {
+      const idx = parseInt(name.split('_')[1], 10);
+      return this.materials[idx];
+    }
+
+    if (this[name]) {
+      return this[name];
+    }
+
+    console.warn("Could not find material named: ", name);
+    return this.concreteMat;
+  }
+
+  reconstructObject(data, cache) {
+    if (data.type === 'Group') {
+      const group = new THREE.Group();
+      group.position.fromArray(data.position);
+      group.quaternion.fromArray(data.quaternion);
+      group.scale.fromArray(data.scale);
+      if (data.children) {
+        for (const childData of data.children) {
+          group.add(this.reconstructObject(childData, cache));
+        }
+      }
+      return group;
+    }
+
+    if (data.type === 'LOD') {
+      const lod = new THREE.LOD();
+      lod.position.fromArray(data.position);
+      lod.quaternion.fromArray(data.quaternion);
+      lod.scale.fromArray(data.scale);
+      for (const level of data.levels) {
+        lod.addLevel(this.reconstructObject(level.object, cache), level.distance);
+      }
+      return lod;
+    }
+
+    let geom;
+    if (data.geometry) {
+      geom = this.reconstructGeometry(data.geometry, cache);
+    }
+
+    let mat;
+    if (data.material) {
+      if (!data.material.name && data.material.type !== 'custom_emissive') {
+        console.warn("Object missing material name:", data.name, data.type, data.material);
+      }
+      mat = this.reconstructMaterial(data.material);
+    }
+
+    let obj;
+    if (data.type === 'Mesh') {
+      obj = new THREE.Mesh(geom, mat);
+      obj.castShadow = data.castShadow;
+      obj.receiveShadow = data.receiveShadow;
+      if (data.isGround) obj.isGround = true;
+    } else if (data.type === 'Sprite') {
+      obj = new THREE.Sprite(mat);
+    } else if (data.type === 'InstancedMesh') {
+      obj = new THREE.InstancedMesh(geom, mat, data.count);
+      obj.castShadow = data.castShadow;
+      obj.receiveShadow = data.receiveShadow;
+      obj.instanceMatrix.array.set(data.instanceMatrix);
+      obj.instanceMatrix.needsUpdate = true;
+    } else {
+      obj = new THREE.Group();
+    }
+
+    obj.name = data.name;
+    obj.position.fromArray(data.position);
+    obj.quaternion.fromArray(data.quaternion);
+    obj.scale.fromArray(data.scale);
+
+    if (data.children) {
+      for (const childData of data.children) {
+        obj.add(this.reconstructObject(childData, cache));
+      }
+    }
+
+    return obj;
+  }
+
+  onTileGenerated(data) {
+    const { gridX, gridZ, posX, posZ, key, serializedGroup, obstacles, lights, trafficLights, breakables, puddles } = data;
+
+    if (!this.loadingTiles.has(key)) {
+      return;
+    }
+
+    // Check if player moved too far since request
+    if (this._lastPlayerTileX !== undefined && this._lastPlayerTileZ !== undefined) {
+      if (Math.abs(gridX - this._lastPlayerTileX) > this.renderRadius || Math.abs(gridZ - this._lastPlayerTileZ) > this.renderRadius) {
+        this.loadingTiles.delete(key);
+        return;
+      }
+    }
+
+    const tileGroup = this.reconstructObject(serializedGroup, this.buildingGeoCache);
+    
     tileGroup.traverse(child => {
       if (child.isMesh && child.material) {
         if (Array.isArray(child.material)) {
@@ -959,23 +1161,24 @@ export class World {
     });
 
     this.scene.add(tileGroup);
-    
-    this.loadedTiles.set(key, {
+
+    const tileRecord = {
       group: tileGroup,
-      obstacles: tileObstacles,
-      lights: tileLights,
+      obstacles: obstacles,
+      lights: [],
       posX: posX,
       posZ: posZ,
-      gridX: gridX,   // Store numeric coords to avoid string split/map in unload loop
+      gridX: gridX,
       gridZ: gridZ,
       visible: true,
       fadeProgress: 0.0,
       isFading: true
-    });
+    };
+    this.loadedTiles.set(key, tileRecord);
+    this.loadingTiles.delete(key);
 
-    this.obstacles.push(...tileObstacles);
-    // Insert into spatial hash
-    for (const obs of tileObstacles) {
+    this.obstacles.push(...obstacles);
+    for (const obs of obstacles) {
       const x0 = Math.floor(obs.xMin / this.spatialCellSize);
       const x1 = Math.floor(obs.xMax / this.spatialCellSize);
       const z0 = Math.floor(obs.zMin / this.spatialCellSize);
@@ -988,7 +1191,82 @@ export class World {
         }
       }
     }
-    this.lightSources.push(...tileLights);
+
+    if (lights) {
+      for (const src of lights) {
+        let poolMesh = null;
+        if (src.poolMeshName) {
+          poolMesh = tileGroup.getObjectByName(src.poolMeshName);
+        }
+        const lightRecord = {
+          x: src.x,
+          y: src.y,
+          z: src.z,
+          intensity: src.intensity,
+          color: src.color,
+          poolMesh: poolMesh,
+          defaultOpacity: src.defaultOpacity
+        };
+        this.lightSources.push(lightRecord);
+        tileRecord.lights.push(lightRecord);
+      }
+    }
+
+    if (trafficLights) {
+      for (const tl of trafficLights) {
+        const redMesh = tileGroup.getObjectByName(tl.redName);
+        const yellowMesh = tileGroup.getObjectByName(tl.yellowName);
+        const greenMesh = tileGroup.getObjectByName(tl.greenName);
+        this.trafficLights.push({
+          redMesh,
+          yellowMesh,
+          greenMesh,
+          axis: tl.axis,
+          intersectionX: tl.intersectionX,
+          intersectionZ: tl.intersectionZ,
+          tileX: tl.tileX,
+          tileZ: tl.tileZ
+        });
+      }
+    }
+
+    if (breakables) {
+      for (const b of breakables) {
+        const groupObj = tileGroup.getObjectByName(b.groupName);
+        const flaresObj = b.flareNames ? b.flareNames.map(name => groupObj ? groupObj.getObjectByName(name) : null).filter(x => x) : [];
+        const lightsObj = b.lightIndices ? b.lightIndices.map(idx => tileRecord.lights[idx]).filter(x => x) : [];
+        const poolMeshesObj = b.poolMeshNames ? b.poolMeshNames.map(name => tileGroup.getObjectByName(name) || (groupObj ? groupObj.getObjectByName(name) : null)).filter(x => x) : [];
+        
+        let instancedMeshesObj = null;
+        if (b.isInstanced && b.instancedMeshNames) {
+          instancedMeshesObj = b.instancedMeshNames.map(name => tileGroup.getObjectByName(name)).filter(x => x);
+        }
+
+        this.breakables.push({
+          type: b.type,
+          comHeight: b.comHeight,
+          radius: b.radius,
+          position: new THREE.Vector3().fromArray(b.position),
+          broken: b.broken,
+          tileX: b.tileX,
+          tileZ: b.tileZ,
+          velocity: new THREE.Vector3().fromArray(b.velocity),
+          angularVelocity: new THREE.Vector3().fromArray(b.angularVelocity),
+          isInstanced: b.isInstanced,
+          templateName: b.templateName,
+          instanceId: b.instanceId,
+          group: groupObj || tileGroup.getObjectByName(b.templateName),
+          flares: flaresObj,
+          lights: lightsObj,
+          poolMeshes: poolMeshesObj,
+          instancedMeshes: instancedMeshesObj
+        });
+      }
+    }
+
+    if (puddles) {
+      this.tilePuddles.set(key, puddles);
+    }
   }
 
   unloadTile(key, tile) {

@@ -42,6 +42,15 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const localGlassNewspaperGeoms = [];
     const localPaperNewspaperGeoms = [];
 
+    const benchTransforms = [];
+    const hydrantTransforms = [];
+    const phoneBoothTransforms = [];
+    const trashCanTransforms = [];
+    const localBenchBreakables = [];
+    const localHydrantBreakables = [];
+    const localPhoneBoothBreakables = [];
+    const localTrashCanBreakables = [];
+
     const addTree = (tx, tz) => {
       const h = this.getBaseHeight(tx, tz);
       const trunkGeo = new THREE.BoxGeometry(0.8, 4.0, 0.8);
@@ -106,25 +115,31 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       const h = this.getBaseHeight(fhx, fhz);
       if (Math.abs(h) > 0.1) return;
 
-      const hydrant = this.templates.fireHydrant.clone();
-      // Position hydrant base on curb (offset slightly up by 0.35m to match template alignment)
-      hydrant.position.set(fhx, 0.35 + h, fhz);
-      group.add(hydrant);
+      const matrix = new THREE.Matrix4();
+      matrix.makeTranslation(fhx, 0.35 + h, fhz);
+      const instanceId = hydrantTransforms.length;
+      hydrantTransforms.push(matrix);
       
-      this.breakables.push({
+      const breakable = {
         type: 'hydrant',
         comHeight: 0.35,
         radius: 0.25,
         position: new THREE.Vector3(fhx, 0.35 + h, fhz),
-        group: hydrant,
+        group: null,
         flares: [],
         lights: [],
         broken: false,
         tileX: posX,
         tileZ: posZ,
         velocity: new THREE.Vector3(),
-        angularVelocity: new THREE.Vector3()
-      });
+        angularVelocity: new THREE.Vector3(),
+        isInstanced: true,
+        templateName: 'fireHydrant',
+        instanceId: instanceId,
+        instancedMeshes: null
+      };
+      this.breakables.push(breakable);
+      localHydrantBreakables.push(breakable);
     };
 
     const addNewspaperBox = (nbx, nbz, rotY) => {
@@ -160,73 +175,97 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const addBench = (bx, bz, rotY) => {
       const h = this.getBaseHeight(bx, bz);
       if (Math.abs(h) > 0.1) return;
-      const bench = this.templates.bench.clone();
-      bench.position.set(bx, 0.6 + h, bz);
-      bench.rotation.y = rotY;
-      group.add(bench);
       
-      this.breakables.push({
+      const matrix = new THREE.Matrix4();
+      matrix.makeTranslation(bx, 0.6 + h, bz);
+      matrix.multiply(new THREE.Matrix4().makeRotationY(rotY));
+      const instanceId = benchTransforms.length;
+      benchTransforms.push(matrix);
+      
+      const breakable = {
         type: 'bench',
         comHeight: 0.6,
         radius: 0.4,
         position: new THREE.Vector3(bx, 0.6 + h, bz),
-        group: bench,
+        group: null,
         flares: [],
         lights: [],
         broken: false,
         tileX: posX,
         tileZ: posZ,
         velocity: new THREE.Vector3(),
-        angularVelocity: new THREE.Vector3()
-      });
+        angularVelocity: new THREE.Vector3(),
+        isInstanced: true,
+        templateName: 'bench',
+        instanceId: instanceId,
+        instancedMeshes: null
+      };
+      this.breakables.push(breakable);
+      localBenchBreakables.push(breakable);
     };
 
     const addPhoneBooth = (pbx, pbz, rotY) => {
       const h = this.getBaseHeight(pbx, pbz);
       if (Math.abs(h) > 0.1) return;
-      const pb = this.templates.phoneBooth.clone();
-      pb.position.set(pbx, 1.4 + h, pbz);
-      pb.rotation.y = rotY;
-      group.add(pb);
       
-      this.breakables.push({
+      const matrix = new THREE.Matrix4();
+      matrix.makeTranslation(pbx, 1.4 + h, pbz);
+      matrix.multiply(new THREE.Matrix4().makeRotationY(rotY));
+      const instanceId = phoneBoothTransforms.length;
+      phoneBoothTransforms.push(matrix);
+      
+      const breakable = {
         type: 'phonebooth',
         comHeight: 1.4,
         radius: 0.6,
         position: new THREE.Vector3(pbx, 1.4 + h, pbz),
-        group: pb,
+        group: null,
         flares: [],
         lights: [],
         broken: false,
         tileX: posX,
         tileZ: posZ,
         velocity: new THREE.Vector3(),
-        angularVelocity: new THREE.Vector3()
-      });
+        angularVelocity: new THREE.Vector3(),
+        isInstanced: true,
+        templateName: 'phoneBooth',
+        instanceId: instanceId,
+        instancedMeshes: null
+      };
+      this.breakables.push(breakable);
+      localPhoneBoothBreakables.push(breakable);
     };
 
     const addTrashCan = (tcx, tcz) => {
       const h = this.getBaseHeight(tcx, tcz);
       if (Math.abs(h) > 0.1) return;
-      const tc = this.templates.trashCan.clone();
-      tc.position.set(tcx, 0.5 + h, tcz);
-      tc.rotation.y = Math.random() * Math.PI * 2;
-      group.add(tc);
       
-      this.breakables.push({
+      const matrix = new THREE.Matrix4();
+      matrix.makeTranslation(tcx, 0.5 + h, tcz);
+      matrix.multiply(new THREE.Matrix4().makeRotationY(Math.random() * Math.PI * 2));
+      const instanceId = trashCanTransforms.length;
+      trashCanTransforms.push(matrix);
+      
+      const breakable = {
         type: 'trashcan',
         comHeight: 0.5,
         radius: 0.3,
         position: new THREE.Vector3(tcx, 0.5 + h, tcz),
-        group: tc,
+        group: null,
         flares: [],
         lights: [],
         broken: false,
         tileX: posX,
         tileZ: posZ,
         velocity: new THREE.Vector3(),
-        angularVelocity: new THREE.Vector3()
-      });
+        angularVelocity: new THREE.Vector3(),
+        isInstanced: true,
+        templateName: 'trashCan',
+        instanceId: instanceId,
+        instancedMeshes: null
+      };
+      this.breakables.push(breakable);
+      localTrashCanBreakables.push(breakable);
     };
 
     const addRoadRamp = (lx, lz, slopeType, slopeDir) => {
@@ -460,13 +499,16 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         slObject.add(coneMesh);
 
         // Baked ground light pool under streetlight 1
+        const poolMesh1Name = `poolMesh_${lights.length}`;
         const poolMesh1 = new THREE.Mesh(
           this.lightPoolGeo,
           (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
         );
+        poolMesh1.name = poolMesh1Name;
         poolMesh1.position.set(armDirX * 1.3, -3.89, 0);
         slObject.add(poolMesh1);
 
+        const poolMesh2Name = `poolMesh_${lights.length + 1}`;
         if (isDoubleArm) {
           // Volumetric light cone 2
           const coneMesh2 = new THREE.Mesh(this.lightConeGeo, isLED ? this.lightConeMatLED : this.lightConeMatSodium);
@@ -479,6 +521,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             this.lightPoolGeo,
             (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
           );
+          poolMesh2.name = poolMesh2Name;
           poolMesh2.position.set(-armDirX * 1.3, -3.89, 0);
           slObject.add(poolMesh2);
 
@@ -490,6 +533,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             blending: THREE.AdditiveBlending,
             depthWrite: false
           }));
+          flare2.name = `flare_${localFlares.length}`;
           flare2.position.set(-armDirX * 1.3, 4.15, 0);
           flare2.scale.set(3.8, 3.8, 1.0);
           slObject.add(flare2);
@@ -506,6 +550,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           depthWrite: false
         });
         const flare = new THREE.Sprite(flareSpriteMat);
+        flare.name = `flare_${localFlares.length}`;
         flare.position.set(armDirX * 1.3, 4.15, 0);
         flare.scale.set(3.8, 3.8, 1.0);
         slObject.add(flare);
@@ -518,6 +563,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           z: slZ,
           intensity: 12.0,
           color: lightColor,
+          poolMeshName: poolMesh1Name,
           poolMesh: poolMesh1,
           defaultOpacity: isLED ? 0.16 : 0.22
         };
@@ -531,6 +577,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             z: slZ,
             intensity: 12.0,
             color: lightColor,
+            poolMeshName: poolMesh2Name,
             poolMesh: poolMesh2,
             defaultOpacity: isLED ? 0.16 : 0.22
           };
@@ -614,34 +661,62 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         slObject.add(zGreenGroup);
 
         // Store references to update traffic light bulb colors dynamically
+        const tlIndex = this.trafficLights.length;
+        const xRedName = `tl_red_${tlIndex}_x`;
+        xRed.name = xRedName;
+        const xYellowName = `tl_yellow_${tlIndex}_x`;
+        xYellow.name = xYellowName;
+        const xGreenName = `tl_green_${tlIndex}_x`;
+        xGreen.name = xGreenName;
+
         this.trafficLights.push({
           tileX: posX,
           tileZ: posZ,
           intersectionX: posX,
           intersectionZ: posZ,
           axis: 'x',
+          redName: xRedName,
+          yellowName: xYellowName,
+          greenName: xGreenName,
           redMesh: xRed,
           yellowMesh: xYellow,
           greenMesh: xGreen
         });
         
+        const zRedName = `tl_red_${tlIndex + 1}_z`;
+        zRed.name = zRedName;
+        const zYellowName = `tl_yellow_${tlIndex + 1}_z`;
+        zYellow.name = zYellowName;
+        const zGreenName = `tl_green_${tlIndex + 1}_z`;
+        zGreen.name = zGreenName;
+
         this.trafficLights.push({
           tileX: posX,
           tileZ: posZ,
           intersectionX: posX,
           intersectionZ: posZ,
           axis: 'z',
+          redName: zRedName,
+          yellowName: zYellowName,
+          greenName: zGreenName,
           redMesh: zRed,
           yellowMesh: zYellow,
           greenMesh: zGreen
         });
 
+        const slGroupName = `slObject_${this.breakables.length}`;
+        slObject.name = slGroupName;
+
         this.breakables.push({
           type: 'trafficlight',
           position: new THREE.Vector3(slX, h, slZ),
+          groupName: slGroupName,
           group: slObject,
+          flareNames: localFlares.map(f => f.name),
           flares: localFlares,
+          lightIndices: localLights.map(l => lights.indexOf(l)),
           lights: localLights,
+          poolMeshNames: isDoubleArm ? [poolMesh1Name, poolMesh2Name] : [poolMesh1Name],
           poolMeshes: isDoubleArm ? [poolMesh1, poolMesh2] : [poolMesh1],
           broken: false,
           tileX: posX,
@@ -796,14 +871,17 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           slObject.add(coneMesh);
 
           // Baked ground light pool under streetlight 1
+          const poolMesh1Name = `poolMesh_${lights.length}`;
           const poolMesh1 = new THREE.Mesh(
             this.lightPoolGeo,
             (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
           );
+          poolMesh1.name = poolMesh1Name;
           poolMesh1.position.set(0, -3.89, -1.3);
           slObject.add(poolMesh1);
 
           // Add glowing lens flare sprite
+          const flareName = `flare_0`;
           const flare = new THREE.Sprite(new THREE.SpriteMaterial({
             map: this.slFlareTex,
             color: lightColor,
@@ -812,6 +890,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             blending: THREE.AdditiveBlending,
             depthWrite: false
           }));
+          flare.name = flareName;
           flare.position.set(0, 4.15, -1.3);
           flare.scale.set(3.8, 3.8, 1.0);
           slObject.add(flare);
@@ -823,18 +902,26 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             z: sy - 1.3,
             intensity: 26.0,
             color: lightColor,
+            poolMeshName: poolMesh1Name,
             poolMesh: poolMesh1,
             defaultOpacity: isLED ? 0.16 : 0.22
           };
           lights.push(lightSrc1);
 
+          const slGroupName = `slObject_${this.breakables.length}`;
+          slObject.name = slGroupName;
+
           // Register in the breakables array
           this.breakables.push({
             type: 'streetlight',
             position: new THREE.Vector3(posX, h, sy),
+            groupName: slGroupName,
             group: slObject,
+            flareNames: [flareName],
             flares: [flare],
+            lightIndices: [lights.indexOf(lightSrc1)],
             lights: [lightSrc1],
+            poolMeshNames: [poolMesh1Name],
             poolMeshes: [poolMesh1],
             broken: false,
             tileX: posX,
@@ -873,13 +960,16 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             coneMesh2.name = "lightCone";
             slObject2.add(coneMesh2);
 
+            const poolMesh2Name = `poolMesh_${lights.length}`;
             const poolMesh2 = new THREE.Mesh(
               this.lightPoolGeo,
               (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
             );
+            poolMesh2.name = poolMesh2Name;
             poolMesh2.position.set(0, -3.89, 1.3);
             slObject2.add(poolMesh2);
 
+            const flare2Name = `flare_0`;
             const flare2 = new THREE.Sprite(new THREE.SpriteMaterial({
               map: this.slFlareTex,
               color: lightColor,
@@ -888,6 +978,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
               blending: THREE.AdditiveBlending,
               depthWrite: false
             }));
+            flare2.name = flare2Name;
             flare2.position.set(0, 4.15, 1.3);
             flare2.scale.set(3.8, 3.8, 1.0);
             slObject2.add(flare2);
@@ -898,17 +989,25 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
               z: sy2 + 1.3,
               intensity: 26.0,
               color: lightColor,
+              poolMeshName: poolMesh2Name,
               poolMesh: poolMesh2,
               defaultOpacity: isLED ? 0.16 : 0.22
             };
             lights.push(lightSrc2);
 
+            const slGroupName2 = `slObject_${this.breakables.length}`;
+            slObject2.name = slGroupName2;
+
             this.breakables.push({
               type: 'streetlight',
               position: new THREE.Vector3(posX, h2, sy2),
+              groupName: slGroupName2,
               group: slObject2,
+              flareNames: [flare2Name],
               flares: [flare2],
+              lightIndices: [lights.indexOf(lightSrc2)],
               lights: [lightSrc2],
+              poolMeshNames: [poolMesh2Name],
               poolMeshes: [poolMesh2],
               broken: false,
               tileX: posX,
@@ -1061,14 +1160,17 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           slObject.add(coneMesh);
 
           // Baked ground light pool under streetlight 1
+          const poolMesh1Name = `poolMesh_${lights.length}`;
           const poolMesh1 = new THREE.Mesh(
             this.lightPoolGeo,
             (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
           );
+          poolMesh1.name = poolMesh1Name;
           poolMesh1.position.set(-1.3, -3.89, 0);
           slObject.add(poolMesh1);
 
           // Add glowing lens flare sprite
+          const flareName = `flare_0`;
           const flare = new THREE.Sprite(new THREE.SpriteMaterial({
             map: this.slFlareTex,
             color: lightColor,
@@ -1077,6 +1179,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             blending: THREE.AdditiveBlending,
             depthWrite: false
           }));
+          flare.name = flareName;
           flare.position.set(-1.3, 4.15, 0);
           flare.scale.set(3.8, 3.8, 1.0);
           slObject.add(flare);
@@ -1088,18 +1191,26 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             z: posZ,
             intensity: 26.0,
             color: lightColor,
+            poolMeshName: poolMesh1Name,
             poolMesh: poolMesh1,
             defaultOpacity: isLED ? 0.16 : 0.22
           };
           lights.push(lightSrc1);
 
+          const slGroupName = `slObject_${this.breakables.length}`;
+          slObject.name = slGroupName;
+
           // Register in the breakables array
           this.breakables.push({
             type: 'streetlight',
             position: new THREE.Vector3(sx, h, posZ),
+            groupName: slGroupName,
             group: slObject,
+            flareNames: [flareName],
             flares: [flare],
+            lightIndices: [lights.indexOf(lightSrc1)],
             lights: [lightSrc1],
+            poolMeshNames: [poolMesh1Name],
             poolMeshes: [poolMesh1],
             broken: false,
             tileX: posX,
@@ -1140,13 +1251,16 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             coneMesh2.name = "lightCone";
             slObject2.add(coneMesh2);
 
+            const poolMesh2Name = `poolMesh_${lights.length}`;
             const poolMesh2 = new THREE.Mesh(
               this.lightPoolGeo,
               (isLED ? this.ledGroundLightPoolMat : this.sodiumGroundLightPoolMat).clone()
             );
+            poolMesh2.name = poolMesh2Name;
             poolMesh2.position.set(1.3, -3.89, 0);
             slObject2.add(poolMesh2);
 
+            const flare2Name = `flare_0`;
             const flare2 = new THREE.Sprite(new THREE.SpriteMaterial({
               map: this.slFlareTex,
               color: lightColor,
@@ -1155,6 +1269,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
               blending: THREE.AdditiveBlending,
               depthWrite: false
             }));
+            flare2.name = flare2Name;
             flare2.position.set(1.3, 4.15, 0);
             flare2.scale.set(3.8, 3.8, 1.0);
             slObject2.add(flare2);
@@ -1165,17 +1280,25 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
               z: posZ,
               intensity: 26.0,
               color: lightColor,
+              poolMeshName: poolMesh2Name,
               poolMesh: poolMesh2,
               defaultOpacity: isLED ? 0.16 : 0.22
             };
             lights.push(lightSrc2);
 
+            const slGroupName2 = `slObject_${this.breakables.length}`;
+            slObject2.name = slGroupName2;
+
             this.breakables.push({
               type: 'streetlight',
               position: new THREE.Vector3(sx2, h2, posZ),
+              groupName: slGroupName2,
               group: slObject2,
+              flareNames: [flare2Name],
               flares: [flare2],
+              lightIndices: [lights.indexOf(lightSrc2)],
               lights: [lightSrc2],
+              poolMeshNames: [poolMesh2Name],
               poolMeshes: [poolMesh2],
               broken: false,
               tileX: posX,
@@ -1188,6 +1311,36 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         }
       }
     }
+
+
+    const instantiateProps = (transforms, templateName, breakableList) => {
+      if (transforms.length === 0) return;
+      const template = this.templates[templateName];
+      const instancedMeshes = [];
+      template.children.forEach((child, childIdx) => {
+        const im = new THREE.InstancedMesh(child.geometry, child.material, transforms.length);
+        im.name = `instanced_${templateName}_${childIdx}`;
+        im.castShadow = true;
+        im.receiveShadow = child.receiveShadow || false;
+        for (let i = 0; i < transforms.length; i++) {
+          const childMatrix = new THREE.Matrix4();
+          childMatrix.compose(child.position, child.quaternion, child.scale);
+          const finalMatrix = transforms[i].clone().multiply(childMatrix);
+          im.setMatrixAt(i, finalMatrix);
+        }
+        group.add(im);
+        instancedMeshes.push(im);
+      });
+      breakableList.forEach(b => {
+        b.instancedMeshNames = template.children.map((_, childIdx) => `instanced_${templateName}_${childIdx}`);
+        b.instancedMeshes = instancedMeshes;
+      });
+    };
+
+    instantiateProps(benchTransforms, 'bench', localBenchBreakables);
+    instantiateProps(hydrantTransforms, 'fireHydrant', localHydrantBreakables);
+    instantiateProps(phoneBoothTransforms, 'phoneBooth', localPhoneBoothBreakables);
+    instantiateProps(trashCanTransforms, 'trashCan', localTrashCanBreakables);
 
     // Merge & instantiate collected geometries to minimize draw calls
     if (localPoles.length > 0) {

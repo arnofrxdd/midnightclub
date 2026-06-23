@@ -106,8 +106,28 @@ export function checkBreakablesCollision(dt) {
             b.broken = true;
             b.fadeTimer = 10.0; // minimum stay time before eligible for off-camera cleanup (increased from 3.5s)
 
-            // Detach b.group from its parent (the tile group) and add it to the global scene
-            if (b.group && b.group.parent) {
+            // Handle Instanced Mesh breakables dynamically by spawning a real mesh to fly away
+            if (b.isInstanced && b.instancedMeshes) {
+              // Hide the specific instance from all instanced meshes representing this prop
+              const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+              b.instancedMeshes.forEach(im => {
+                im.setMatrixAt(b.instanceId, zeroMatrix);
+                im.instanceMatrix.needsUpdate = true;
+              });
+              
+              // Spawn a real cloned mesh for the physics simulation
+              b.group = this.world.templates[b.templateName].clone();
+              b.group.position.copy(b.position);
+              
+              // Since it's a clone of the template, it starts with local rotation 0.
+              // For benches and phone booths, we must restore original rotation from orientation.
+              // Wait, the collision logic sets angular velocity, so physics will take over perfectly.
+              // But if it had an initial Y rotation, we can infer it or let it fly.
+              // Actually, we can just use the standard spawn.
+              this.scene.add(b.group);
+              b.isInstanced = false; // it is now a real mesh
+            } else if (b.group && b.group.parent) {
+              // Normal detached group logic
               const worldPos = new THREE.Vector3();
               const worldQuat = new THREE.Quaternion();
               b.group.getWorldPosition(worldPos);

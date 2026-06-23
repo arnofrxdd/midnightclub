@@ -283,7 +283,7 @@ class Game {
         // Set body opacity
         const carBody = v.meshGroup.getObjectByName("carBody");
         if (carBody && carBody.material) {
-          carBody.material.transparent = bodyOpacity < 1.0;
+          carBody.material.transparent = bodyOpacity < 0.99;
           carBody.material.opacity = bodyOpacity;
         }
 
@@ -293,7 +293,7 @@ class Game {
             if (child.name !== "carBody" && child.name !== "headlightPool") {
               child.traverse(sub => {
                 if (sub.isMesh && sub.material) {
-                  sub.material.transparent = detailOpacity < 1.0;
+                  sub.material.transparent = detailOpacity < 0.99;
                   sub.material.opacity = detailOpacity;
                 }
               });
@@ -2221,7 +2221,7 @@ class Game {
         const offset = i * 16;
         if (this.traffic.sharedBuffer[offset] === -1) {
           if (this._fauxTraffic[i] && this._fauxTraffic[i].meshGroup) {
-            this._fauxTraffic[i].meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+            this._fauxTraffic[i].meshGroup.traverse(child => { if (child.material) child.material.dispose(); });
             this.scene.remove(this._fauxTraffic[i].meshGroup);
             this._fauxTraffic[i].meshGroup = null;
           }
@@ -2367,7 +2367,7 @@ class Game {
         const offset = (this.traffic.maxVehicles + i) * 16;
         if (this.traffic.sharedBuffer[offset] === -1) {
           if (this._fauxParked[i] && this._fauxParked[i].meshGroup) {
-            this._fauxParked[i].meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+            this._fauxParked[i].meshGroup.traverse(child => { if (child.material) child.material.dispose(); });
             this.scene.remove(this._fauxParked[i].meshGroup);
             this._fauxParked[i].meshGroup = null;
           }

@@ -55,26 +55,21 @@ export class TrafficManager {
     // Dynamic traffic density based on heat level (clears the streets as things get wilder)
     const activeMax = Math.max(2, this.maxVehicles - heatLevel * 3);
 
-    // Dynamic growing: spawn at most 1 new vehicle per frame to avoid a spawn hitch
-    if (this.vehicles.length < activeMax) {
-      const types = ['cab', 'sedan', 'suv', 'sports', 'pickup', 'van'];
-      const colors = [
-        0xfce300, // Yellow Taxi Cab
-        0xe0e0e0, // Silver Sedan
-        0xcc2222, // Red Sport Coupe
-        0x2e4a62, // Slate Blue SUV
-        0x4a4a4a, // Charcoal Sedan
-        0x39ff14, // Neon Lime Green
-        0x00ffff, // Neon Cyan
-        0xf0f0f5, // Pearl White
-        0xde3163  // Cherry Pink
-      ];
-      // Spawn at most 1 per frame — spawning multiple cars at once causes a noticeable hitch
-      const type = types[Math.floor(Math.random() * types.length)];
-      const color = type === 'cab' ? 0xfce300 : colors[Math.floor(Math.random() * colors.length)];
-      const v = new TrafficVehicle(this.vehicles.length, type, color, playerPos, world);
-      v.recycle(playerPos, playerHeading, aiRacers, world);
-      this.vehicles.push(v);
+    // Object Pool Spawning: Wake up inactive vehicles if we are below activeMax
+    let activeCount = 0;
+    for (let i = 0; i < this.vehicles.length; i++) {
+      if (this.vehicles[i].isActive !== false) activeCount++;
+    }
+
+    if (activeCount < activeMax && this.vehicles.length > 0) {
+      // Find the first inactive vehicle and spawn it (max 1 per frame to avoid hitch)
+      for (let i = 0; i < this.vehicles.length; i++) {
+        if (this.vehicles[i].isActive === false) {
+          this.vehicles[i].isActive = true;
+          this.vehicles[i].recycle(playerPos, playerHeading, aiRacers, world);
+          break;
+        }
+      }
     }
 
     // Build camera frustum if camera is provided
@@ -96,7 +91,9 @@ export class TrafficManager {
       allObstacles.push({ id: 'ai_' + ai.id, position: ai.position });
     });
     this.vehicles.forEach(v => {
-      allObstacles.push({ id: 'traffic_' + v.id, position: v.position });
+      if (v.isActive !== false) {
+        allObstacles.push({ id: 'traffic_' + v.id, position: v.position });
+      }
     });
     this.parkedVehicles.forEach(v => {
       allObstacles.push({ id: 'parked_' + v.id, position: v.position });
@@ -135,6 +132,7 @@ export class TrafficManager {
     // 2. Update active traffic vehicles
     for (let i = this.vehicles.length - 1; i >= 0; i--) {
       const v = this.vehicles[i];
+      if (v.isActive === false) continue;
 
       // Build per-update obstacle list excluding self (reuse allObstacles, skip by id)
       const selfKey = 'traffic_' + v.id;
@@ -152,26 +150,17 @@ export class TrafficManager {
       const needsRecycle = v.update(dt, playerPos, playerHeading, others, nearRoadblock, frustum, activeCops);
 
       if (needsRecycle) {
-        if (this.vehicles.length > activeMax) {
-          // Unload (remove) from scene silently out of view to avoid popping
-          if (v.meshGroup) {
-            v.meshGroup.traverse(child => {
-              if (child.geometry) child.geometry.dispose();
-            });
-            this.scene.remove(v.meshGroup);
-          }
-          this.vehicles.splice(i, 1);
+        if (activeCount > activeMax) {
+          // Unload from scene silently
+          v.isActive = false;
+          activeCount--; // Adjust local count so we only disable the correct amount
+          v.opacity = 0.0; // Ensure it visually disappears instantly
         } else {
           // Recycle normally (relocate out of view, fade back in, avoiding AI)
           v.recycle(playerPos, playerHeading, aiRacers, world);
         }
       }
     }
-
-    // Re-index remaining vehicles
-    this.vehicles.forEach((v, idx) => {
-      v.id = idx;
-    });
 
     this.syncToBuffer();
   }
@@ -182,7 +171,7 @@ export class TrafficManager {
     // Sync Active Vehicles
     for (let i = 0; i < this.maxVehicles; i++) {
       const v = this.vehicles[i];
-      if (v) {
+      if (v && v.isActive !== false) {
         this.sharedBuffer[offset++] = v.id;
         this.sharedBuffer[offset++] = v.type === 'cab' ? 0 : (v.type === 'sedan' ? 1 : 2); // Simple enum mapping
         this.sharedBuffer[offset++] = v.colorHex;

@@ -273,7 +273,7 @@ export class Roadblock {
   cleanup() {
     if (this.meshGroup) {
       this.meshGroup.traverse(child => {
-        if (child.isMesh && child.geometry) child.geometry.dispose();
+        if (child.isMesh && child.material) child.material.dispose();
       });
       this.app.scene.remove(this.meshGroup);
     }

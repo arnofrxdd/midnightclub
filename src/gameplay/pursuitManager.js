@@ -54,7 +54,7 @@ export class PursuitManager {
     this.cops.forEach(cop => {
       if (cop.meshGroup) {
         cop.meshGroup.traverse(child => {
-          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
         });
         this.app.scene.remove(cop.meshGroup);
       }
@@ -609,7 +609,7 @@ export class PursuitManager {
       const cleanupDist = isBehind ? 160.0 : 350.0;
       if (dist > cleanupDist) {
         if (cop.meshGroup) {
-          cop.meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+          cop.meshGroup.traverse(child => { if (child.material) child.material.dispose(); });
           this.app.scene.remove(cop.meshGroup);
         }
         this.cops.splice(ci, 1);
@@ -621,7 +621,7 @@ export class PursuitManager {
       const cop = this.parkedCops[pi];
       if (cop.position.distanceTo(playerPos) > 350.0) {
         if (cop.meshGroup) {
-          cop.meshGroup.traverse(child => { if (child.geometry) child.geometry.dispose(); });
+          cop.meshGroup.traverse(child => { if (child.material) child.material.dispose(); });
           this.app.scene.remove(cop.meshGroup);
         }
         this.parkedCops.splice(pi, 1);

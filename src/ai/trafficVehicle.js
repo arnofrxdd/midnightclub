@@ -577,15 +577,15 @@ export class TrafficVehicle {
 
     // 1. Calculate target opacity based on distance, frustum visibility, or force fade
     let targetOpacity = 1.0;
-    if (forceFade || (activeCops.length > 0 && distToPlayer > 100.0 && !inView && dot < 0.0)) {
-      targetOpacity = 0.0; // Instantly prune far out-of-view cars when pursuit is active (only if behind player)
-    } else if (!inView && distToPlayer > 50.0 && dot < 0.0) {
+    if (forceFade || (activeCops.length > 0 && distToPlayer > 150.0 && !inView && dot < 0.0)) {
+      targetOpacity = 0.0; // Instantly prune far out-of-view cars when pursuit is active
+    } else if (!inView && distToPlayer > 80.0 && dot < 0.0) {
       // Fade out if outside player frustum, behind the car, and not super close
       targetOpacity = 0.0;
     } else {
       // Different fade ranges depending on whether the car is in front or behind the player
-      const fadeStart = dot >= 0.0 ? 280.0 : 200.0;
-      const fadeEnd = dot >= 0.0 ? 340.0 : 260.0;
+      const fadeStart = dot >= 0.0 ? 300.0 : 220.0;
+      const fadeEnd = dot >= 0.0 ? 380.0 : 280.0;
       
       if (distToPlayer > fadeEnd) {
         targetOpacity = 0.0;
@@ -594,8 +594,12 @@ export class TrafficVehicle {
       }
     }
     
-    // Smoothly interpolate current opacity
-    this.opacity += (targetOpacity - this.opacity) * 5.0 * dt;
+    // Smoothly interpolate current opacity (fade in faster than fade out to fix LOD pop-in)
+    if (Math.abs(targetOpacity - this.opacity) < 0.01) {
+      this.opacity = targetOpacity;
+    } else {
+      this.opacity += (targetOpacity - this.opacity) * (targetOpacity > this.opacity ? 10.0 : 5.0) * dt;
+    }
     this.opacity = Math.max(0.0, Math.min(1.0, this.opacity));
 
     // Recycle/unload checks (completely invisible to player)
@@ -809,10 +813,17 @@ export class TrafficVehicle {
     // Decelerate if stopping, otherwise accelerate to target cruising speed
     // If recovering, let the recovery sub-system handle speed acceleration.
     if (!this.isRecovering) {
-      let activeTargetSpeed = (stopForLight || stopForCar || yieldForIntersectionCar) ? 0.0 : this.targetSpeed;
+      if (stopForLight || stopForCar || yieldForIntersectionCar) {
+        if (this.patienceTimer === undefined) this.patienceTimer = 0;
+        this.patienceTimer += dt;
+      } else {
+        this.patienceTimer = 0;
+      }
+
+      let activeTargetSpeed = (stopForLight || stopForCar || yieldForIntersectionCar) ? (this.patienceTimer > 4.0 ? 3.5 : 0.0) : this.targetSpeed;
       if (isTurningOrInIntersection && activeTargetSpeed > 0.0) {
         // Slow down to a safe turning/intersection speed
-        activeTargetSpeed = Math.min(activeTargetSpeed, 7.5);
+        activeTargetSpeed = Math.min(activeTargetSpeed, 6.0);
       }
       if (isYielding && activeTargetSpeed > 0.0) {
         activeTargetSpeed *= (1.0 - yieldIntensity * 0.65); // Slow down significantly when yielding
@@ -1013,28 +1024,9 @@ export class TrafficVehicle {
         }
 
         // Only commit the turn if the car is not going straight (axis unchanged).
-        // When actually turning (perpAxis chosen), snap the roadCoord to the intersection
-        // center so the lane re-centering error doesn't spike and whip the car.
         const isTurning = chosen.axis !== this.roadAxis;
-        if (isTurning) {
-          // Snap position to the intersection center on the road axis we are leaving,
-          // preventing a large lane error that would cause an instant violent swerve.
-          if (this.roadAxis === 'x') {
-            this.position.x = currentBlockX; // center on the column we are entering
-          } else {
-            this.position.z = currentBlockZ; // center on the row we are entering
-          }
-          // Also force the heading to the new road direction immediately
-          // so the rejoinAngle computed next frame starts from the correct baseline.
-          const newBaselineAngle = chosen.axis === 'z'
-            ? (chosen.dir > 0 ? 0 : Math.PI)
-            : (chosen.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
-          // Interpolate 80% of the way to avoid an abrupt snap while still correcting fast.
-          let hdgDiff = newBaselineAngle - this.heading;
-          while (hdgDiff < -Math.PI) hdgDiff += Math.PI * 2;
-          while (hdgDiff > Math.PI) hdgDiff -= Math.PI * 2;
-          this.heading += hdgDiff * 0.80;
-        }
+        // Natural Steering Correction in Section 4 handles smooth cornering automatically.
+        // We do not snap the position or heading anymore!
 
         this.roadAxis = chosen.axis;
         this.roadCoord = chosen.coord;

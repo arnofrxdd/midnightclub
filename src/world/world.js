@@ -567,6 +567,8 @@ export class World {
           if (tile.obstacles) {
             for (let i = 0; i < tile.obstacles.length; i++) {
               const obs = tile.obstacles[i];
+              if (!obs.isBuilding) continue;
+
               // Expand the bounding box by 1.5m so it triggers just before the camera clips,
               // preventing the glitchy edge-clipping effect.
               if (this.segmentIntersectsAABB(cameraPos.x, cameraPos.z, playerX, playerZ, obs.xMin - 1.5, obs.xMax + 1.5, obs.zMin - 1.5, obs.zMax + 1.5)) {

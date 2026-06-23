@@ -254,28 +254,28 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       // Front Facade features
       if (hasDoor) {
         const frontDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
-        frontDoor.translate(centerX, 2.1, zMax + 0.05);
+        frontDoor.translate(centerX, 2.1, zMax + 0.15);
         doorGeoms.push(frontDoor);
       }
 
       const shopWinW = 6.0;
       const shopWinH = 4.5;
       const shopWinLeft = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
-      shopWinLeft.translate(centerX - wX / 4, 2.5, zMax + 0.05);
+      shopWinLeft.translate(centerX - wX / 4, 2.5, zMax + 0.15);
       windowGeoms.push(shopWinLeft);
 
       const shopWinRight = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
-      shopWinRight.translate(centerX + wX / 4, 2.5, zMax + 0.05);
+      shopWinRight.translate(centerX + wX / 4, 2.5, zMax + 0.15);
       windowGeoms.push(shopWinRight);
 
       const shopSignW = 5.8;
       const shopSignH = 1.0;
       const signLeft = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
-      signLeft.translate(centerX - wX / 4, 5.4, zMax + 0.1);
+      signLeft.translate(centerX - wX / 4, 5.4, zMax + 0.2);
       billboardGeoms.push(signLeft);
 
       const signRight = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
-      signRight.translate(centerX + wX / 4, 5.4, zMax + 0.1);
+      signRight.translate(centerX + wX / 4, 5.4, zMax + 0.2);
       billboardGeoms.push(signRight);
 
       const awning = new THREE.BoxGeometry(wX - 2, 0.35, 2.0, Math.max(1, Math.round((wX - 2) / 2)), 1, 1);
@@ -345,7 +345,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     if (zMin > -20 && hasDoor) {
       // Back Facade features
       const backDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
-      backDoor.translate(centerX, 2.1, zMin - 0.05);
+      backDoor.translate(centerX, 2.1, zMin - 0.15);
       doorGeoms.push(backDoor);
     }
 
@@ -402,7 +402,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       for (let wx = l2_xMin + 3; wx < l2_xMax - 3; wx += 4) {
         if (l2_zMax < 20) {
           const winF = createDetailedWindowGeometry(winW, winH, 0.1);
-          winF.translate(wx, wy, l2_zMax + 0.05);
+          winF.translate(wx, wy, l2_zMax + 0.15);
           windowGeoms.push(winF);
 
           // Voxel style window sill
@@ -413,7 +413,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
 
         if (l2_zMin > -20) {
           const winB = createDetailedWindowGeometry(winW, winH, 0.1);
-          winB.translate(wx, wy, l2_zMin - 0.05);
+          winB.translate(wx, wy, l2_zMin - 0.15);
           windowGeoms.push(winB);
 
           // Voxel style window sill
@@ -475,7 +475,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
         for (let wx = l3_xMin + 3; wx < l3_xMax - 3; wx += 4.0) {
           if (l3_zMax < 20) {
             const winF = createDetailedWindowGeometry(winW, winH, 0.1);
-            winF.translate(wx, wy, l3_zMax + 0.05);
+            winF.translate(wx, wy, l3_zMax + 0.15);
             windowGeoms.push(winF);
 
             // Voxel style window sill
@@ -485,7 +485,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
           }
           if (l3_zMin > -20) {
             const winB = createDetailedWindowGeometry(winW, winH, 0.1);
-            winB.translate(wx, wy, l3_zMin - 0.05);
+            winB.translate(wx, wy, l3_zMin - 0.15);
             windowGeoms.push(winB);
 
             // Voxel style window sill
@@ -526,7 +526,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
         for (let wx = l4_xMin + 3; wx < l4_xMax - 3; wx += 4.0) {
           if (l4_zMax < 20) {
             const winF = createDetailedWindowGeometry(winW, winH, 0.1);
-            winF.translate(wx, wy, l4_zMax + 0.05);
+            winF.translate(wx, wy, l4_zMax + 0.15);
             windowGeoms.push(winF);
 
             // Voxel style window sill
@@ -719,7 +719,8 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       xMax: posX + xMax,
       zMin: posZ + zMin,
       zMax: posZ + zMax,
-      height: currentHeight
+      height: currentHeight,
+      isBuilding: true
     };
     obstacles.push(obstacle);
 

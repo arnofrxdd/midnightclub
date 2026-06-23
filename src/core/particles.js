@@ -192,20 +192,20 @@ export function spawnSkidmarkSegment(p1, p2) {
     const isRoad = this.world.roadColumns.has(gridX) || this.world.roadRows.has(gridZ);
     const isIntersection = this.world.roadColumns.has(gridX) && this.world.roadRows.has(gridZ);
     
-    let height = 0.22; // Default road top surface (road block center y=0.1 + thickness/2 = 0.2)
+    let height = 0.24; // Default road top surface (road block center y=0.1 + thickness/2 = 0.2, offset by 0.04)
     if (isRoad && !isIntersection) {
       const localX = p1.x - gridX * ts;
       const localZ = p1.z - gridZ * ts;
       const { rwX, rwZ } = this.world.getRoadWidthForGrid(gridX, gridZ);
       if (this.world.roadRows.has(gridZ)) {
         // Vertical road: Z must be within [-rwZ/2, rwZ/2]
-        if (Math.abs(localZ) > rwZ / 2) height = 0.37;
+        if (Math.abs(localZ) > rwZ / 2) height = 0.39;
       } else {
         // Horizontal road: X must be within [-rwX/2, rwX/2]
-        if (Math.abs(localX) > rwX / 2) height = 0.37;
+        if (Math.abs(localX) > rwX / 2) height = 0.39;
       }
     } else if (!isRoad) {
-      height = 0.37; // Sidewalks / building ground level (sidewalk block center y=0.175 + thickness/2 = 0.35)
+      height = 0.39; // Sidewalks / building ground level (sidewalk block center y=0.175 + thickness/2 = 0.35, offset by 0.04)
     }
     
     const baseHeight = this.world.getBaseHeight(midpoint.x, midpoint.z);
@@ -338,7 +338,7 @@ export function updateParticles(dt) {
           
           // Floor check to prevent clipping through terrain
           const baseHeight = this.world.getBaseHeight(p.mesh.position.x, p.mesh.position.z);
-          const floorY = 0.22 + baseHeight;
+          const floorY = 0.24 + baseHeight;
           if (p.mesh.position.y < floorY) {
             p.mesh.position.y = floorY;
             p.velocity.y = 0;
@@ -463,18 +463,18 @@ export function updateDebris(dt) {
         const isRoad = this.world.roadColumns.has(gridX) || this.world.roadRows.has(gridZ);
         const isIntersection = this.world.roadColumns.has(gridX) && this.world.roadRows.has(gridZ);
         
-        let height = 0.22;
+        let height = 0.24;
         if (isRoad && !isIntersection) {
           const localX = d.mesh.position.x - gridX * ts;
           const localZ = d.mesh.position.z - gridZ * ts;
           const { rwX, rwZ } = this.world.getRoadWidthForGrid(gridX, gridZ);
           if (this.world.roadRows.has(gridZ)) {
-            if (Math.abs(localZ) > rwZ / 2) height = 0.37;
+            if (Math.abs(localZ) > rwZ / 2) height = 0.39;
           } else {
-            if (Math.abs(localX) > rwX / 2) height = 0.37;
+            if (Math.abs(localX) > rwX / 2) height = 0.39;
           }
         } else if (!isRoad) {
-          height = 0.37;
+          height = 0.39;
         }
         const floorY = height + baseHeight;
 

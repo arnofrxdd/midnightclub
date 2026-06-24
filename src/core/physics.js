@@ -8,7 +8,7 @@ export class CarPhysics {
     this.heading = 0; // Direction the car is facing (radians)
     this.angularVelocity = 0;
     this.externalSpin = 0.0; // External angular impulse (e.g. from cop side-swipes)
-    
+
     // Physical stats
     this.mass = 1350; // kg
     this.maxSpeed = 110; // m/s (~246 mph)
@@ -16,23 +16,23 @@ export class CarPhysics {
     this.brakingForce = 115; // Snappier, firmer brakes
     this.drag = 0.052; // Air resistance
     this.rollingResistance = 0.025; // Road friction
-    
+
     // Steering and drifting
     this.steeringAngle = 0;
     this.maxSteerAngle = 0.58; // Radians (~33 deg, slightly sharper steer)
     this.steeringSpeed = 5.2; // Responsive steering response
-    
+
     // Advanced Traction / Slip Model
     this.gripNormal = 18.5; // High base grip for snappy response
     this.gripDrift = 3.6;   // Floor grip during slide
     this.isDrifting = false;
     this.driftTraction = 1.0; // Dynamic grip coefficient (1.0 = full grip, 0.0 = sliding)
     this.wheelSpin = 0.0;     // Launch/boost wheelspin factor
-    
+
     // Dimensions
     this.length = 4.4;
     this.width = 2.0;
-    
+
     // Advanced Suspension & 3D Dynamics
     this.suspensionRestLength = 0.82;
     this.suspensionStiffness = 32000;
@@ -40,16 +40,16 @@ export class CarPhysics {
     this.inertiaPitch = 2400;
     this.inertiaRoll = 1000;
     this.cgHeight = 0.45;
-    
+
     this.pitchVelocity = 0.0;
     this.rollVelocity = 0.0;
     this.bodyRoll = 0.0;
     this.bodyPitch = 0.0;
-    
+
     // Braking physics
     this.brakeLockup = false;
     this.brakeTime = 0.0;
-    
+
     // Dynamic features
     this.inSlipstream = false;
     this.justCrashed = false;
@@ -90,6 +90,7 @@ export class CarPhysics {
     // Preallocated scratch vectors (avoid per-frame heap allocation in update)
     this._fwdVec = new THREE.Vector3();
     this._rightVec = new THREE.Vector3();
+    this._scratchNormal = new THREE.Vector3();
     this.driftDuration = 0.0;
     this.landingEvents = [];
   }
@@ -99,12 +100,12 @@ export class CarPhysics {
     const preCollisionVelocityY = this.velocityY; // Capture vertical velocity before ground collision
     // DO NOT reset justLanded here! It must be consumed by main.js at the end of the frame
     // because physics.update may run multiple sub-steps per frame!
-    
+
     // 1. Process steering input
     let targetSteer = 0;
     // Dynamic steering angle boost when drifting to allow catching deep angles
     let activeMaxSteer = this.isDrifting ? 0.72 : this.maxSteerAngle;
-    
+
     // Massive understeer during brake lockup
     if (this.brakeLockup) {
       activeMaxSteer *= 0.15; // 85% loss of steering
@@ -112,24 +113,24 @@ export class CarPhysics {
 
     if (keys['a'] || keys['arrowleft']) targetSteer = activeMaxSteer;
     if (keys['d'] || keys['arrowright']) targetSteer = -activeMaxSteer;
-    
+
     // Smooth steering transition
     this.steeringAngle += (targetSteer - this.steeringAngle) * this.steeringSpeed * dt;
-    
+
     // 2. Local forward and right vectors (reuse preallocated scratch vectors)
     const forwardVec = this._fwdVec.set(Math.sin(this.heading), 0, Math.cos(this.heading));
-    const rightVec   = this._rightVec.set(Math.cos(this.heading), 0, -Math.sin(this.heading));
-    
+    const rightVec = this._rightVec.set(Math.cos(this.heading), 0, -Math.sin(this.heading));
+
     // Project velocity to find forward and lateral speeds
     const forwardSpeed = this.velocity.dot(forwardVec);
     const lateralSpeed = this.velocity.dot(rightVec);
     const speedMagnitude = Math.abs(forwardSpeed);
-    
+
     // 3. Drift & Traction Model (Handbrake & Slide Dynamics)
     const wantsHandbrake = keys[' '] || keys['spacebar'];
     const wantsAccel = keys['w'] || keys['arrowup'];
     const wantsBrake = keys['s'] || keys['arrowdown'];
-    
+
     // Wheelspin simulation on hard launch or Nitro usage
     this.isBurnout = wantsAccel && wantsBrake && speedMagnitude < 8.0 && !this.isAirborne;
 
@@ -151,7 +152,7 @@ export class CarPhysics {
       // Counter-steering allows recovery of grip
       const steeringDirection = Math.sign(this.steeringAngle);
       const slidingDirection = Math.sign(lateralSpeed);
-      
+
       if (steeringDirection === slidingDirection && steeringDirection !== 0) {
         // Counter-steering: recover traction smoothly but fast
         this.driftTraction = Math.min(1.0, this.driftTraction + 1.8 * dt);
@@ -159,7 +160,7 @@ export class CarPhysics {
         // Holding drift: slide continues, keep traction low
         this.driftTraction = Math.min(1.0, this.driftTraction + 0.35 * dt);
       }
-      
+
       // End drift once speed drops too low or traction recovers fully
       if (speedMagnitude < 4.0 || (this.driftTraction > 0.88 && Math.abs(lateralSpeed) < 2.0)) {
         this.isDrifting = false;
@@ -187,7 +188,7 @@ export class CarPhysics {
     } else {
       this.driftDuration = 0.0;
     }
-    
+
     // 4. Gear System automatic shifting and RPM simulation
     // Determine gear states
     if (wantsBrake && !this.isBurnout) {
@@ -242,9 +243,9 @@ export class CarPhysics {
       const minS = currentG > 1 ? this.gearMaxSpeeds[currentG - 1] * 0.8 : 0;
       const maxS = this.gearMaxSpeeds[currentG];
       const speedRatio = (speedMagnitude - minS) / (maxS - minS);
-      
+
       let targetRPM = 1200 + Math.max(0.0, Math.min(1.0, speedRatio)) * 6300;
-      
+
       // Rev limiter bounce simulation
       if (this.isBurnout || speedMagnitude >= maxS * 0.98 || this.wheelSpin > 0.4) {
         if (this.rpm >= 7700) {
@@ -271,13 +272,13 @@ export class CarPhysics {
 
         // Wheelspin reduces initial forward bite but increases RPM sound effects
         const spinBite = 1.0 - (this.wheelSpin * 0.35);
-        
+
         // SLIPSTREAM / DRAFTING BOOST
         const slipstreamMult = this.inSlipstream ? 1.16 : 1.0;
         force += this.engineForce * torqueMultiplier * spinBite * slipstreamMult;
-        
+
         if (this.isBoosting) force *= 1.85; // Nitro boost!
-        
+
         // Rev limiter throttle cut
         if (this.rpm > 7800) {
           force *= 0.05;
@@ -297,7 +298,7 @@ export class CarPhysics {
       // Brake or Reverse
       if (forwardSpeed > 1.0) {
         this.brakeTime += dt;
-        
+
         // Aero-assisted braking: Braking at high speeds generates far more stopping force
         // due to wind resistance + max kinetic brake bite
         const aeroBrakeAssist = Math.max(1.0, 1.0 + (forwardSpeed / 40.0));
@@ -306,10 +307,10 @@ export class CarPhysics {
         // Brake Lockup (ABS Simulation)
         // Slamming brakes at high speeds ( > 25 m/s ) for > 0.3s locks the tires
         if (forwardSpeed > 20.0 && this.brakeTime > 0.35 && Math.abs(this.steeringAngle) < 0.1) {
-           this.brakeLockup = true;
-           this.driftTraction = Math.max(0.1, this.driftTraction - 3.5 * dt); // Skidding straight
+          this.brakeLockup = true;
+          this.driftTraction = Math.max(0.1, this.driftTraction - 3.5 * dt); // Skidding straight
         } else {
-           this.brakeLockup = false;
+          this.brakeLockup = false;
         }
 
         // Brake Bias (Trail-braking Oversteer)
@@ -323,21 +324,21 @@ export class CarPhysics {
         if (forwardSpeed > -8.0 && forwardSpeed < 2.0) {
           force -= this.engineForce * 4.0;
         } else {
-          force -= this.engineForce * 1.5; 
+          force -= this.engineForce * 1.5;
         }
       }
     } else {
       this.brakeTime = 0.0;
       this.brakeLockup = false;
     }
-    
+
     // Drag & Resistance
     // Slipstream reduces drag coefficient by 40%
     const currentDragCoeff = this.inSlipstream ? this.drag * 0.6 : this.drag;
     const dragForce = -currentDragCoeff * forwardSpeed * Math.abs(forwardSpeed);
     const rollForce = -this.rollingResistance * forwardSpeed;
     const totalForwardForce = force + dragForce + rollForce;
-    
+
     // Apply forward force to velocity
     this.velocity.addScaledVector(forwardVec, (totalForwardForce / this.mass) * 100 * dt);
 
@@ -355,37 +356,37 @@ export class CarPhysics {
       lateralSlope = (hRight - hLeft) / (sampleDist * 2.0);
 
       const gravityAcc = 18.0;
-      
+
       // If braking/holding handbrake and speed is very low, resist slope sliding
       const isBraking = (wantsBrake && this.gear !== 'R') || wantsHandbrake;
       const currentFwdSpeed = this.velocity.dot(forwardVec);
-      
+
       if (isBraking && Math.abs(currentFwdSpeed) < 0.5) {
         // Lock car on the slope
         this.velocity.addScaledVector(forwardVec, -currentFwdSpeed);
       } else {
         this.velocity.addScaledVector(forwardVec, -gravityAcc * forwardSlope * dt);
       }
-      
+
       if (isBraking && Math.abs(lateralSpeed) < 0.5) {
         this.velocity.addScaledVector(rightVec, -lateralSpeed);
       } else {
         this.velocity.addScaledVector(rightVec, -gravityAcc * lateralSlope * dt);
       }
     }
-    
+
     // 6. Lateral Friction (Grip) with slide/wheel-slip response
     // Resists sliding sideways. Grip drops based on driftTraction coefficient.
     const currentGrip = THREE.MathUtils.lerp(this.gripDrift, this.gripNormal, this.driftTraction);
     const latFrictionForce = -lateralSpeed * currentGrip;
     this.velocity.addScaledVector(rightVec, latFrictionForce * dt);
-    
+
     // Drift momentum preservation: Keep speed from bleeding too fast when sliding
     if (this.isDrifting && speedMagnitude > 8.0 && wantsAccel) {
       const driftPush = Math.min(15.0, Math.abs(lateralSpeed)) * 0.45;
       this.velocity.addScaledVector(forwardVec, driftPush * dt);
     }
-    
+
     // Limit maximum speed based on current gear and nitro
     const maxSpeedLimit = this.isBoosting ? this.maxSpeed * 1.35 : this.maxSpeed;
     const currentSpeed = this.velocity.length();
@@ -398,13 +399,13 @@ export class CarPhysics {
       // 15% velocity decay per second horizontally in mid-air
       this.velocity.x *= Math.exp(-0.15 * dt);
       this.velocity.z *= Math.exp(-0.15 * dt);
-      
+
       // Clamp vertical falling speed to terminal velocity (-38 m/s)
       if (this.velocityY < -38.0) {
         this.velocityY = -38.0;
       }
     }
-    
+
     // 7. Yaw Rotation (Steering turns the car based on forward speed)
     if (this.isAirborne) {
       // In mid-air, conserve rotation speed (momentum) but allow steering to apply a gentle torque
@@ -419,7 +420,7 @@ export class CarPhysics {
       const slideFactor = this.isDrifting ? 1.95 : 1.0;
       const turnFactor = Math.min(1.0, forwardSpeed / 8.0);
       let yawSpeed = this.steeringAngle * turnFactor * slideFactor;
-      
+
       // Counter-steering stabilization assist during drift
       if (this.isDrifting) {
         const steeringDirection = Math.sign(this.steeringAngle);
@@ -428,13 +429,13 @@ export class CarPhysics {
           yawSpeed *= 0.72; // Snug/damp the rotation to catch the slide beautifully
         }
       }
-      
+
       // Handbrake slide spins out the rear end faster
       if (wantsHandbrake && Math.abs(this.steeringAngle) > 0.1) {
         this.angularVelocity += this.steeringAngle * 5.0 * dt; // Kick out faster
-        
+
         // Cap donut spin speed to a realistic maximum
-        const maxDonutSpeed = 2.4; 
+        const maxDonutSpeed = 2.4;
         if (this.angularVelocity > maxDonutSpeed) this.angularVelocity = maxDonutSpeed;
         if (this.angularVelocity < -maxDonutSpeed) this.angularVelocity = -maxDonutSpeed;
       } else {
@@ -446,10 +447,10 @@ export class CarPhysics {
     }
     this.heading += (this.angularVelocity + this.externalSpin) * dt;
     this.externalSpin *= Math.exp(-4.5 * dt); // decay spin-out force quickly
-    
+
     // Apply velocity to position
     this.position.addScaledVector(this.velocity, dt);
-    
+
     // 8. 4-WHEEL SUSPENSION SPRING-DAMPER SIMULATION
     const wheelOffsets = [
       { x: -0.95, z: 1.3 },  // FL
@@ -460,67 +461,67 @@ export class CarPhysics {
 
     const hGround = [0.5, 0.5, 0.5, 0.5];
     const compressions = [0, 0, 0, 0];
-    
+
     const cosH = Math.cos(this.heading);
     const sinH = Math.sin(this.heading);
-    
+
     let totalFSpring = 0.0;
     let totalTPitch = 0.0;
     let totalTRoll = 0.0;
-    
+
     for (let i = 0; i < 4; i++) {
       const w = wheelOffsets[i];
       // World coordinates of wheel contact points
       const wx = this.position.x + w.x * cosH + w.z * sinH;
       const wz = this.position.z - w.x * sinH + w.z * cosH;
-      
+
       // Ground height check
-      const gh = (world && typeof world.getGroundHeight === 'function') 
-        ? world.getGroundHeight(wx, wz) 
+      const gh = (world && typeof world.getGroundHeight === 'function')
+        ? world.getGroundHeight(wx, wz)
         : 0.5;
       hGround[i] = gh;
-      
+
       // Subtract slope height offset to calculate compression relative to slope plane.
       // This prevents the slope from double-tilting the car's body roll/pitch.
       const slopeH = w.z * forwardSlope + w.x * lateralSlope;
       const ghRel = gh - slopeH;
-      
+
       // Attachment point height: pitch down decreases front height, roll left increases left height
       const yAtt = this.position.y - w.z * this.bodyPitch - w.x * this.bodyRoll;
-      
+
       // Compression relative to slope plane
       const comp = Math.max(0.0, (ghRel + this.suspensionRestLength) - yAtt);
       compressions[i] = comp;
-      
+
       // Compression velocity
       const vAtt = this.velocityY - w.z * this.pitchVelocity - w.x * this.rollVelocity;
-      
+
       if (comp > 0.0) {
         let force = this.suspensionStiffness * comp - this.suspensionDamping * vAtt;
         force = Math.max(0.0, force);
-        
+
         totalFSpring += force;
         totalTPitch += force * -w.z;
         totalTRoll += force * -w.x;
       }
     }
-    
+
     // Inertial torques (visual body movement from accel and cornering)
     const forwardAccel = totalForwardForce / this.mass;
-    
+
     // Weight Transfer (Nose Dive): Deceleration throws engine weight forward heavily
-    const pitchMultiplier = forwardAccel < 0 ? 6.5 : 3.5; 
+    const pitchMultiplier = forwardAccel < 0 ? 6.5 : 3.5;
     const tPitchInertia = -this.mass * forwardAccel * this.cgHeight * pitchMultiplier;
-    
+
     const tRollInertia = -latFrictionForce * this.cgHeight * 3.5;
-    
+
     // Check if airborne
     const wasAirborne = this.isAirborne;
     const prevAirTime = this.airTime;
     const totalComp = compressions[0] + compressions[1] + compressions[2] + compressions[3];
     const avgGroundHeight = (hGround[0] + hGround[1] + hGround[2] + hGround[3]) / 4;
     const heightAboveGround = this.position.y - avgGroundHeight;
-    
+
     // Only airborne if suspension is fully extended AND center height is slightly above resting ground
     if (totalComp <= 0.001 && heightAboveGround > 0.70) {
       this.isAirborne = true;
@@ -561,7 +562,7 @@ export class CarPhysics {
       // Apply forces and torques to the rigid body
       const gravityAcc = -18.0; // Realistic, heavier gravity
       const prevY = this.position.y;
-      
+
       // Predict next Y position based on current velocity and gravity
       this.velocityY += gravityAcc * dt;
       const nextY = this.position.y + this.velocityY * dt;
@@ -572,7 +573,7 @@ export class CarPhysics {
         // Smoothly lerp towards target ground height
         const lerpSpeed = 18.0 + Math.min(12.0, this.velocity.length() * 0.1);
         this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, 1 - Math.exp(-lerpSpeed * dt));
-        
+
         // Calculate vertical velocity using vector projection at the rear wheels
         const rearWheelX = this.position.x - forwardVec.x * 1.3;
         const rearWheelZ = this.position.z - forwardVec.z * 1.3;
@@ -580,10 +581,10 @@ export class CarPhysics {
         const hRearCenter = world ? world.getGroundHeight(rearWheelX, rearWheelZ) : targetY;
         const hRearBack = world ? world.getGroundHeight(rearWheelX - forwardVec.x * 1.2, rearWheelZ - forwardVec.z * 1.2) : targetY;
         const rearFwdSlope = (hRearCenter - hRearBack) / 1.2;
-        
+
         const fwdSpeed = this.velocity.dot(forwardVec);
         const slopeVel = fwdSpeed * rearFwdSlope;
-        
+
         // If the slope pushes us up faster than our current vertical velocity, take the slope's velocity.
         // Otherwise, smoothly blend it so we don't instantly lose upward momentum at the lip of a jump.
         if (slopeVel > this.velocityY) {
@@ -597,7 +598,7 @@ export class CarPhysics {
         // Airborne: Follow the parabolic gravity path!
         this.position.y = nextY;
       }
-      
+
       // Only apply suspension and G-force torques when on the ground to prevent automatic nose dipping in mid-air
       let pitchAcc = 0;
       let rollAcc = 0;
@@ -605,13 +606,13 @@ export class CarPhysics {
         pitchAcc = (totalTPitch + tPitchInertia) / this.inertiaPitch;
         rollAcc = (totalTRoll + tRollInertia) / this.inertiaRoll;
       }
-      
+
       this.pitchVelocity += pitchAcc * dt;
       this.bodyPitch += this.pitchVelocity * dt;
       if (!this.isAirborne) {
         this.pitchVelocity *= Math.exp(-3.0 * dt);
       }
-      
+
       this.rollVelocity += rollAcc * dt;
       this.bodyRoll += this.rollVelocity * dt;
       if (!this.isAirborne) {
@@ -635,7 +636,7 @@ export class CarPhysics {
       this.pitchVelocity += (0.35 - this.bodyPitch) * 1.2 * dt;
       this.rollVelocity += (0 - this.bodyRoll) * 0.5 * dt;
     }
-    
+
     // Clamp pitch/roll to safe visual limits
     if (this.rolloverTimer <= 0) {
       if (!this.isAirborne) {
@@ -653,7 +654,7 @@ export class CarPhysics {
       while (this.bodyPitch > Math.PI) this.bodyPitch -= Math.PI * 2;
       while (this.bodyRoll < -Math.PI) this.bodyRoll += Math.PI * 2;
       while (this.bodyRoll > Math.PI) this.bodyRoll -= Math.PI * 2;
-      
+
       this.justLanded = true;
       this.landingImpact = Math.abs(preCollisionVelocityY);
 
@@ -668,7 +669,7 @@ export class CarPhysics {
       let trickName = "";
       let trickScore = 0;
       let nitroGained = 0.0;
-      
+
       // 1. Pitch flips (360 flips)
       if (this.stuntPitchRotated >= 5.5) {
         const numFlips = Math.round(this.stuntPitchRotated / 6.28);
@@ -684,7 +685,7 @@ export class CarPhysics {
           nitroGained = 0.5;
         }
       }
-      
+
       // 2. Barrel Rolls
       if (this.stuntRollRotated >= 5.5) {
         const numRolls = Math.round(this.stuntRollRotated / 6.28);
@@ -698,7 +699,7 @@ export class CarPhysics {
           nitroGained = 0.5;
         }
       }
-      
+
       // 3. Spins (Yaw)
       if (this.stuntYawRotated >= 5.5) {
         const numSpins = Math.round(this.stuntYawRotated / 6.28);
@@ -712,25 +713,25 @@ export class CarPhysics {
           nitroGained = 0.6;
         }
       }
-      
+
       // Combined Rodeo Flip
       if (this.stuntPitchRotated >= 5.5 && this.stuntYawRotated >= 5.5) {
         trickName = "RODEO FLIP!";
         trickScore = 3000;
         nitroGained = 1.0;
       }
-      
+
       // Landing alignment validation (relative to slope plane)
       const landingRollError = Math.abs(this.bodyRoll);
       const landingPitchError = Math.abs(this.bodyPitch);
       const isWipeout = landingRollError > 1.0 || landingPitchError > 1.0;
-      
+
       this.landedWipeout = isWipeout;
-      
+
       if (trickName !== "") {
         if (isWipeout) {
           this.trickNotification = `WIPEOUT: CRASHED ON ${trickName}`;
-          
+
           this.rolloverTimer = 1.5;
           this.rolloverSpin = (Math.random() > 0.5 ? 1.0 : -1.0) * (8.0 + Math.random() * 4.0);
           this.velocity.multiplyScalar(0.2); // Lose speed
@@ -776,10 +777,12 @@ export class CarPhysics {
       // Reposition out of collision
       this.position.x += collResult.normalX * collResult.overlap;
       this.position.z += collResult.normalZ * collResult.overlap;
-      
-      const normal = new THREE.Vector3(collResult.normalX, 0, collResult.normalZ);
+
+      // Avoid new Vector3 per collision
+      this._scratchNormal.set(collResult.normalX, 0, collResult.normalZ);
+      const normal = this._scratchNormal;
       const dotProd = this.velocity.dot(normal);
-      
+
       const speed = this.velocity.length();
       if (speed > 4.0) {
         this.isScraping = true;
@@ -787,13 +790,13 @@ export class CarPhysics {
       } else {
         this.isScraping = false;
       }
-      
+
       if (dotProd < 0) {
         // Bounce response
         this.velocity.addScaledVector(normal, -1.4 * dotProd);
         this.angularVelocity *= -0.5;
         this.isDrifting = false;
-        
+
         // Wall crash tracking
         const impactSpeed = -dotProd;
         if (impactSpeed > 5.0) {
@@ -823,7 +826,7 @@ export class CarPhysics {
     this.isScraping = false;
     this.scrapeNormal.set(0, 0, 0);
     this.externalSpin = 0.0;
-    
+
     // 3D physics reset
     this.velocityY = 0.0;
     this.isAirborne = false;

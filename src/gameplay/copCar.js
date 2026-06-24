@@ -32,6 +32,10 @@ export class CopCar {
     this._stuckTimer = 0;
     this._escapeTimer = 0;
     this._escapeTargetHdg = 0;
+
+    // Preallocate to avoid GC spikes
+    this._targetWaypoint = new THREE.Vector3();
+    this._fwd = new THREE.Vector3();
   }
 
   update(dt, world, targetPos, targetSpeed, targetHeading, navGraph, otherObstacles, isTargetTryingToMove = true) {
@@ -114,8 +118,9 @@ export class CopCar {
       }
     }
 
-    let targetWaypoint = isCircling ? circleTargetPos.clone() : targetPos.clone();
-
+    // Avoid .clone() per frame
+    this._targetWaypoint.copy(isCircling ? circleTargetPos : targetPos);
+    let targetWaypoint = this._targetWaypoint;
     // Stuck escape handler
     if (this._escapeTimer > 0) {
       this._escapeTimer -= dt;
@@ -377,7 +382,9 @@ export class CopCar {
       this.position.y += (targetY - this.position.y) * 12.0 * dt;
       if (this.position.y < targetY) this.position.y = targetY;
 
-      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+      // Avoid new Vector3 per frame
+      this._fwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+      const fwd = this._fwd;
       const rearWheelX = this.position.x - fwd.x * 1.3;
       const rearWheelZ = this.position.z - fwd.z * 1.3;
       const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;

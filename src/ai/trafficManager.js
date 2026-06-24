@@ -8,7 +8,7 @@ export class TrafficManager {
     this.vehicles = [];
     this.parkedVehicles = [];
     this.maxParkedVehicles = 12;
-    
+
     // Web Worker Preparation: 
     // We allocate a flat array of numbers to hold all traffic data.
     // Each vehicle takes 16 floats: 
@@ -34,7 +34,7 @@ export class TrafficManager {
     for (let i = 0; i < this.maxVehicles; i++) {
       const type = types[Math.floor(Math.random() * types.length)];
       const color = type === 'cab' ? 0xfce300 : colors[Math.floor(Math.random() * colors.length)];
-      
+
       const v = new TrafficVehicle(i, type, color, playerPos, world);
       this.vehicles.push(v);
     }
@@ -76,8 +76,8 @@ export class TrafficManager {
     // Build camera frustum if camera is provided
     // Cache the Frustum and Matrix4 as instance fields to avoid per-frame heap allocation
     if (camera) {
-      if (!this._frustum)    this._frustum    = new THREE.Frustum();
-      if (!this._projMatrix) this._projMatrix  = new THREE.Matrix4();
+      if (!this._frustum) this._frustum = new THREE.Frustum();
+      if (!this._projMatrix) this._projMatrix = new THREE.Matrix4();
       this._projMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       this._frustum.setFromProjectionMatrix(this._projMatrix);
     }
@@ -118,14 +118,17 @@ export class TrafficManager {
       const v = this.vehicles[i];
       if (v.isActive === false) continue;
 
-      // Check if near any active roadblock
+      // Check if near any active roadblock (Optimized inline loop)
       let nearRoadblock = false;
-      roadblocks.forEach(rb => {
-        if (v.position.distanceTo(rb.position) < 65.0) {
+      for (let r = 0; r < roadblocks.length; r++) {
+        const dx = v.position.x - roadblocks[r].position.x;
+        const dz = v.position.z - roadblocks[r].position.z;
+        if (dx * dx + dz * dz < 4225.0) { // 65 * 65
           nearRoadblock = true;
+          break;
         }
-      });
-      
+      }
+
       // Update vehicle state by passing raw arrays to avoid GC allocations
       const needsRecycle = v.update(dt, playerPos, playerHeading, aiRacers, this.vehicles, this.parkedVehicles, nearRoadblock, frustum, activeCops);
 
@@ -147,7 +150,7 @@ export class TrafficManager {
 
   syncToBuffer() {
     let offset = 0;
-    
+
     // Sync Active Vehicles
     for (let i = 0; i < this.maxVehicles; i++) {
       const v = this.vehicles[i];
@@ -162,22 +165,22 @@ export class TrafficManager {
         this.sharedBuffer[offset++] = v.pitch || 0;
         this.sharedBuffer[offset++] = v.roll || 0;
         this.sharedBuffer[offset++] = v.opacity !== undefined ? v.opacity : 1.0;
-        
+
         // Physics / Visual Effects Data
         this.sharedBuffer[offset++] = v.speed || 0;
-        
+
         const isSkidding = v.impactVelocity && v.impactVelocity.lengthSq() > 9.0;
         this.sharedBuffer[offset++] = isSkidding ? 1.0 : 0.0;
-        
+
         if (isSkidding) {
-            const backward = v.impactVelocity.clone().negate().normalize();
-            this.sharedBuffer[offset++] = backward.x;
-            this.sharedBuffer[offset++] = backward.z;
+          const backward = v.impactVelocity.clone().negate().normalize();
+          this.sharedBuffer[offset++] = backward.x;
+          this.sharedBuffer[offset++] = backward.z;
         } else {
-            this.sharedBuffer[offset++] = 0;
-            this.sharedBuffer[offset++] = 0;
+          this.sharedBuffer[offset++] = 0;
+          this.sharedBuffer[offset++] = 0;
         }
-        
+
         this.sharedBuffer[offset++] = 0; // Padding
         this.sharedBuffer[offset++] = 0; // Padding
       } else {
@@ -187,7 +190,7 @@ export class TrafficManager {
         offset += 16;
       }
     }
-    
+
     // Sync Parked Vehicles
     for (let i = 0; i < this.maxParkedVehicles; i++) {
       const v = this.parkedVehicles[i];
@@ -209,12 +212,12 @@ export class TrafficManager {
         this.sharedBuffer[offset++] = isSkidding ? 1.0 : 0.0;
 
         if (isSkidding) {
-            const backward = v.impactVelocity.clone().negate().normalize();
-            this.sharedBuffer[offset++] = backward.x;
-            this.sharedBuffer[offset++] = backward.z;
+          const backward = v.impactVelocity.clone().negate().normalize();
+          this.sharedBuffer[offset++] = backward.x;
+          this.sharedBuffer[offset++] = backward.z;
         } else {
-            this.sharedBuffer[offset++] = 0;
-            this.sharedBuffer[offset++] = 0;
+          this.sharedBuffer[offset++] = 0;
+          this.sharedBuffer[offset++] = 0;
         }
 
         this.sharedBuffer[offset++] = 1.0; // Is Parked flag in padding slot

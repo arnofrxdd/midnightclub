@@ -1419,7 +1419,7 @@ export class World {
 
     for (let cx = cx0; cx <= cx1; cx++) {
       for (let cz = cz0; cz <= cz1; cz++) {
-        const cell = this.obstacleGrid.get(`${cx},${cz}`);
+        const cell = this.obstacleGrid.get(cx + ',' + cz);
         if (!cell) continue;
         for (let i = 0; i < cell.length; i++) {
           const obs = cell[i];
@@ -1579,7 +1579,7 @@ export class World {
     const cx = Math.floor(x / cs);
     const cz = Math.floor(z / cs);
 
-    const cell = this.obstacleGrid.get(`${cx},${cz}`);
+    const cell = this.obstacleGrid.get(cx + ',' + cz);
     if (cell) {
       for (const obs of cell) {
         if (obs.isRamp) {

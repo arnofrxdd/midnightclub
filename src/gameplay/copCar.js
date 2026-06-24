@@ -410,6 +410,11 @@ export class CopCar {
     if (dv < 0) {
       this.velocity.x -= dv * hit.normalX;
       this.velocity.z -= dv * hit.normalZ;
+      if (dv < -3.0) {
+        this.justCrashed = true;
+        this.lastWallImpactSpeed = Math.abs(dv);
+        this.lastWallImpactNormal = new THREE.Vector3(hit.normalX, 0, hit.normalZ);
+      }
     }
     
     if (this.speed > 0 && (this.velocity.x * hit.normalX + this.velocity.z * hit.normalZ) < -0.4) {

@@ -793,7 +793,8 @@ class Game {
     // Compile all car types to compile their specific materials (rimMat, bodyMat variations, sirenMat, lens flares)
     const carTypes = ['sports', 'pickup', 'van', 'cop', 'sedan'];
     carTypes.forEach(type => {
-      const { carGroup } = this.createVoxelCarMesh(0x1a3d8c, type);
+      const color = type === 'cop' ? 0x000000 : 0x1a3d8c;
+      const { carGroup } = this.createVoxelCarMesh(color, type);
       dummyGroup.add(carGroup);
     });
 
@@ -1727,6 +1728,56 @@ class Game {
       this.race.aiRacers.forEach(ai => {
         if (ai.meshGroup) {
           const dist = ai.position.distanceTo(focusTarget.position);
+
+          // Keep things optimized: update state but only spawn visual effects if within 130m
+          if (ai._wasAirborne === undefined) ai._wasAirborne = ai.isAirborne;
+          if (dist <= 130.0) {
+            // Check for landing
+            if (ai._wasAirborne && !ai.isAirborne) {
+              const contactPos = ai.position.clone();
+              contactPos.y += 0.1;
+              const impact = Math.max(2.5, Math.abs(ai.velocityY || 0));
+
+              // Regular landing smoke
+              const count = Math.min(25, Math.floor(impact * 2.0) + 8);
+              this.spawnParticles(contactPos, new THREE.Vector3(0, 1.5, 0), 0xaaaaaa, count);
+
+              // Bright landing sparks
+              const sparkCount = Math.min(30, Math.floor(impact * 3.0) + 12);
+              this.spawnParticles(contactPos, new THREE.Vector3(0, 3, 0), 0xffee88, sparkCount, false, true);
+
+              // Camera shake if close to player
+              const shakeDist = ai.position.distanceTo(this.physics.position);
+              if (shakeDist < 75.0) {
+                const falloff = 1.0 - (shakeDist / 75.0);
+                const shakeFactor = Math.min(0.6, impact * 0.045) * falloff;
+                this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
+              }
+            }
+
+            // Check for wall crash
+            if (ai.justCrashed) {
+              const contactPos = ai.position.clone();
+              const relSpeed = ai.lastWallImpactSpeed || 10.0;
+              const pushDir = ai.lastWallImpactNormal || new THREE.Vector3(0, 0, 1);
+              
+              this.spawnParticles(contactPos, pushDir, 0xffe6a8, 12, false, true);
+              this.spawnDebris(contactPos, pushDir, ai.colorHex, Math.min(5, Math.floor(relSpeed * 0.3)));
+
+              // Camera shake if close to player
+              const shakeDist = ai.position.distanceTo(this.physics.position);
+              if (shakeDist < 60.0) {
+                const falloff = 1.0 - (shakeDist / 60.0);
+                const shakeFactor = Math.min(0.6, relSpeed * 0.02) * falloff;
+                this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
+              }
+              ai.justCrashed = false;
+            }
+          } else {
+            ai.justCrashed = false; // consume it even if too far
+          }
+          ai._wasAirborne = ai.isAirborne;
+
           if (dist > 130.0) return; // Distance gate
 
           // AI Headlights
@@ -1908,6 +1959,56 @@ class Game {
       this.pursuit.cops.forEach(cop => {
         if (cop.meshGroup) {
           const dist = cop.position.distanceTo(focusTarget.position);
+
+          // Keep things optimized: update state but only spawn visual effects if within 130m
+          if (cop._wasAirborne === undefined) cop._wasAirborne = cop.isAirborne;
+          if (dist <= 130.0) {
+            // Check for landing
+            if (cop._wasAirborne && !cop.isAirborne) {
+              const contactPos = cop.position.clone();
+              contactPos.y += 0.1;
+              const impact = Math.max(2.5, Math.abs(cop.velocityY || 0));
+
+              // Regular landing smoke
+              const count = Math.min(25, Math.floor(impact * 2.0) + 8);
+              this.spawnParticles(contactPos, new THREE.Vector3(0, 1.5, 0), 0xaaaaaa, count);
+
+              // Bright landing sparks
+              const sparkCount = Math.min(30, Math.floor(impact * 3.0) + 12);
+              this.spawnParticles(contactPos, new THREE.Vector3(0, 3, 0), 0xffee88, sparkCount, false, true);
+
+              // Camera shake if close to player
+              const shakeDist = cop.position.distanceTo(this.physics.position);
+              if (shakeDist < 75.0) {
+                const falloff = 1.0 - (shakeDist / 75.0);
+                const shakeFactor = Math.min(0.6, impact * 0.045) * falloff;
+                this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
+              }
+            }
+
+            // Check for wall crash
+            if (cop.justCrashed) {
+              const contactPos = cop.position.clone();
+              const relSpeed = cop.lastWallImpactSpeed || 10.0;
+              const pushDir = cop.lastWallImpactNormal || new THREE.Vector3(0, 0, 1);
+              
+              this.spawnParticles(contactPos, pushDir, 0xffe6a8, 12, false, true);
+              this.spawnDebris(contactPos, pushDir, 0x111111, Math.min(5, Math.floor(relSpeed * 0.3)));
+
+              // Camera shake if close to player
+              const shakeDist = cop.position.distanceTo(this.physics.position);
+              if (shakeDist < 60.0) {
+                const falloff = 1.0 - (shakeDist / 60.0);
+                const shakeFactor = Math.min(0.6, relSpeed * 0.02) * falloff;
+                this.crashShake = Math.max(this.crashShake || 0, shakeFactor);
+              }
+              cop.justCrashed = false;
+            }
+          } else {
+            cop.justCrashed = false; // consume it even if too far
+          }
+          cop._wasAirborne = cop.isAirborne;
+
           this.updateVehicleLOD(cop, dist, cop.opacity);
 
           const headlightPool = cop.meshGroup.getObjectByName("headlightPool");

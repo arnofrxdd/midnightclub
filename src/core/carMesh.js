@@ -460,60 +460,96 @@ function getCachedGeometries(type) {
   return geomCache[type];
 }
 
+// Material Cache
+const materialCache = {};
+
+function getCachedMaterials(bodyColorHex) {
+  if (materialCache[bodyColorHex]) return materialCache[bodyColorHex];
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: bodyColorHex,
+    roughness: 0.15,
+    metalness: 0.8
+  });
+  
+  const carbonMat = new THREE.MeshStandardMaterial({
+    color: 0x1e1e1e, // Dark grey trim / spoilers
+    roughness: 0.6,
+    metalness: 0.3
+  });
+
+  const wheelMat = new THREE.MeshStandardMaterial({
+    color: 0x151515,
+    roughness: 0.85
+  });
+
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: 0xd4af37, // Gold Alloy Rims
+    roughness: 0.2,
+    metalness: 0.9
+  });
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x111622,
+    roughness: 0.1,
+    metalness: 0.9
+  });
+
+  const headlampMat = new THREE.MeshBasicMaterial({ color: 0xfffcd4 }); // Warm halogen headlamps
+  const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc1111 });
+
+  const whiteCabinMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.15, metalness: 0.7 });
+  const sirenBlueMat = new THREE.MeshStandardMaterial({
+    color: 0x0022ff,
+    emissive: 0x0022ff,
+    emissiveIntensity: 0.1,
+    roughness: 0.1
+  });
+  const sirenRedMat = new THREE.MeshStandardMaterial({
+    color: 0xff0022,
+    emissive: 0xff0022,
+    emissiveIntensity: 0.1,
+    roughness: 0.1
+  });
+
+  materialCache[bodyColorHex] = {
+    bodyMat,
+    carbonMat,
+    wheelMat,
+    rimMat,
+    glassMat,
+    headlampMat,
+    taillightMat,
+    whiteCabinMat,
+    sirenBlueMat,
+    sirenRedMat
+  };
+
+  return materialCache[bodyColorHex];
+}
+
 export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex = null) {
     const carGroup = new THREE.Group();
-    
-    // Materials
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: bodyColorHex,
-      roughness: 0.15,
-      metalness: 0.8
-    });
-    
-    const carbonMat = new THREE.MeshStandardMaterial({
-      color: 0x1e1e1e, // Dark grey trim / spoilers
-      roughness: 0.6,
-      metalness: 0.3
-    });
-
-    const wheelMat = new THREE.MeshStandardMaterial({
-      color: 0x151515,
-      roughness: 0.85
-    });
-
-    const rimMat = new THREE.MeshStandardMaterial({
-      color: 0xd4af37, // Gold Alloy Rims
-      roughness: 0.2,
-      metalness: 0.9
-    });
-
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x111622,
-      roughness: 0.1,
-      metalness: 0.9
-    });
-
-    const headlampMat = new THREE.MeshBasicMaterial({ color: 0xfffcd4 }); // Warm halogen headlamps
-    const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc1111 });
+    const mats = getCachedMaterials(bodyColorHex);
 
     const cached = getCachedGeometries(type);
 
-    const bodyMesh = new THREE.Mesh(cached.bodyGeo.clone(), bodyMat);
+    const bodyMesh = new THREE.Mesh(cached.bodyGeo.clone(), mats.bodyMat.clone());
     bodyMesh.name = "carBody";
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     carGroup.add(bodyMesh);
 
-    const glassMesh = new THREE.Mesh(cached.glassGeo.clone(), glassMat);
+    const glassMesh = new THREE.Mesh(cached.glassGeo.clone(), mats.glassMat.clone());
     glassMesh.name = "glass";
     carGroup.add(glassMesh);
 
-    const carbonMesh = new THREE.Mesh(cached.carbonGeo.clone(), carbonMat);
+    const carbonMesh = new THREE.Mesh(cached.carbonGeo.clone(), mats.carbonMat.clone());
     carbonMesh.castShadow = true;
     carbonMesh.name = "carbon";
     carGroup.add(carbonMesh);
 
-    const headlampsMesh = new THREE.Mesh(cached.headlampsGeo.clone(), headlampMat);
+    const headlampsMesh = new THREE.Mesh(cached.headlampsGeo.clone(), mats.headlampMat.clone());
     headlampsMesh.name = "headlamps";
     carGroup.add(headlampsMesh);
 
@@ -548,24 +584,24 @@ export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex =
       carGroup.add(rightSprite);
     }
 
-    const taillightsMesh = new THREE.Mesh(cached.taillightsGeo.clone(), taillightMat);
+    const taillightsMesh = new THREE.Mesh(cached.taillightsGeo.clone(), mats.taillightMat.clone());
     taillightsMesh.name = "taillights";
     carGroup.add(taillightsMesh);
 
     // 5b. Grille, Exhausts, and Bull-Bars
     if (cached.grilleGeo) {
-      const grilleMesh = new THREE.Mesh(cached.grilleGeo.clone(), carbonMat);
+      const grilleMesh = new THREE.Mesh(cached.grilleGeo.clone(), mats.carbonMat.clone());
       grilleMesh.name = "grille";
       carGroup.add(grilleMesh);
     }
     if (cached.exhaustGeo) {
-      const exhaustMesh = new THREE.Mesh(cached.exhaustGeo.clone(), rimMat);
+      const exhaustMesh = new THREE.Mesh(cached.exhaustGeo.clone(), mats.rimMat.clone());
       exhaustMesh.castShadow = true;
       exhaustMesh.name = "exhaust";
       carGroup.add(exhaustMesh);
     }
     if (cached.bullBarGeo) {
-      const bullBarMesh = new THREE.Mesh(cached.bullBarGeo.clone(), carbonMat);
+      const bullBarMesh = new THREE.Mesh(cached.bullBarGeo.clone(), mats.carbonMat.clone());
       bullBarMesh.castShadow = true;
       bullBarMesh.name = "bullBar";
       carGroup.add(bullBarMesh);
@@ -573,45 +609,35 @@ export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex =
 
     // Cop specific meshes
     if (type === 'cop') {
-      const whiteCabinMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.15, metalness: 0.7 });
-      const whiteCabinMesh = new THREE.Mesh(cached.copCabinGeo.clone(), whiteCabinMat);
+      const whiteCabinMesh = new THREE.Mesh(cached.copCabinGeo.clone(), mats.whiteCabinMat.clone());
       whiteCabinMesh.castShadow = true;
       whiteCabinMesh.receiveShadow = true;
       whiteCabinMesh.name = "copCabin";
       carGroup.add(whiteCabinMesh);
 
-      const leftDoorMesh = new THREE.Mesh(cached.copLeftDoorGeo.clone(), whiteCabinMat);
+      const leftDoorMesh = new THREE.Mesh(cached.copLeftDoorGeo.clone(), mats.whiteCabinMat.clone());
       leftDoorMesh.castShadow = true;
       leftDoorMesh.name = "copLeftDoor";
       carGroup.add(leftDoorMesh);
 
-      const rightDoorMesh = new THREE.Mesh(cached.copRightDoorGeo.clone(), whiteCabinMat);
+      const rightDoorMesh = new THREE.Mesh(cached.copRightDoorGeo.clone(), mats.whiteCabinMat.clone());
       rightDoorMesh.castShadow = true;
       rightDoorMesh.name = "copRightDoor";
       carGroup.add(rightDoorMesh);
 
-      const sirenBarMesh = new THREE.Mesh(cached.copSirenBarGeo.clone(), carbonMat);
+      const sirenBarMesh = new THREE.Mesh(cached.copSirenBarGeo.clone(), mats.carbonMat.clone());
       sirenBarMesh.castShadow = true;
       sirenBarMesh.name = "copSirenBar";
       carGroup.add(sirenBarMesh);
 
-      const sirenBlueMat = new THREE.MeshStandardMaterial({
-        color: 0x0022ff,
-        emissive: 0x0022ff,
-        emissiveIntensity: 0.1,
-        roughness: 0.1
-      });
-      const sirenBlueMesh = new THREE.Mesh(cached.copSirenBlueGeo.clone(), sirenBlueMat);
+      // Clone siren materials so they can flash independently without causing shader recompilation stutter for ALL cops
+      const sirenBlueMatClone = mats.sirenBlueMat.clone();
+      const sirenBlueMesh = new THREE.Mesh(cached.copSirenBlueGeo.clone(), sirenBlueMatClone);
       sirenBlueMesh.name = "sirenBlue";
       carGroup.add(sirenBlueMesh);
 
-      const sirenRedMat = new THREE.MeshStandardMaterial({
-        color: 0xff0022,
-        emissive: 0xff0022,
-        emissiveIntensity: 0.1,
-        roughness: 0.1
-      });
-      const sirenRedMesh = new THREE.Mesh(cached.copSirenRedGeo.clone(), sirenRedMat);
+      const sirenRedMatClone = mats.sirenRedMat.clone();
+      const sirenRedMesh = new THREE.Mesh(cached.copSirenRedGeo.clone(), sirenRedMatClone);
       sirenRedMesh.name = "sirenRed";
       carGroup.add(sirenRedMesh);
     }
@@ -634,11 +660,11 @@ export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex =
       const wheelGroup = new THREE.Group();
       wheelGroup.position.set(x, y, z);
 
-      const tire = new THREE.Mesh(tireGeo, wheelMat);
+      const tire = new THREE.Mesh(tireGeo, mats.wheelMat.clone());
       tire.castShadow = true;
       wheelGroup.add(tire);
 
-      const rim = new THREE.Mesh(rimGeo, rimMat);
+      const rim = new THREE.Mesh(rimGeo, mats.rimMat.clone());
       wheelGroup.add(rim);
 
       carGroup.add(wheelGroup);

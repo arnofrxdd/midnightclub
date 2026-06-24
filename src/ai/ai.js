@@ -988,7 +988,14 @@ export class AICar {
     // Cancel velocity going INTO the wall
     const n  = new THREE.Vector3(hit.normalX, 0, hit.normalZ);
     const dv = this.velocity.dot(n);
-    if (dv < 0) this.velocity.addScaledVector(n, -dv);
+    if (dv < 0) {
+      this.velocity.addScaledVector(n, -dv);
+      if (dv < -3.0) {
+        this.justCrashed = true;
+        this.lastWallImpactSpeed = Math.abs(dv);
+        this.lastWallImpactNormal = n.clone();
+      }
+    }
 
     // Cancel forward speed component into wall
     if (this.speed > 0 && fwd.dot(n) < -0.4) {

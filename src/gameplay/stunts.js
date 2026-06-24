@@ -69,6 +69,7 @@ export function checkSlipstream(dt = 0.016) {
 
 export function checkNearMisses(dt) {
     if (!this.nearMissCooldowns) this.nearMissCooldowns = new Map();
+    if (this.oncomingNitroGained === undefined) this.oncomingNitroGained = 0;
 
     // Decrement cooldowns
     for (const [id, time] of this.nearMissCooldowns.entries()) {
@@ -80,40 +81,67 @@ export function checkNearMisses(dt) {
     }
 
     const playerSpeed = this.physics.velocity.length();
-    if (playerSpeed < 15.0) return; // Only at high speeds (33+ mph)
+    if (playerSpeed < 12.0) return; // Only at high speeds
 
     const playerPos = this.physics.position;
-
-    // Collect oncoming traffic vehicles
-    const targets = [];
     const playerForward = new THREE.Vector3(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading));
 
-    if (this.traffic && this.traffic.vehicles) {
-      this.traffic.vehicles.forEach(v => {
-        const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
-        // Check if traffic is oncoming (facing opposite direction)
-        if (vForward.dot(playerForward) < -0.4) {
-          targets.push({ id: `traffic_${v.id}`, position: v.position, opacity: v.opacity });
-        }
-      });
-    }
+    // Collect all other vehicles
+    const targets = [];
+    if (this.traffic && this.traffic.vehicles) targets.push(...this.traffic.vehicles.map(v => ({ id: `traffic_${v.id}`, v, opacity: v.opacity })));
+    if (this.race.active && this.race.aiRacers) targets.push(...this.race.aiRacers.map(v => ({ id: `ai_${v.id}`, v, opacity: 1.0 })));
+    if (this.pursuit && this.pursuit.active && this.pursuit.cops) targets.push(...this.pursuit.cops.filter(c => c.active).map(v => ({ id: `cop_${v.id}`, v, opacity: 1.0 })));
+
+    let currentlyOncoming = false;
 
     for (const target of targets) {
       if (target.opacity !== undefined && target.opacity < 0.5) continue;
       
-      const dist = playerPos.distanceTo(target.position);
-      // Near miss radius: between 2.2m (car radius sum) and 5.0m
-      if (dist > 2.2 && dist < 5.0) {
-        if (!this.nearMissCooldowns.has(target.id)) {
-          // Award Nitro!
-          this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + 0.15); // +15%
-          this.nearMissCooldowns.set(target.id, 3.0); // 3 seconds cooldown for this vehicle
+      const v = target.v;
+      const dist = playerPos.distanceTo(v.position);
+      
+      const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
+      const isOncoming = vForward.dot(playerForward) < -0.4;
+      const diff = v.position.clone().sub(playerPos);
+      const isAhead = diff.dot(playerForward) > 0.0;
 
-          // Show floating notification
-          this.showNotification('nearmiss_done', "ONCOMING! +15%", 1500, true);
-          // if (this.hypeManager) this.hypeManager.addStunt('nearmiss');
+      if (isOncoming) {
+        // Continuous oncoming nitro if ahead and within 60 meters
+        // We use an angle cone instead of strict lateral distance because steering angle ruins lateral distance over long ranges!
+        if (isAhead && dist < 60.0) {
+            const angle = diff.clone().normalize().angleTo(playerForward);
+            if (angle < 0.45) { // Roughly 25 degrees wide cone forward
+               currentlyOncoming = true;
+            }
+        }
+      } else {
+        // Standard Near Miss for cars going the SAME direction
+        if (dist > 2.2 && dist < 5.0) {
+          if (!this.nearMissCooldowns.has(target.id)) {
+            this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + 0.15); // +15%
+            this.nearMissCooldowns.set(target.id, 3.0); // 3 seconds cooldown
+            this.showNotification('nearmiss_done', "NEAR MISS! +15%", 1500, true);
+          }
         }
       }
+    }
+
+    if (currentlyOncoming) {
+      const gain = 0.12 * dt; // Accumulate 12% nitro per second while in oncoming zone
+      this.oncomingNitroGained += gain;
+      this.physics.nitroLevel = Math.min(this.physics.maxNitro, this.physics.nitroLevel + gain);
+      
+      const pctGained = Math.round(this.oncomingNitroGained * 100);
+      this.showNotification('nearmiss_active', `ONCOMING +${pctGained}%`, 0);
+    } else {
+      if (this.oncomingNitroGained > 0.02) {
+        const pctGained = Math.round(this.oncomingNitroGained * 100);
+        this.removeNotification('nearmiss_active');
+        this.showNotification('nearmiss_done', `ONCOMING! +${pctGained}%`, 1500, true);
+      } else {
+        this.removeNotification('nearmiss_active');
+      }
+      this.oncomingNitroGained = 0;
     }
   }
 

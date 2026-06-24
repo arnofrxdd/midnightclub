@@ -46,6 +46,10 @@ export class CarPhysics {
     this.bodyRoll = 0.0;
     this.bodyPitch = 0.0;
     
+    // Braking physics
+    this.brakeLockup = false;
+    this.brakeTime = 0.0;
+    
     // Dynamic features
     this.inSlipstream = false;
     this.justCrashed = false;
@@ -99,7 +103,13 @@ export class CarPhysics {
     // 1. Process steering input
     let targetSteer = 0;
     // Dynamic steering angle boost when drifting to allow catching deep angles
-    const activeMaxSteer = this.isDrifting ? 0.72 : this.maxSteerAngle;
+    let activeMaxSteer = this.isDrifting ? 0.72 : this.maxSteerAngle;
+    
+    // Massive understeer during brake lockup
+    if (this.brakeLockup) {
+      activeMaxSteer *= 0.15; // 85% loss of steering
+    }
+
     if (keys['a'] || keys['arrowleft']) targetSteer = activeMaxSteer;
     if (keys['d'] || keys['arrowright']) targetSteer = -activeMaxSteer;
     
@@ -121,7 +131,11 @@ export class CarPhysics {
     const wantsBrake = keys['s'] || keys['arrowdown'];
     
     // Wheelspin simulation on hard launch or Nitro usage
-    if (wantsAccel && speedMagnitude < 12.0 && this.gear === 1) {
+    this.isBurnout = wantsAccel && wantsBrake && speedMagnitude < 8.0 && !this.isAirborne;
+
+    if (this.isBurnout) {
+      this.wheelSpin = 1.0;
+    } else if (wantsAccel && speedMagnitude < 12.0 && this.gear === 1) {
       const targetSpin = (keys['shift'] || this.isBoosting) ? 1.0 : 0.65;
       this.wheelSpin += (targetSpin - this.wheelSpin) * 5.0 * dt;
     } else {
@@ -176,7 +190,7 @@ export class CarPhysics {
     
     // 4. Gear System automatic shifting and RPM simulation
     // Determine gear states
-    if (wantsBrake) {
+    if (wantsBrake && !this.isBurnout) {
       // Reverse detection
       if (forwardSpeed < 1.5 && this.gear !== 'R') {
         this.prevGear = this.gear;
@@ -232,7 +246,7 @@ export class CarPhysics {
       let targetRPM = 1200 + Math.max(0.0, Math.min(1.0, speedRatio)) * 6300;
       
       // Rev limiter bounce simulation
-      if (speedMagnitude >= maxS * 0.98 || this.wheelSpin > 0.4) {
+      if (this.isBurnout || speedMagnitude >= maxS * 0.98 || this.wheelSpin > 0.4) {
         if (this.rpm >= 7700) {
           targetRPM = 7100; // Bounce down
         } else {
@@ -268,20 +282,41 @@ export class CarPhysics {
         if (this.rpm > 7800) {
           force *= 0.05;
         }
+
+        // Burnout crawl
+        if (this.isBurnout) {
+          force *= 0.15; // Provide only a slow creep forward
+        }
       } else if (this.isBoosting) {
         // Allow pure nitro boosting even when not holding accelerate
         force += this.engineForce * 1.85;
       }
     }
 
-    if (wantsBrake) {
+    if (wantsBrake && !this.isBurnout) {
       // Brake or Reverse
       if (forwardSpeed > 1.0) {
-        force -= this.brakingForce;
-        // Heavy braking while turning can lock up tires and trigger a slide
-        if (Math.abs(this.steeringAngle) > 0.25) {
+        this.brakeTime += dt;
+        
+        // Aero-assisted braking: Braking at high speeds generates far more stopping force
+        // due to wind resistance + max kinetic brake bite
+        const aeroBrakeAssist = Math.max(1.0, 1.0 + (forwardSpeed / 40.0));
+        force -= this.brakingForce * aeroBrakeAssist;
+
+        // Brake Lockup (ABS Simulation)
+        // Slamming brakes at high speeds ( > 25 m/s ) for > 0.3s locks the tires
+        if (forwardSpeed > 20.0 && this.brakeTime > 0.35 && Math.abs(this.steeringAngle) < 0.1) {
+           this.brakeLockup = true;
+           this.driftTraction = Math.max(0.1, this.driftTraction - 3.5 * dt); // Skidding straight
+        } else {
+           this.brakeLockup = false;
+        }
+
+        // Brake Bias (Trail-braking Oversteer)
+        // 70/30 front bias means rear tires unload. Turning while hard braking forces a slide!
+        if (Math.abs(this.steeringAngle) > 0.25 && forwardSpeed > 15.0) {
           this.isDrifting = true;
-          this.driftTraction = Math.max(0.3, this.driftTraction - 2.0 * dt);
+          this.driftTraction = Math.max(0.2, this.driftTraction - 3.0 * dt); // Aggressively steps the tail out
         }
       } else if (this.gear === 'R') {
         // High initial torque kick to launch backwards quickly from a standstill
@@ -291,6 +326,9 @@ export class CarPhysics {
           force -= this.engineForce * 1.5; 
         }
       }
+    } else {
+      this.brakeTime = 0.0;
+      this.brakeLockup = false;
     }
     
     // Drag & Resistance
@@ -393,9 +431,15 @@ export class CarPhysics {
       
       // Handbrake slide spins out the rear end faster
       if (wantsHandbrake && Math.abs(this.steeringAngle) > 0.1) {
-        this.angularVelocity += this.steeringAngle * 3.5 * dt;
+        this.angularVelocity += this.steeringAngle * 5.0 * dt; // Kick out faster
+        
+        // Cap donut spin speed to a realistic maximum
+        const maxDonutSpeed = 2.4; 
+        if (this.angularVelocity > maxDonutSpeed) this.angularVelocity = maxDonutSpeed;
+        if (this.angularVelocity < -maxDonutSpeed) this.angularVelocity = -maxDonutSpeed;
       } else {
-        this.angularVelocity = yawSpeed;
+        // Smoothly recover from the spin instead of instantly snapping
+        this.angularVelocity += (yawSpeed - this.angularVelocity) * 12.0 * dt;
       }
     } else {
       this.angularVelocity = 0;
@@ -463,7 +507,11 @@ export class CarPhysics {
     
     // Inertial torques (visual body movement from accel and cornering)
     const forwardAccel = totalForwardForce / this.mass;
-    const tPitchInertia = -this.mass * forwardAccel * this.cgHeight * 3.5;
+    
+    // Weight Transfer (Nose Dive): Deceleration throws engine weight forward heavily
+    const pitchMultiplier = forwardAccel < 0 ? 6.5 : 3.5; 
+    const tPitchInertia = -this.mass * forwardAccel * this.cgHeight * pitchMultiplier;
+    
     const tRollInertia = -latFrictionForce * this.cgHeight * 3.5;
     
     // Check if airborne
@@ -560,11 +608,15 @@ export class CarPhysics {
       
       this.pitchVelocity += pitchAcc * dt;
       this.bodyPitch += this.pitchVelocity * dt;
-      this.pitchVelocity *= Math.exp(-3.0 * dt);
+      if (!this.isAirborne) {
+        this.pitchVelocity *= Math.exp(-3.0 * dt);
+      }
       
       this.rollVelocity += rollAcc * dt;
       this.bodyRoll += this.rollVelocity * dt;
-      this.rollVelocity *= Math.exp(-3.0 * dt);
+      if (!this.isAirborne) {
+        this.rollVelocity *= Math.exp(-3.0 * dt);
+      }
     } else {
       // Rollover tumble physics
       this.velocityY += -22.0 * dt;
@@ -574,14 +626,14 @@ export class CarPhysics {
     }
 
     // Mid-air stabilization (no manual keyboard controls)
-    if (this.isAirborne && this.airTime > 0.2 && this.rolloverTimer <= 0) {
+    if (this.isAirborne && this.airTime > 0.05 && this.rolloverTimer <= 0) {
       // Damp rotation velocities in the air gently to maintain natural momentum
-      this.pitchVelocity *= Math.exp(-0.4 * dt);
-      this.rollVelocity *= Math.exp(-0.4 * dt);
+      this.pitchVelocity *= Math.exp(-0.3 * dt);
+      this.rollVelocity *= Math.exp(-0.6 * dt);
 
-      // Aerodynamic stabilization: Slow natural gravity effect, not a harsh robotic spring.
-      this.pitchVelocity += (-0.05 - this.bodyPitch) * 0.15 * dt;
-      this.rollVelocity += (0 - this.bodyRoll) * 0.2 * dt;
+      // Realistic Airborne Arc: Heavy front engine pulls the nose down dynamically into a deep arc.
+      this.pitchVelocity += (0.35 - this.bodyPitch) * 1.2 * dt;
+      this.rollVelocity += (0 - this.bodyRoll) * 0.5 * dt;
     }
     
     // Clamp pitch/roll to safe visual limits

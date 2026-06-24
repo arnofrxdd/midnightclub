@@ -246,6 +246,9 @@ export function updateCamera(dt = 0.016) {
     if (this.gearShiftPunch > 0.0 && targetObj === this.physics && useLag) {
       shakeIntensity += this.gearShiftPunch * 0.12;
     }
+    if (this.physics.isBurnout && useLag) {
+      shakeIntensity += 0.12; // aggressive engine vibration
+    }
     if (this.crashShake > 0.0 && targetObj === this.physics) {
       shakeIntensity += this.crashShake;
     }

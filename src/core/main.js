@@ -3203,10 +3203,14 @@ class Game {
       }
     }
 
-    if (this.physics.isDrifting) {
-      const backward = this.physics.velocity.clone().negate().normalize();
-      if (!leftWet) this.spawnParticles(leftRear, backward, 0xaaaaaa, 2);
-      if (!rightWet) this.spawnParticles(rightRear, backward, 0xaaaaaa, 2);
+    if (this.physics.isDrifting || this.physics.isBurnout || this.physics.brakeLockup) {
+      // For burnouts, velocity might be near 0, so calculate exact backward direction from heading
+      const backDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0.2, -Math.cos(this.physics.heading)).normalize();
+      const particleDir = this.physics.isBurnout ? backDir : this.physics.velocity.clone().negate().normalize();
+      const smokeCount = this.physics.isBurnout ? 4 : 2; // Thicker smoke for burnout
+
+      if (!leftWet) this.spawnParticles(leftRear, particleDir, 0xaaaaaa, smokeCount);
+      if (!rightWet) this.spawnParticles(rightRear, particleDir, 0xaaaaaa, smokeCount);
       if (this.driftStatusEl) {
         this.driftStatusEl.innerText = "DRIFTING";
         this.driftStatusEl.classList.add('active');
@@ -3236,8 +3240,8 @@ class Game {
       this.nitroLight.intensity = 0.0;
     }
 
-    // Spawn player tire skid marks on drift or hard brake
-    const isSkidding = this.physics.isDrifting || (isBraking && playerSpeedMag > 4.0);
+    // Spawn player tire skid marks on drift, hard brake, burnout, or ABS lockup
+    const isSkidding = this.physics.isDrifting || this.physics.isBurnout || this.physics.brakeLockup || (isBraking && playerSpeedMag > 4.0);
     
     if (this.physics.isDrifting) {
       this.driftDuration += scaledDt;
@@ -3738,6 +3742,8 @@ class Game {
 
       if (this.physics.isBoosting) {
         this.nitroBarEl.style.stroke = '#ffffff'; // White/Cyan hot when boosting
+      } else if (this.physics.nitroLevel < 0.10) {
+        this.nitroBarEl.style.stroke = '#999999'; // Black and white (grayscale) below activation threshold
       } else {
         this.nitroBarEl.style.stroke = '#00e5ff'; // Standard electric cyan
       }

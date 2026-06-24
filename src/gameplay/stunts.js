@@ -9,7 +9,6 @@ export function checkSlipstream(dt = 0.016) {
     let targetVeh = null;
     
     const allVehs = [];
-    if (this.traffic && this.traffic.vehicles) allVehs.push(...this.traffic.vehicles);
     if (this.race.active && this.race.aiRacers) allVehs.push(...this.race.aiRacers);
     if (this.pursuit && this.pursuit.active && this.pursuit.cops) allVehs.push(...this.pursuit.cops);
     
@@ -85,22 +84,16 @@ export function checkNearMisses(dt) {
 
     const playerPos = this.physics.position;
 
-    // Collect all other vehicles
+    // Collect oncoming traffic vehicles
     const targets = [];
+    const playerForward = new THREE.Vector3(Math.sin(this.physics.heading), 0, Math.cos(this.physics.heading));
+
     if (this.traffic && this.traffic.vehicles) {
       this.traffic.vehicles.forEach(v => {
-        targets.push({ id: `traffic_${v.id}`, position: v.position, opacity: v.opacity });
-      });
-    }
-    if (this.race.active && this.race.aiRacers) {
-      this.race.aiRacers.forEach(ai => {
-        targets.push({ id: `ai_${ai.id}`, position: ai.position, opacity: 1.0 });
-      });
-    }
-    if (this.pursuit && this.pursuit.active && this.pursuit.cops) {
-      this.pursuit.cops.forEach(cop => {
-        if (cop.active) {
-          targets.push({ id: `cop_${cop.id}`, position: cop.position, opacity: 1.0 });
+        const vForward = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading));
+        // Check if traffic is oncoming (facing opposite direction)
+        if (vForward.dot(playerForward) < -0.4) {
+          targets.push({ id: `traffic_${v.id}`, position: v.position, opacity: v.opacity });
         }
       });
     }
@@ -117,7 +110,7 @@ export function checkNearMisses(dt) {
           this.nearMissCooldowns.set(target.id, 3.0); // 3 seconds cooldown for this vehicle
 
           // Show floating notification
-          this.showNotification('nearmiss_done', "NEAR MISS! +15%", 1500, true);
+          this.showNotification('nearmiss_done', "ONCOMING! +15%", 1500, true);
           // if (this.hypeManager) this.hypeManager.addStunt('nearmiss');
         }
       }

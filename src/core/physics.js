@@ -373,8 +373,9 @@ export class CarPhysics {
       if (Math.abs(this.steeringAngle) > 0.1) {
         this.angularVelocity += this.steeringAngle * 1.5 * dt;
       }
-      // Slowly decay rotation speed in mid-air due to aerodynamic drag
-      this.angularVelocity *= Math.exp(-0.8 * dt);
+      // Decay rotation speed in mid-air due to aerodynamic drag
+      // Increased damping so if we jump while drifting, we don't spin uncontrollably
+      this.angularVelocity *= Math.exp(-3.8 * dt);
     } else if (speedMagnitude > 0.5) {
       // Handbrake or brake slide increases rotational rotation
       const slideFactor = this.isDrifting ? 1.95 : 1.0;

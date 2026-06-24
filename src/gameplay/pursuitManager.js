@@ -47,7 +47,7 @@ export class PursuitManager {
     this.heatLevel = 0;
     this.bustProgress = 0.0;
     this.clearSpawnedCops();
-    this.app.showBanner("ESCUPED", "Police search cancelled");
+    this.app.showBanner("ESCAPED", "Police search cancelled");
   }
 
   clearSpawnedCops() {

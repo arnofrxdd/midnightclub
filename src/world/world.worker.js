@@ -17,12 +17,12 @@ class MockWorld {
     this.sortedColumnsArray = initData.sortedColumnsArray;
     this.sortedRowsArray = initData.sortedRowsArray;
     this.asphaltLocalCircles = initData.asphaltLocalCircles;
-    
+
     // Arrays for tracking inside the tile build context
     this.breakables = [];
     this.trafficLights = [];
     this.tilePuddles = new Map();
-    
+
     // Set up mock materials for mapping. We set the name attribute so they serialize nicely
     this.slFlareTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
     this.slFlareTex.needsUpdate = true;
@@ -32,13 +32,13 @@ class MockWorld {
     this.whiteLineMat = new THREE.MeshStandardMaterial({ name: 'whiteLineMat' });
     this.streetlightPoleMat = new THREE.MeshStandardMaterial({ name: 'streetlightPoleMat' });
     this.streetlightBulbMat = new THREE.MeshStandardMaterial({ name: 'streetlightBulbMat' });
-    
+
     this.ledGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'ledGroundLightPoolMat' });
     this.sodiumGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'sodiumGroundLightPoolMat' });
     this.storefrontGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'storefrontGroundLightPoolMat' });
     this.lightConeMatLED = new THREE.MeshBasicMaterial({ name: 'lightConeMatLED' });
     this.lightConeMatSodium = new THREE.MeshBasicMaterial({ name: 'lightConeMatSodium' });
-    
+
     this.brickMat = new THREE.MeshStandardMaterial({ name: 'brickMat' });
     this.buildingConcreteMat = new THREE.MeshStandardMaterial({ name: 'buildingConcreteMat' });
     this.slateMat = new THREE.MeshStandardMaterial({ name: 'slateMat' });
@@ -46,7 +46,7 @@ class MockWorld {
     this.glassySlateMat = new THREE.MeshStandardMaterial({ name: 'glassySlateMat' });
     this.darkConcreteMat = new THREE.MeshStandardMaterial({ name: 'darkConcreteMat' });
     this.brickDarkMat = new THREE.MeshStandardMaterial({ name: 'brickDarkMat' });
-    
+
     this.materials = [
       this.brickMat, this.buildingConcreteMat, this.slateMat, this.sandstoneMat,
       this.glassySlateMat, this.darkConcreteMat, this.brickDarkMat
@@ -63,11 +63,11 @@ class MockWorld {
     this.trashBagMat = new THREE.MeshStandardMaterial({ name: 'trashBagMat' });
     this.woodPoleMat = new THREE.MeshStandardMaterial({ name: 'woodPoleMat' });
     this.trunkMat = new THREE.MeshStandardMaterial({ name: 'trunkMat' });
-    
+
     this.leafMat = new THREE.MeshStandardMaterial({ name: 'leafMat' });
     this.leafCherryMat = new THREE.MeshStandardMaterial({ name: 'leafCherryMat' });
     this.leafAutumnMat = new THREE.MeshStandardMaterial({ name: 'leafAutumnMat' });
-    
+
     this.benchWoodMat = new THREE.MeshStandardMaterial({ name: 'benchWoodMat' });
     this.benchIronMat = new THREE.MeshStandardMaterial({ name: 'benchIronMat' });
     this.phoneBoothFrameMat = new THREE.MeshStandardMaterial({ name: 'phoneBoothFrameMat' });
@@ -91,15 +91,15 @@ class MockWorld {
       this.asphaltMaterials.push(new THREE.MeshStandardMaterial({ name: `asphaltMaterials_${i}` }));
     }
     this.asphaltMat = this.asphaltMaterials[0];
-    
+
     this.billboardColors = [0xff0055, 0x00ff66, 0x00f0ff, 0xffaa00];
-    
+
     // Mock light cone geometry/texture and light flares
     this.lightConeGeo = new THREE.PlaneGeometry(13.5, 7.8, 1, 1); // simplified
     const pGeo2 = this.lightConeGeo.clone().rotateY(Math.PI / 2);
     this.lightConeGeo = BufferGeometryUtils.mergeGeometries([this.lightConeGeo, pGeo2]);
     this.lightConeGeo.isCached = true;
-    
+
     this.lightPoolGeo = new THREE.PlaneGeometry(64, 64);
     this.lightPoolGeo.rotateX(-Math.PI / 2);
     this.lightPoolGeo.isCached = true;
@@ -118,7 +118,7 @@ class MockWorld {
     this.createBenchMesh = createBenchMesh;
     this.createPhoneBoothMesh = createPhoneBoothMesh;
     this.createTrashCanMesh = createTrashCanMesh;
-    
+
     this.templates = {};
     this.generateTemplates();
   }
@@ -484,12 +484,12 @@ self.onmessage = function (e) {
       mockWorld.buildAlleyTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
     } else if (isRoad) {
       mockWorld.buildRoadTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
-      
+
       // Compute world-space puddle circles
       const tileCircles = [];
       const matIndex = Math.abs(gridX * 17 + gridZ * 23) % mockWorld.asphaltMaterials.length;
       const localCircles = mockWorld.asphaltLocalCircles[matIndex];
-      
+
       if (localCircles && localCircles.length > 0) {
         const ox = Math.abs((gridX * 0.317 + gridZ * 0.713) % 1.0);
         const oy = Math.abs((gridX * 0.893 + gridZ * 0.149) % 1.0);
@@ -513,7 +513,7 @@ self.onmessage = function (e) {
           const shiftedV = (v + oy) % 1.0;
           const localX = shiftedU * sizeX - sizeX / 2;
           const localZ = shiftedV * sizeZ - sizeZ / 2;
-          
+
           tileCircles.push({
             x: posX + localX,
             z: posZ + localZ,
@@ -578,7 +578,7 @@ self.onmessage = function (e) {
     });
 
     const puddles = mockWorld.tilePuddles.get(key) || [];
-
+    mockWorld.tilePuddles.delete(key);
     // Clean up lists on mockWorld for next invocation
     mockWorld.breakables = [];
     mockWorld.trafficLights = [];

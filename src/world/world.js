@@ -82,7 +82,7 @@ export class World {
     const sortedCols = Array.from(this.mainRoadColumns).sort((a, b) => a - b);
     for (let i = 0; i < sortedCols.length - 1; i++) {
       const c1 = sortedCols[i];
-      const c2 = sortedCols[i+1];
+      const c2 = sortedCols[i + 1];
       const diff = c2 - c1;
       if (diff >= 3) {
         const seed = Math.sin(c1 * 12.9898 + c2 * 78.233) * 43758.5453;
@@ -97,7 +97,7 @@ export class World {
     const sortedRows = Array.from(this.mainRoadRows).sort((a, b) => a - b);
     for (let i = 0; i < sortedRows.length - 1; i++) {
       const r1 = sortedRows[i];
-      const r2 = sortedRows[i+1];
+      const r2 = sortedRows[i + 1];
       const diff = r2 - r1;
       if (diff >= 3) {
         const seed = Math.sin(r1 * 53.1374 + r2 * 21.9427) * 43758.5453;
@@ -114,11 +114,11 @@ export class World {
     this.roadRows = new Set([...this.mainRoadRows, ...this.shortcutRows]);
     this.sortedColumnsArray = Array.from(this.roadColumns).sort((a, b) => a - b);
     this.sortedRowsArray = Array.from(this.roadRows).sort((a, b) => a - b);
-    
+
     // Generate baked city environment reflections
     const envMap = createCityEnvMap();
     this.scene.environment = envMap;
-    
+
     // Loaded chunks map: key "gridX,gridZ" -> THREE.Group
     this.loadedTiles = new Map();
     this.buildingGeoCache = new Map(); // gridKey -> geometries to avoid building generation stutter
@@ -163,7 +163,7 @@ export class World {
     this.whiteLineMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.6 });
     this.streetlightPoleMat = new THREE.MeshStandardMaterial({ color: 0x22252c, metalness: 0.8, roughness: 0.5 });
     this.streetlightBulbMat = new THREE.MeshStandardMaterial({ color: 0xfff6dd, emissive: 0xffcc88, emissiveIntensity: 3.5 });
-    
+
     // Baked ground light pool geometry and materials for far-distance visibility without active lights
     this.lightPoolGeo = new THREE.PlaneGeometry(64, 64); // Wider radius for better blending
     this.lightPoolGeo.rotateX(-Math.PI / 2);
@@ -187,7 +187,7 @@ export class World {
       depthWrite: false
     });
     this.sodiumGroundLightPoolMat.name = 'sodiumGroundLightPoolMat';
-    
+
     // Storefront ground light pool geometry and material
     this.storefrontLightPoolGeo = new THREE.PlaneGeometry(24, 24);
     this.storefrontLightPoolGeo.rotateX(-Math.PI / 2);
@@ -216,10 +216,10 @@ export class World {
         const coneWidth = 0.15 + py * 0.75; // Widened significantly to cover the road lanes
         const horizontalFade = Math.max(0, 1.0 - (dx / coneWidth));
         const verticalFade = Math.max(0, 1.0 - py);
-        
+
         // Strong vertical fade power (3.2) to make the bottom fade out completely before intersecting the ground
         const intensity = Math.pow(horizontalFade, 1.5) * Math.pow(verticalFade, 3.2);
-        
+
         const idx = (y * 64 + x) * 4;
         imgData.data[idx] = 255;
         imgData.data[idx + 1] = 255;
@@ -277,7 +277,7 @@ export class World {
     this.windowYellowMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, emissive: 0xffcb66, emissiveIntensity: 4.2, roughness: 0.2 });
     this.windowBlueMat = new THREE.MeshStandardMaterial({ color: 0xe6f7ff, emissive: 0x3ac3ff, emissiveIntensity: 3.8, roughness: 0.2 });
     this.windowDarkMat = new THREE.MeshStandardMaterial({ color: 0x11131a, roughness: 0.1, metalness: 0.9 });
-    
+
     const windowTextures = createWindowTextures();
     this.windowDetailedMat = new THREE.MeshStandardMaterial({
       map: windowTextures.map,
@@ -298,7 +298,7 @@ export class World {
     this.leafMat = new THREE.MeshStandardMaterial({ color: 0x2e5c1e, roughness: 0.8 });
     this.leafCherryMat = new THREE.MeshStandardMaterial({ color: 0xe07297, roughness: 0.8 }); // Pink cherry blossom
     this.leafAutumnMat = new THREE.MeshStandardMaterial({ color: 0xd47525, roughness: 0.8 }); // Orange autumn maple
-    
+
     this.billboardColors = [0xff0055, 0x00ff66, 0x00f0ff, 0xffaa00];
 
     // New breakable assets materials
@@ -320,15 +320,15 @@ export class World {
     // Traffic light materials
     this.tlRedOnMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
     this.tlRedOffMat = new THREE.MeshStandardMaterial({ color: 0x3a0000, roughness: 0.8 });
-    
+
     this.tlYellowOnMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
     this.tlYellowOffMat = new THREE.MeshStandardMaterial({ color: 0x3a2500, roughness: 0.8 });
-    
+
     this.tlGreenOnMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     this.tlGreenOffMat = new THREE.MeshStandardMaterial({ color: 0x003a00, roughness: 0.8 });
-    
+
     this.tlHousingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
-    
+
     this.trafficLights = [];
     this.breakables = [];
 
@@ -346,7 +346,7 @@ export class World {
     // Initialize Web Worker for background world generation
     this.worker = new WorldWorker();
     this.loadingTiles = new Set();
-    
+
     this.worker.onmessage = (e) => {
       const { type, data } = e.data;
       if (type === 'tileGenerated') {
@@ -500,7 +500,7 @@ export class World {
       return origMat || this.concreteMat;
     }
     if (!this.materialOpacityPool) this.materialOpacityPool = new Map();
-    
+
     if (!this.materialOpacityPool.has(origMat)) {
       const steps = [];
       for (let i = 0; i <= 10; i++) {
@@ -519,11 +519,11 @@ export class World {
       }
       this.materialOpacityPool.set(origMat, steps);
     }
-    
+
     let index = Math.round(opacity * 10);
     if (isNaN(index)) index = 0;
     index = Math.max(0, Math.min(10, index));
-    
+
     const pool = this.materialOpacityPool.get(origMat);
     return (pool && pool[index]) ? pool[index] : origMat;
   }
@@ -604,8 +604,8 @@ export class World {
       } else {
         const dot = dx * dirX + dz * dirZ;
         const show = dot > 0 || (dot * dot < 0.1764 * distSq); // Avoids Math.sqrt (0.42 * 0.42 = 0.1764)
-        if (show && !tile.visible)       { this.scene.add(tile.group);    tile.visible = true; }
-        else if (!show && tile.visible)  { this.scene.remove(tile.group); tile.visible = false; }
+        if (show && !tile.visible) { this.scene.add(tile.group); tile.visible = true; }
+        else if (!show && tile.visible) { this.scene.remove(tile.group); tile.visible = false; }
       }
     }
 
@@ -614,7 +614,7 @@ export class World {
       for (const tile of this.loadedTiles.values()) {
         tile.isOccluding = false;
         if (!tile.visible) continue;
-        
+
         const dx = tile.posX - playerX;
         const dz = tile.posZ - playerZ;
         if (dx * dx + dz * dz < 14400) { // Only check if within 120m
@@ -711,7 +711,7 @@ export class World {
 
     // Assign pool lights to closest sources
     const maxVisibleDist = 560.0;
-    const fadeStartDist  = 380.0;
+    const fadeStartDist = 380.0;
     for (let i = 0; i < this.maxLights; i++) {
       const light = this.lightPool[i];
       if (i < visibleCount) {
@@ -721,7 +721,7 @@ export class World {
         const dz = source.z - playerZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
         let intensity = source.intensity || 0.0;
-        
+
         if (dist > fadeStartDist) {
           intensity *= Math.max(0.0, 1.0 - (dist - fadeStartDist) / (maxVisibleDist - fadeStartDist));
         }
@@ -772,9 +772,9 @@ export class World {
       const activeColor = tl.axis === 'x' ? state.xLight : state.zLight;
       if (tl._lastColor !== activeColor) {
         tl._lastColor = activeColor;
-        tl.redMesh.material    = activeColor === 'red'    ? this.tlRedOnMat    : this.tlRedOffMat;
+        tl.redMesh.material = activeColor === 'red' ? this.tlRedOnMat : this.tlRedOffMat;
         tl.yellowMesh.material = activeColor === 'yellow' ? this.tlYellowOnMat : this.tlYellowOffMat;
-        tl.greenMesh.material  = activeColor === 'green'  ? this.tlGreenOnMat  : this.tlGreenOffMat;
+        tl.greenMesh.material = activeColor === 'green' ? this.tlGreenOnMat : this.tlGreenOffMat;
       }
     });
 
@@ -793,8 +793,9 @@ export class World {
           tile.fadeProgress = Math.max(targetOpacity, tile.fadeProgress - dt * fadeSpeed * 1.5);
         }
 
+        tile.isFading = tile.fadeProgress !== targetOpacity;
+
         if (tile.fadeProgress === 1.0) {
-          tile.isFading = false;
           tile.group.traverse(child => {
             if (child.isMesh && child._origMaterial) {
               child.material = child._origMaterial;
@@ -802,14 +803,13 @@ export class World {
             }
           });
         } else {
-          tile.isFading = true; // Still processing fade
           tile.group.traverse(child => {
             if (child.isMesh) {
               // Ensure we cache original material before modifying
               if (!child._origMaterial) {
                 child._origMaterial = child.material;
               }
-              
+
               if (child.name && child.name.includes('poolMesh')) {
                 // Do not apply opacity fade to ground light pools; they are managed by distance logic
                 return;
@@ -839,21 +839,21 @@ export class World {
   getRoadWidthForGrid(gridX, gridZ) {
     let rwX = 26;
     let rwZ = 26;
-    
+
     // Check horizontal street (running along X, constant gridZ)
     const seedZ = Math.sin(gridZ * 78.233) * 43758.5453;
     const randZ = seedZ - Math.floor(seedZ);
     if (randZ > 0.6) { // 40% chance of narrow road
-      rwZ = 14; 
+      rwZ = 14;
     }
-    
+
     // Check vertical street (running along Z, constant gridX)
     const seedX = Math.sin(gridX * 12.9898) * 43758.5453;
     const randX = seedX - Math.floor(seedX);
     if (randX > 0.6) { // 40% chance of narrow road
       rwX = 14;
     }
-    
+
     return { rwX, rwZ };
   }
 
@@ -872,7 +872,7 @@ export class World {
         break;
       }
     }
-    
+
     let rowTop = 0;
     let rowBottom = 0;
     for (let z = gridZ; z >= -1000; z--) {
@@ -887,7 +887,7 @@ export class World {
         break;
       }
     }
-    
+
     return {
       colLeft,
       colRight,
@@ -908,7 +908,7 @@ export class World {
   snapToNearestIntersection(x, z) {
     const gridX = Math.round(x / this.tileSize);
     const gridZ = Math.round(z / this.tileSize);
-    
+
     let nearestCol = 0;
     let minColDist = Infinity;
     for (let cx = gridX - 8; cx <= gridX + 8; cx++) {
@@ -920,7 +920,7 @@ export class World {
         }
       }
     }
-    
+
     let nearestRow = 0;
     let minRowDist = Infinity;
     for (let cz = gridZ - 8; cz <= gridZ + 8; cz++) {
@@ -932,7 +932,7 @@ export class World {
         }
       }
     }
-    
+
     return {
       x: nearestCol * this.tileSize,
       z: nearestRow * this.tileSize
@@ -952,7 +952,7 @@ export class World {
       const posX = gridX * this.tileSize;
       const posZ = gridZ * this.tileSize;
       this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
-      
+
       // Initialize tile meshes to 0.0 opacity using the pool
       tileGroup.traverse(child => {
         if (child.isMesh && child.material) {
@@ -967,7 +967,7 @@ export class World {
       });
 
       this.scene.add(tileGroup);
-      
+
       this.loadedTiles.set(key, {
         group: tileGroup,
         obstacles: tileObstacles,
@@ -1199,7 +1199,7 @@ export class World {
 
     const localCache = new Map();
     const tileGroup = this.reconstructObject(serializedGroup, this.buildingGeoCache, localCache);
-    
+
     tileGroup.traverse(child => {
       if (child.isMesh && child.material) {
         if (child.name && child.name.includes('poolMesh')) {
@@ -1291,7 +1291,7 @@ export class World {
         const flaresObj = b.flareNames ? b.flareNames.map(name => groupObj ? groupObj.getObjectByName(name) : null).filter(x => x) : [];
         const lightsObj = b.lightIndices ? b.lightIndices.map(idx => tileRecord.lights[idx]).filter(x => x) : [];
         const poolMeshesObj = b.poolMeshNames ? b.poolMeshNames.map(name => tileGroup.getObjectByName(name) || (groupObj ? groupObj.getObjectByName(name) : null)).filter(x => x) : [];
-        
+
         let instancedMeshesObj = null;
         if (b.isInstanced && b.instancedMeshNames) {
           instancedMeshesObj = b.instancedMeshNames.map(name => tileGroup.getObjectByName(name)).filter(x => x);
@@ -1328,11 +1328,11 @@ export class World {
     if (tile.visible) {
       this.scene.remove(tile.group);
     }
-    
+
     // Dispose resources
     tile.group.traverse(child => {
       if (child.isMesh) {
-        if (child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo && child.geometry !== this.lightConeGeo && !child.geometry.isTemplate) {
+        if (child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo && child.geometry !== this.lightConeGeo && !child.geometry.isTemplate && !child.geometry.isCached) {
           child.geometry.dispose();
         }
         // Restore original material if still fading to prevent memory leaks
@@ -1557,7 +1557,7 @@ export class World {
   deformGeometryToHills(geometry, tileX, tileZ) {
     const posAttr = geometry.attributes.position;
     if (!posAttr) return;
-    
+
     for (let i = 0; i < posAttr.count; i++) {
       const localX = posAttr.getX(i);
       const localY = posAttr.getY(i);
@@ -1567,7 +1567,7 @@ export class World {
       const baseHeight = this.getBaseHeight(worldX, worldZ);
       posAttr.setY(i, localY + baseHeight);
     }
-    
+
     posAttr.needsUpdate = true;
     geometry.computeVertexNormals();
   }
@@ -1578,15 +1578,15 @@ export class World {
     const cs = this.spatialCellSize || 40;
     const cx = Math.floor(x / cs);
     const cz = Math.floor(z / cs);
-    
+
     const cell = this.obstacleGrid.get(`${cx},${cz}`);
     if (cell) {
       for (const obs of cell) {
         if (obs.isRamp) {
           const margin = 0.3; // safe margin
           if (x >= obs.xMin - margin && x <= obs.xMax + margin &&
-              z >= obs.zMin - margin && z <= obs.zMax + margin) {
-            
+            z >= obs.zMin - margin && z <= obs.zMax + margin) {
+
             let pct = 0.0;
             if (obs.slopeType === 'Z') {
               if (obs.slopeDir === 1) { // Slopes up along +Z
@@ -1601,7 +1601,7 @@ export class World {
                 pct = (obs.xMax - x) / (obs.xMax - obs.xMin);
               }
             }
-            
+
             const localH = 0.5 + baseH + Math.max(0.0, Math.min(1.0, pct)) * (obs.height - 0.5);
             if (localH > groundHeight) {
               groundHeight = localH;
@@ -1642,43 +1642,43 @@ export class World {
 
     const cosH = Math.cos(heading);
     const sinH = Math.sin(heading);
-    
+
     const dx = 0.95;
     const dz = 1.3;
-    
+
     const flX = position.x - dx * cosH + dz * sinH;
     const flZ = position.z - dx * -sinH + dz * cosH;
     const flH = this.getGroundHeight(flX, flZ);
-    
+
     const frX = position.x + dx * cosH + dz * sinH;
     const frZ = position.z + dx * -sinH + dz * cosH;
     const frH = this.getGroundHeight(frX, frZ);
-    
+
     const rlX = position.x - dx * cosH - dz * sinH;
     const rlZ = position.z - dx * -sinH - dz * cosH;
     const rlH = this.getGroundHeight(rlX, rlZ);
-    
+
     const rrX = position.x + dx * cosH - dz * sinH;
     const rrZ = position.z + dx * -sinH - dz * cosH;
     const rrH = this.getGroundHeight(rrX, rrZ);
-    
+
     _pFL.set(flX, flH, flZ);
     _pFR.set(frX, frH, frZ);
     _pRL.set(rlX, rlH, rlZ);
     _pRR.set(rrX, rrH, rrZ);
-    
+
     _pFront.addVectors(_pFL, _pFR).multiplyScalar(0.5);
     _pRear.addVectors(_pRL, _pRR).multiplyScalar(0.5);
-    
+
     _fwd.subVectors(_pFront, _pRear).normalize();
-    
+
     _pLeft.addVectors(_pFL, _pRL).multiplyScalar(0.5);
     _pRight.addVectors(_pFR, _pRR).multiplyScalar(0.5);
     _side.subVectors(_pRight, _pLeft);
-    
+
     _up.crossVectors(_fwd, _side).normalize();
     _right.crossVectors(_up, _fwd).normalize();
-    
+
     _matrix.makeBasis(_right, _up, _fwd);
     _qTarget.setFromRotationMatrix(_matrix);
 

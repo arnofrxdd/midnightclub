@@ -54,7 +54,7 @@ export class CopCar {
     if (this.isParked && !this.alerted) {
       this.speed = 0;
       this.velocity.set(0, 0, 0);
-      
+
       // Check if player/target is speeding past within detection range
       const distToTarget = this.position.distanceTo(targetPos);
       if (distToTarget < 45.0 && targetSpeed > 14.0) {
@@ -67,7 +67,7 @@ export class CopCar {
 
     // 2. Resolve navigation target
     const distToTarget = this.position.distanceTo(targetPos);
-    
+
     // Determine unique circling offset target if player is stopped
     let circleTargetPos = targetPos;
     let distToCircleTarget = distToTarget;
@@ -145,7 +145,8 @@ export class CopCar {
     if (distToTarget > 35.0) {
       this._pathTimer -= dt;
       if (this._pathTimer <= 0 || !this._currentPath) {
-        this._pathTimer = 0.8 + Math.random() * 0.4;
+        // Stagger pathfinding aggressively for distant cops to save CPU
+        this._pathTimer = distToTarget > 150 ? (2.0 + Math.random() * 1.0) : (0.8 + Math.random() * 0.4);
         if (navGraph) {
           this._currentPath = navGraph.findPath(
             this.position.x, this.position.z,
@@ -313,7 +314,7 @@ export class CopCar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-      
+
     if (this.velocityY === undefined) this.velocityY = 0;
     this.velocityY -= 14.0 * dt; // Match player gravity
     const nextY = this.position.y + this.velocityY * dt;
@@ -321,16 +322,10 @@ export class CopCar {
     if (nextY < targetY) {
       this.position.y += (targetY - this.position.y) * 12.0 * dt;
       if (this.position.y < targetY) this.position.y = targetY;
-      
-      const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
-      const rearWheelX = this.position.x - fwd.x * 1.3;
-      const rearWheelZ = this.position.z - fwd.z * 1.3;
-      const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
-      const hRearBack = world ? world.getGroundHeight(rearWheelX - fwd.x * 0.5, rearWheelZ - fwd.z * 0.5) : targetY;
-      const rearFwdSlope = (hRearFwd - hRearBack) / 1.0;
-      
-      const fwdSpeed = this.velocity.dot(fwd);
-      this.velocityY = fwdSpeed * rearFwdSlope;
+
+      // Removed expensive redundant ground slope checks. Visual pitch is 
+      // already handled automatically by world.alignMeshToTerrain
+      this.velocityY = 0;
       this.isAirborne = false;
     } else {
       this.position.y = nextY;
@@ -373,7 +368,7 @@ export class CopCar {
     const targetY = (world && typeof world.getGroundHeight === 'function')
       ? world.getGroundHeight(this.position.x, this.position.z)
       : 0.5;
-      
+
     if (this.velocityY === undefined) this.velocityY = 0;
     this.velocityY -= 14.0 * dt; // Match player gravity
     const nextY = this.position.y + this.velocityY * dt;
@@ -381,14 +376,14 @@ export class CopCar {
     if (nextY < targetY) {
       this.position.y += (targetY - this.position.y) * 12.0 * dt;
       if (this.position.y < targetY) this.position.y = targetY;
-      
+
       const fwd = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
       const rearWheelX = this.position.x - fwd.x * 1.3;
       const rearWheelZ = this.position.z - fwd.z * 1.3;
       const hRearFwd = world ? world.getGroundHeight(rearWheelX + fwd.x * 0.5, rearWheelZ + fwd.z * 0.5) : targetY;
       const hRearBack = world ? world.getGroundHeight(rearWheelX - fwd.x * 0.5, rearWheelZ - fwd.z * 0.5) : targetY;
       const rearFwdSlope = (hRearFwd - hRearBack) / 1.0;
-      
+
       const fwdSpeed = this.velocity.dot(fwd);
       this.velocityY = fwdSpeed * rearFwdSlope;
       this.isAirborne = false;
@@ -416,7 +411,7 @@ export class CopCar {
         this.lastWallImpactNormal = new THREE.Vector3(hit.normalX, 0, hit.normalZ);
       }
     }
-    
+
     if (this.speed > 0 && (this.velocity.x * hit.normalX + this.velocity.z * hit.normalZ) < -0.4) {
       this.speed *= 0.2;
     }

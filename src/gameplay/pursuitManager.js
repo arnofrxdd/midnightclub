@@ -98,7 +98,7 @@ export class PursuitManager {
       // Parked cops spawn slightly out of viewport, but on side streets (approx 3-4 tiles away)
       const rx = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.floor(Math.random() * 2));
       const rz = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.floor(Math.random() * 2));
-      
+
       const colIdx = findClosestIndex(sortedCols, playerGridX + rx);
       const rowIdx = findClosestIndex(sortedRows, playerGridZ + rz);
 
@@ -144,7 +144,7 @@ export class PursuitManager {
 
     const onCol = world.roadColumns.has(spawnGx);
     const onRow = world.roadRows.has(spawnGz);
-    
+
     let laneOffset = 5.0; // default for wide road
     if (onCol || onRow) {
       const streetIdx = onCol ? Math.floor(spawnGx / 4) : Math.floor(spawnGz / 4);
@@ -180,7 +180,7 @@ export class PursuitManager {
         } else if (onCol && onRow) {
           copDriveAxis = Math.random() > 0.5 ? 'x' : 'z';
         }
-        
+
         const dir = Math.random() > 0.5 ? 1 : -1;
         if (copDriveAxis === 'x') {
           worldZ += dir * laneOffset;
@@ -193,7 +193,7 @@ export class PursuitManager {
     // Safety: ensure it does not spawn inside or very close to roadblocks
     let nearRoadblock = false;
     for (const rb of this.roadblocks) {
-      const rbDist = Math.sqrt((worldX - rb.position.x)**2 + (worldZ - rb.position.z)**2);
+      const rbDist = Math.sqrt((worldX - rb.position.x) ** 2 + (worldZ - rb.position.z) ** 2);
       if (rbDist < 60.0) {
         nearRoadblock = true;
         break;
@@ -241,14 +241,14 @@ export class PursuitManager {
     }
 
     const startPos = new THREE.Vector3(worldX, 0.5 + world.getBaseHeight(worldX, worldZ), worldZ);
-    
+
     // Instantiate CopCar
     const copId = Date.now() + Math.floor(Math.random() * 1000);
     const cop = new CopCar(copId, startPos, isParked);
     cop.app = this.app; // Assign main app reference
     cop.maxSpeed = 29 + this.heatLevel * 3; // Heat 1 = 32m/s (~71mph), Heat 5 = 44m/s (~98mph) (Toned down)
     cop.accel = 8 + this.heatLevel * 1.2;  // Heat 1 = 9.2m/s², Heat 5 = 14m/s² (Toned down)
-    
+
     // Model CopCar Group
     const { carGroup, wheels } = this.app.createVoxelCarMesh(0x000000, 'cop');
     this.app.scene.add(carGroup);
@@ -264,14 +264,14 @@ export class PursuitManager {
       // Chasing cops spawn pointing towards the player and charging at high speed
       const dx = playerPos.x - worldX;
       const dz = playerPos.z - worldZ;
-      
+
       // Align heading perfectly with the road direction towards the player
       if (Math.abs(dx) > Math.abs(dz)) {
         cop.heading = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
       } else {
         cop.heading = dz > 0 ? 0 : Math.PI;
       }
-      
+
       // Start at a moderate speed so they visibly drive toward the player from a distance
       // rather than materialising right in their face at full speed
       cop.speed = cop.maxSpeed * 0.35;
@@ -283,7 +283,7 @@ export class PursuitManager {
       cop._updateMesh();
       this.cops.push(cop);
     }
-    
+
     return cop;
   }
 
@@ -323,7 +323,7 @@ export class PursuitManager {
     }
 
     const startPos = new THREE.Vector3(worldX, 0.5 + world.getBaseHeight(worldX, worldZ), worldZ);
-    
+
     // Instantiate CopCar
     const copId = Date.now() + Math.floor(Math.random() * 1000);
     const cop = new CopCar(copId, startPos, true); // true = isParked
@@ -348,7 +348,7 @@ export class PursuitManager {
 
     // Build active cop lists into reusable work buffers — avoids 2 new array allocs per frame
     if (!this._activeChasingBuf) this._activeChasingBuf = [];
-    if (!this._activeParkedBuf)  this._activeParkedBuf  = [];
+    if (!this._activeParkedBuf) this._activeParkedBuf = [];
     let nChasing = 0, nParked = 0;
     for (let i = 0; i < this.cops.length; i++) {
       if (this.cops[i].active) this._activeChasingBuf[nChasing++] = this.cops[i];
@@ -369,45 +369,45 @@ export class PursuitManager {
     }
 
     // 2. Spawning parked speed traps (maintain up to 4 parked cops in the world area)
+    if (this.parkedSpawnTimer === undefined) this.parkedSpawnTimer = 0;
+    this.parkedSpawnTimer -= dt;
+
     for (let i = 0; i < this.parkedCops.length; i++) {
       if (this.parkedCops[i].active && !this.parkedCops[i].alerted) this._activeParkedBuf[nParked++] = this.parkedCops[i];
     }
     this._activeParkedBuf.length = nParked;
     const activeParkedCops = this._activeParkedBuf;
-    if (activeParkedCops.length < 4 && Math.random() < 0.1) {
-      // Find candidate tiles from world.loadedTiles
-      const candidates = [];
-      for (const [key, tile] of world.loadedTiles.entries()) {
-        // Use stored numeric gridX/gridZ instead of splitting the string key
-        const tx = tile.gridX;
-        const tz = tile.gridZ;
-        // Fast distance squared check before expensive sqrt
-        const toDx = tile.posX - playerPos.x;
-        const toDz = tile.posZ - playerPos.z;
-        const dist = Math.sqrt(toDx * toDx + toDz * toDz);
-        
-        // Between 100m and 280m
-        if (dist >= 100.0 && dist <= 280.0) {
-          // Verify it's a road and not an alley / intersection
-          const onCol = world.roadColumns.has(tx);
-          const onRow = world.roadRows.has(tz);
-          const isAlley = world.isAlley ? world.isAlley(tx, tz) : false;
-          const isIntersection = onCol && onRow;
-          
-          if (!isAlley && !isIntersection && (onCol || onRow)) {
-            // Check distance to other cops
-            let tooCloseToOtherCop = false;
-            const tileCenter = tile; // use tile.posX/posZ directly
-            for (const other of this.cops) {
-              const odx = other.position.x - tile.posX;
-              const odz = other.position.z - tile.posZ;
-              if (odx * odx + odz * odz < 40.0 * 40.0) {
-                tooCloseToOtherCop = true;
-                break;
-              }
-            }
-            if (!tooCloseToOtherCop) {
-              for (const other of this.parkedCops) {
+
+    // Check max once per second instead of 60 times a second
+    if (activeParkedCops.length < 4 && this.parkedSpawnTimer <= 0) {
+      this.parkedSpawnTimer = 1.0;
+      this._activeParkedBuf.length = nParked;
+      const activeParkedCops = this._activeParkedBuf;
+      if (activeParkedCops.length < 4 && Math.random() < 0.1) {
+        // Find candidate tiles from world.loadedTiles
+        const candidates = [];
+        for (const [key, tile] of world.loadedTiles.entries()) {
+          // Use stored numeric gridX/gridZ instead of splitting the string key
+          const tx = tile.gridX;
+          const tz = tile.gridZ;
+          // Fast distance squared check before expensive sqrt
+          const toDx = tile.posX - playerPos.x;
+          const toDz = tile.posZ - playerPos.z;
+          const dist = Math.sqrt(toDx * toDx + toDz * toDz);
+
+          // Between 100m and 280m
+          if (dist >= 100.0 && dist <= 280.0) {
+            // Verify it's a road and not an alley / intersection
+            const onCol = world.roadColumns.has(tx);
+            const onRow = world.roadRows.has(tz);
+            const isAlley = world.isAlley ? world.isAlley(tx, tz) : false;
+            const isIntersection = onCol && onRow;
+
+            if (!isAlley && !isIntersection && (onCol || onRow)) {
+              // Check distance to other cops
+              let tooCloseToOtherCop = false;
+              const tileCenter = tile; // use tile.posX/posZ directly
+              for (const other of this.cops) {
                 const odx = other.position.x - tile.posX;
                 const odz = other.position.z - tile.posZ;
                 if (odx * odx + odz * odz < 40.0 * 40.0) {
@@ -415,21 +415,33 @@ export class PursuitManager {
                   break;
                 }
               }
-            }
-            
-            if (!tooCloseToOtherCop) {
-              candidates.push({ tx, tz });
+              if (!tooCloseToOtherCop) {
+                for (const other of this.parkedCops) {
+                  const odx = other.position.x - tile.posX;
+                  const odz = other.position.z - tile.posZ;
+                  if (odx * odx + odz * odz < 40.0 * 40.0) {
+                    tooCloseToOtherCop = true;
+                    break;
+                  }
+                }
+              }
+
+              if (!tooCloseToOtherCop) {
+                candidates.push({ tx, tz });
+              }
             }
           }
         }
-      }
-      
-      if (candidates.length > 0) {
-        // Pick a random candidate tile
-        const choice = candidates[Math.floor(Math.random() * candidates.length)];
-        this.spawnCopAtTile(world, choice.tx, choice.tz);
+
+        if (candidates.length > 0) {
+          // Pick a random candidate tile
+          const choice = candidates[Math.floor(Math.random() * candidates.length)];
+          this.spawnCopAtTile(world, choice.tx, choice.tz);
+        }
       }
     }
+
+    // Build obstacle list into a reusable buffer — no spread/map alloc per frame
 
     // Build obstacle list into a reusable buffer — no spread/map alloc per frame
     if (!this._allVehiclesBuf) this._allVehiclesBuf = [];
@@ -448,9 +460,9 @@ export class PursuitManager {
       let targetVelSpeed = playerSpeed;
       let targetHeading = this.app.physics.heading;
       let targetTryingToMove = isPlayerTryingToMove;
-      
+
       let minTargetDist = cop.position.distanceTo(playerPos);
-      
+
       aiRacers.forEach(ai => {
         const d = cop.position.distanceTo(ai.position);
         if (d < minTargetDist) {
@@ -496,9 +508,9 @@ export class PursuitManager {
         let targetVelSpeed = playerSpeed;
         let targetHeading = this.app.physics.heading;
         let targetTryingToMove = isPlayerTryingToMove;
-        
+
         let minTargetDist = cop.position.distanceTo(playerPos);
-        
+
         aiRacers.forEach(ai => {
           const d = cop.position.distanceTo(ai.position);
           if (d < minTargetDist) {
@@ -664,7 +676,7 @@ export class PursuitManager {
     for (const [key, tile] of world.loadedTiles.entries()) {
       const tx = tile.gridX;
       const tz = tile.gridZ;
-      
+
       const onCol = world.roadColumns.has(tx);
       const onRow = world.roadRows.has(tz);
       const isAlley = world.isAlley ? world.isAlley(tx, tz) : false;
@@ -690,8 +702,8 @@ export class PursuitManager {
 
     // Pick the closest intersection to the player's path
     intersections.sort((a, b) => {
-      const distA = Math.sqrt((a.posX - playerPos.x)**2 + (a.posZ - playerPos.z)**2);
-      const distB = Math.sqrt((b.posX - playerPos.x)**2 + (b.posZ - playerPos.z)**2);
+      const distA = Math.sqrt((a.posX - playerPos.x) ** 2 + (a.posZ - playerPos.z) ** 2);
+      const distB = Math.sqrt((b.posX - playerPos.x) ** 2 + (b.posZ - playerPos.z) ** 2);
       return distA - distB;
     });
 
@@ -748,7 +760,7 @@ export class PursuitManager {
       const rbX = exit.tx * world.tileSize;
       const rbZ = exit.tz * world.tileSize;
       const rbPos = new THREE.Vector3(rbX, 0.35 + world.getBaseHeight(rbX, rbZ), rbZ);
-      
+
       const roadblock = new Roadblock(rbId, exit.tx, exit.tz, rbPos, exit.heading, exit.isVertical, this.app);
       this.roadblocks.push(roadblock);
     });
@@ -760,7 +772,7 @@ export class PursuitManager {
     this.busted = true;
     this.active = false;
     this.app.showBanner("BUSTED", "Fined $500!");
-    
+
     // Lock physics & controls, freeze player, deduct cash
     this.app.keys = {}; // Stop input
     this.app.physics.speed = 0;
@@ -773,7 +785,7 @@ export class PursuitManager {
       this.app.physics.heading = 0;
       this.app.physics.velocity.set(0, 0, 0);
       this.app.physics.speed = 0;
-      
+
       this.busted = false;
       this.heatLevel = 0;
       this.bustProgress = 0.0;

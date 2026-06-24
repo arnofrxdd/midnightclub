@@ -14,7 +14,23 @@
 </head>
 
 <body>
-  <!-- Mobile Blocker Overlay -->
+  <script>
+    if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
+      // Instantly inject CSS to prevent rendering glitches
+      document.documentElement.style.overflow = 'hidden';
+
+      window.addEventListener('DOMContentLoaded', () => {
+        if (document.getElementById('firefox-blocker')) document.getElementById('firefox-blocker').style.display = 'flex';
+        if (document.getElementById('loader')) document.getElementById('loader').style.display = 'none';
+        if (document.getElementById('main-menu')) document.getElementById('main-menu').style.display = 'none';
+        if (document.getElementById('loading-screen')) document.getElementById('loading-screen').style.display = 'none';
+      });
+
+      // Forcefully halt any further download or module script compilation cycles
+      window.stop();
+    }
+  </script>
+
   <div id="mobile-blocker">
     <div class="mobile-blocker-content">
       <h2>NOT FOR PHONE</h2>
@@ -54,10 +70,13 @@
       <h2 class="menu-sublogo">VOXEL EDITION</h2>
       <p class="menu-hint">PRESS START TO ENTER THE STREETS</p>
       <button id="btn-play" class="menu-play-btn">START PLAYING</button>
+      <div id="hz-warning-badge"
+        style="display: none; margin-top: 15px; font-family: 'Outfit', sans-serif; font-size: 11px; color: #ff3b30; background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.3); padding: 6px 14px; border-radius: 4px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; animation: hintBlink 2s infinite alternate; max-width: 320px; line-height: 1.4;">
+        ⚠️ Early Dev Build: 60Hz monitor setting recommended to prevent lag & physics anomalies.
+      </div>
     </div>
   </div>
 
-  <!-- Initial Loading Screen -->
   <div id="loading-screen"
     style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#05050a; z-index:99999; display:flex; justify-content:center; align-items:center; color:#fff; font-family:'Barlow Condensed', sans-serif; font-size:48px; font-style:italic; font-weight:900; transition:opacity 1s ease-out;">
     <div style="display:flex; flex-direction:column; align-items:center;">
@@ -67,6 +86,11 @@
         <div id="loading-bar"
           style="position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: #00e5ff; box-shadow: 0 0 10px #00e5ff; transition: width 0.1s ease-out;">
         </div>
+      </div>
+      <div id="loading-hz-warning"
+        style="display: none; margin-top: 25px; font-family: 'Outfit', sans-serif; font-size: 11px; color: #ff3b30; background: rgba(255, 59, 48, 0.08); border: 1px solid rgba(255, 59, 48, 0.25); padding: 6px 14px; border-radius: 4px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; font-style: normal; text-align: center; max-width: 340px; line-height: 1.4;">
+        ⚠️ DEV BUILD NOTE: High refresh rate detected. This build is optimized for 60Hz and may experience stutters or
+        physics glitches above it.
       </div>
     </div>
   </div>
@@ -83,7 +107,26 @@
       <div id="busted-fill" class="busted-bar-fill"></div>
     </div>
   </div>
-
+  <div id="hz-confirm-modal" class="feedback-modal-overlay" style="display: none; z-index: 10000;">
+    <div class="feedback-content" style="border-color: #ff3b30; box-shadow: 0 0 30px rgba(255, 59, 48, 0.25);">
+      <h2 class="feedback-title" style="border-bottom-color: #ff3b30; color: #ff3b30;">⚠️ PERFORMANCE WARNING</h2>
+      <p class="feedback-desc"
+        style="font-family: 'Outfit', sans-serif; font-size: 14px; line-height: 1.5; color: #e2e2e8;">
+        This game is currently in its <strong>Early Development Stage</strong> and is fully optimized for <strong>60Hz
+          displays</strong>.
+        <br><br>
+        Running at your current high refresh rate may cause severe CPU stuttering, engine lag, or unstable vehicle
+        physics anomalies.
+      </p>
+      <div class="feedback-actions" style="margin-top: 15px; gap: 12px;">
+        <button type="button" id="btn-hz-cancel" class="feedback-btn cancel" style="font-size: 16px;">CHANGE TO
+          60HZ</button>
+        <button type="button" id="btn-hz-continue" class="feedback-btn submit"
+          style="background: rgba(255, 59, 48, 0.15); border-color: #ff3b30; color: #ff3b30; text-shadow: 0 0 5px rgba(255, 59, 48, 0.5); font-size: 16px;">PLAY
+          ANYWAY</button>
+      </div>
+    </div>
+  </div>
   <!-- Beta Feedback System -->
   <div id="feedback-modal" class="feedback-modal-overlay" style="display: none;">
     <div class="feedback-content">
@@ -299,18 +342,83 @@
   </div>
 
   <script>
-    const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
-    if (isFirefox) {
-      const blocker = document.getElementById('firefox-blocker');
-      if (blocker) blocker.style.display = 'flex';
-      const loader = document.getElementById('loader');
-      if (loader) loader.style.display = 'none';
-      const menu = document.getElementById('main-menu');
-      if (menu) menu.style.display = 'none';
-      const loadingScreen = document.getElementById('loading-screen');
-      if (loadingScreen) loadingScreen.style.display = 'none';
-    }
-  </script>
+    // Global tracking flag for display refresh state
+    window.isHighRefreshRate = false;
+
+    // Refresh Rate Detector
+    (function detectRefreshRate() {
+      let frameTimes = [];
+      let lastFrameTime = performance.now();
+
+      function checkHz(now) {
+        const delta = now - lastFrameTime;
+        lastFrameTime = now;
+
+        if (delta > 0) {
+          frameTimes.push(1000 / delta);
+        }
+
+        // Sample 30 frames for clean calibration values
+        if (frameTimes.length < 30) {
+          requestAnimationFrame(checkHz);
+        } else {
+          // Find median refresh rate
+          frameTimes.sort((a, b) => a - b);
+          const medianHz = frameTimes[Math.floor(frameTimes.length / 2)];
+
+          // Trigger advice overlays if display rate targets over 75Hz
+          if (medianHz > 75) {
+            window.isHighRefreshRate = true; // Flag high refresh system active
+
+            const menuBadge = document.getElementById('hz-warning-badge');
+            if (menuBadge) menuBadge.style.display = 'block';
+
+            const loadingBadge = document.getElementById('loading-hz-warning');
+            if (loadingBadge) loadingBadge.style.display = 'block';
+          }
+
+          // Setup button intercept logic once checking completes
+          setupPlayButtonIntercept();
+        }
+      }
+      requestAnimationFrame(checkHz);
+    })();
+
+    function setupPlayButtonIntercept() {
+      const btnPlay = document.getElementById('btn-play');
+      const hzModal = document.getElementById('hz-confirm-modal');
+      const btnCancel = document.getElementById('btn-hz-cancel');
+      const btnContinue = document.getElementById('btn-hz-continue');
+
+      if (!btnPlay) return;
+
+      // Track if the user has explicitly bypassed or closed the warning modal
+      let warningApproved = false;
+
+      // Intercept click at the CAPTURE phase before main.js gets it
+      btnPlay.addEventListener('click', (e) => {
+        if (window.isHighRefreshRate && !warningApproved) {
+          // Stop the event from reaching main.js right now
+          e.stopImmediatePropagation();
+          e.preventDefault();
+
+          // Open warning pop-up modal
+          hzModal.style.display = 'flex';
+        }
+      }, true); // <--- 'true' enables capture phase interception
+
+      // "Change to 60Hz" closes modal
+      btnCancel.addEventListener('click', () => {
+        hzModal.style.display = 'none';
+      });
+
+      // "Play Anyway" closes modal and programmatically triggers the original event
+      btnContinue.addEventListener('click', () => {
+        hzModal.style.display = 'none';
+        warningApproved = true; // Mark as allowed
+        btnPlay.click();        // Click again, this time it passes straight to main.js!
+      });
+    }  </script>
   <script type="module" src="/src/core/main.js"></script>
 </body>
 

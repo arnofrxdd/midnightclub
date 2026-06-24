@@ -1265,11 +1265,20 @@ class Game {
   }
 
   animate(time) {
-    const startFrame = performance.now();
     requestAnimationFrame((t) => this.animate(t));
 
     // Use rAF timestamp for perfect v-sync aligned delta (eliminates wake-up jitter at high refresh rates)
     const currentTime = time !== undefined ? time : performance.now();
+
+    // LOCK FPS AT 60 (approx 16.67ms per frame)
+    if (this.lastFrameRenderTime === undefined) this.lastFrameRenderTime = currentTime;
+    const elapsedSinceLastRender = currentTime - this.lastFrameRenderTime;
+    if (elapsedSinceLastRender < 16.0) {
+      return;
+    }
+    this.lastFrameRenderTime = currentTime;
+
+    const startFrame = performance.now();
     
     if (this.lastCalledTime === undefined) this.lastCalledTime = currentTime;
     const elapsedSinceCall = currentTime - this.lastCalledTime;

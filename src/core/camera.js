@@ -99,13 +99,15 @@ export function updateCamera(dt = 0.016) {
     // Calculate lateral velocity (Steering Roll / Lean)
     const playerRight = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
     const lateralVel = this.physics.velocity.dot(playerRight);
-    const targetRoll = -lateralVel * 0.005; // Rolls slightly into the turn/slide
+    const rollMult = isDrifting ? 1.65 : 1.0;
+    const targetRoll = -lateralVel * 0.006 * rollMult; // Rolls slightly into the turn/slide
     this.camRoll += (targetRoll - this.camRoll) * (1 - Math.exp(-5 * dt));
 
-    // 1. Dynamic FOV: Opens up at high speed, nitro, gear shifts, and landing impact punches
+    // 1. Dynamic FOV: Opens up at high speed, nitro, gear shifts, landing punches, and drifts
     const boostFOVOffset = this.physics.isBoosting ? 16.0 : 0.0;
     const airFOVOffset = this.physics.isAirborne ? Math.min(12.0, this.physics.airTime * 15.0) : 0.0;
-    const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + (this.landingPunch * 14.0) + boostFOVOffset + airFOVOffset;
+    const driftFOVOffset = isDrifting ? Math.min(12.0, Math.abs(lateralVel) * 1.4) : 0.0;
+    const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + (this.landingPunch * 14.0) + boostFOVOffset + airFOVOffset + driftFOVOffset;
     this.camera.fov += (targetFOV - this.camera.fov) * (1 - Math.exp(-6 * dt));
     this.camera.updateProjectionMatrix();
 
@@ -139,6 +141,11 @@ export function updateCamera(dt = 0.016) {
       targetLookY = 1.0;
     }
 
+    let slipAngle = 0.0;
+    if (speed > 4.0) {
+      slipAngle = Math.atan2(-lateralVel, Math.max(0.5, speed));
+    }
+
     if (useLag) {
       let diff = heading - this.camHeading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -152,7 +159,9 @@ export function updateCamera(dt = 0.016) {
     let distance, height;
     if (useLag) {
       distance = baseDist + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8) + (this.landingPunch * 2.5);
-      height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset - (this.landingPunch * 0.8);
+      // Pull camera slightly lower during a drift to make the car look more grounded and wide
+      const driftHeightOffset = isDrifting ? -0.45 : 0.0;
+      height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset - (this.landingPunch * 0.8) + driftHeightOffset;
     } else {
       distance = baseDist;
       height = baseHeight;
@@ -164,6 +173,9 @@ export function updateCamera(dt = 0.016) {
     if (isLookingBack) {
       camDir += Math.PI;
       lookDir += Math.PI;
+    } else if (isDrifting && useLag) {
+      // Slip-angle camera swing: Swing the camera outwards to view the slide from the side
+      camDir += slipAngle * 0.65;
     }
 
     // Compute camera offset with airborne blending
@@ -261,11 +273,32 @@ export function updateCamera(dt = 0.016) {
       lookAheadDistance = THREE.MathUtils.lerp(lookAheadDistance, 0.5, this.camAirTransition);
     }
 
+    // Compute blended look direction: blend heading direction and velocity direction (look ahead into velocity/slide direction)
+    let lookX = Math.sin(lookDir);
+    let lookZ = Math.cos(lookDir);
+    if (speed > 4.0 && !isLookingBack) {
+      const velX = this.physics.velocity.x;
+      const velZ = this.physics.velocity.z;
+      const velLengthXZ = Math.sqrt(velX * velX + velZ * velZ);
+      if (velLengthXZ > 0.1) {
+        const velNormalizedX = velX / velLengthXZ;
+        const velNormalizedZ = velZ / velLengthXZ;
+        const blend = isDrifting ? 0.55 : 0.22;
+        lookX = THREE.MathUtils.lerp(lookX, velNormalizedX, blend);
+        lookZ = THREE.MathUtils.lerp(lookZ, velNormalizedZ, blend);
+        const len = Math.sqrt(lookX * lookX + lookZ * lookZ);
+        if (len > 0.01) {
+          lookX /= len;
+          lookZ /= len;
+        }
+      }
+    }
+
     const targetLook = targetPos.clone().add(
       new THREE.Vector3(
-        Math.sin(lookDir) * lookAheadDistance,
+        lookX * lookAheadDistance,
         targetLookY,
-        Math.cos(lookDir) * lookAheadDistance
+        lookZ * lookAheadDistance
       )
     );
 

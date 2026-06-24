@@ -98,8 +98,10 @@ export class CarPhysics {
     
     // 1. Process steering input
     let targetSteer = 0;
-    if (keys['a'] || keys['arrowleft']) targetSteer = this.maxSteerAngle;
-    if (keys['d'] || keys['arrowright']) targetSteer = -this.maxSteerAngle;
+    // Dynamic steering angle boost when drifting to allow catching deep angles
+    const activeMaxSteer = this.isDrifting ? 0.72 : this.maxSteerAngle;
+    if (keys['a'] || keys['arrowleft']) targetSteer = activeMaxSteer;
+    if (keys['d'] || keys['arrowright']) targetSteer = -activeMaxSteer;
     
     // Smooth steering transition
     this.steeringAngle += (targetSteer - this.steeringAngle) * this.steeringSpeed * dt;
@@ -130,22 +132,22 @@ export class CarPhysics {
     if (wantsHandbrake && speedMagnitude > 7.0 && !this.isAirborne) {
       this.isDrifting = true;
       // Handbrake locks rear wheels and drops traction coefficient rapidly
-      this.driftTraction = Math.max(0.1, this.driftTraction - 4.5 * dt);
+      this.driftTraction = Math.max(0.08, this.driftTraction - 5.0 * dt);
     } else if (this.isDrifting) {
       // Counter-steering allows recovery of grip
       const steeringDirection = Math.sign(this.steeringAngle);
       const slidingDirection = Math.sign(lateralSpeed);
       
       if (steeringDirection === slidingDirection && steeringDirection !== 0) {
-        // Counter-steering: recover traction faster
-        this.driftTraction = Math.min(1.0, this.driftTraction + 1.6 * dt);
+        // Counter-steering: recover traction smoothly but fast
+        this.driftTraction = Math.min(1.0, this.driftTraction + 1.8 * dt);
       } else {
-        // Holding drift: slide continues
-        this.driftTraction = Math.min(1.0, this.driftTraction + 0.5 * dt);
+        // Holding drift: slide continues, keep traction low
+        this.driftTraction = Math.min(1.0, this.driftTraction + 0.35 * dt);
       }
       
       // End drift once speed drops too low or traction recovers fully
-      if (speedMagnitude < 4.0 || (this.driftTraction > 0.85 && Math.abs(lateralSpeed) < 2.0)) {
+      if (speedMagnitude < 4.0 || (this.driftTraction > 0.88 && Math.abs(lateralSpeed) < 2.0)) {
         this.isDrifting = false;
       }
     } else {
@@ -340,6 +342,12 @@ export class CarPhysics {
     const latFrictionForce = -lateralSpeed * currentGrip;
     this.velocity.addScaledVector(rightVec, latFrictionForce * dt);
     
+    // Drift momentum preservation: Keep speed from bleeding too fast when sliding
+    if (this.isDrifting && speedMagnitude > 8.0 && wantsAccel) {
+      const driftPush = Math.min(15.0, Math.abs(lateralSpeed)) * 0.45;
+      this.velocity.addScaledVector(forwardVec, driftPush * dt);
+    }
+    
     // Limit maximum speed based on current gear and nitro
     const maxSpeedLimit = this.isBoosting ? this.maxSpeed * 1.35 : this.maxSpeed;
     const currentSpeed = this.velocity.length();
@@ -371,7 +379,16 @@ export class CarPhysics {
       // Handbrake or brake slide increases rotational rotation
       const slideFactor = this.isDrifting ? 1.95 : 1.0;
       const turnFactor = Math.min(1.0, forwardSpeed / 8.0);
-      const yawSpeed = this.steeringAngle * turnFactor * slideFactor;
+      let yawSpeed = this.steeringAngle * turnFactor * slideFactor;
+      
+      // Counter-steering stabilization assist during drift
+      if (this.isDrifting) {
+        const steeringDirection = Math.sign(this.steeringAngle);
+        const slidingDirection = Math.sign(lateralSpeed);
+        if (steeringDirection === slidingDirection && steeringDirection !== 0) {
+          yawSpeed *= 0.72; // Snug/damp the rotation to catch the slide beautifully
+        }
+      }
       
       // Handbrake slide spins out the rear end faster
       if (wantsHandbrake && Math.abs(this.steeringAngle) > 0.1) {
@@ -557,30 +574,23 @@ export class CarPhysics {
 
     // Mid-air stabilization (no manual keyboard controls)
     if (this.isAirborne && this.airTime > 0.2 && this.rolloverTimer <= 0) {
-      // Damp rotation velocities in the air
-      this.pitchVelocity *= Math.exp(-2.2 * dt);
-      this.rollVelocity *= Math.exp(-2.2 * dt);
+      // Damp rotation velocities in the air gently to maintain natural momentum
+      this.pitchVelocity *= Math.exp(-0.4 * dt);
+      this.rollVelocity *= Math.exp(-0.4 * dt);
 
-      // Aerodynamic stabilization: The heavy front engine naturally pulls the nose down in long jumps,
-      // and air resistance slowly levels out the roll. This completely removes the artificial
-      // "ground tracking" effect that forced unnatural nose-dives over downhill slopes.
-      
-      // Slowly drift pitch towards flat (-0.05) over time instead of heavy nose-dive
-      this.pitchVelocity += (-0.05 - this.bodyPitch) * 0.8 * dt;
-      
-      // Slowly stabilize roll to flat (0) over time
-      this.rollVelocity += (0 - this.bodyRoll) * 1.2 * dt;
+      // Aerodynamic stabilization: Slow natural gravity effect, not a harsh robotic spring.
+      this.pitchVelocity += (-0.05 - this.bodyPitch) * 0.15 * dt;
+      this.rollVelocity += (0 - this.bodyRoll) * 0.2 * dt;
     }
     
     // Clamp pitch/roll to safe visual limits
     if (this.rolloverTimer <= 0) {
-      if (this.isAirborne) {
-        // Hard limit on nose-diving in mid-air
-        this.bodyPitch = Math.max(-0.15, Math.min(0.4, this.bodyPitch));
-      } else {
+      if (!this.isAirborne) {
         this.bodyPitch = Math.max(-0.4, Math.min(0.4, this.bodyPitch));
         this.bodyRoll = Math.max(-0.5, Math.min(0.5, this.bodyRoll));
       }
+      // When airborne, we purposefully DO NOT clamp bodyPitch and bodyRoll 
+      // to allow natural fluid flips and spins instead of robotic snapping!
     }
 
     // Detect landing and calculate tricks

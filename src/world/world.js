@@ -1610,8 +1610,16 @@ export class World {
     _qFlat.setFromAxisAngle(_yAxis, heading);
 
     if (alignmentWeight <= 0.001) {
-      const t = Math.min(1.0, 18.0 * dt);
-      mesh.quaternion.slerp(_qFlat, t);
+      const _currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion);
+      const lerpT = 1.0 - Math.exp(-18.0 * dt);
+      _currentUp.lerp(_yAxis, lerpT).normalize();
+      
+      const _flatFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(_qFlat);
+      _right.crossVectors(_currentUp, _flatFwd).normalize();
+      _fwd.crossVectors(_right, _currentUp).normalize();
+      _matrix.makeBasis(_right, _currentUp, _fwd);
+      
+      mesh.quaternion.setFromRotationMatrix(_matrix);
       return;
     }
 
@@ -1652,15 +1660,24 @@ export class World {
     _side.subVectors(_pRight, _pLeft);
     
     _up.crossVectors(_fwd, _side).normalize();
-    _right.crossVectors(_up, _fwd).normalize();
     
-    _matrix.makeBasis(_right, _up, _fwd);
+    // Smoothly blend the UP vector to follow terrain
+    const _currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion);
+    const lerpT = 1.0 - Math.exp(-18.0 * dt);
+    _currentUp.lerp(_up, lerpT).normalize();
+
+    // Reconstruct basis using the EXACT physics heading (yaw) so steering is 100% instantly responsive
+    const _flatFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(_qFlat);
+    _right.crossVectors(_currentUp, _flatFwd).normalize();
+    
+    // Create a local final forward vector rather than re-using the terrain one
+    const finalFwd = new THREE.Vector3().crossVectors(_right, _currentUp).normalize();
+
+    _matrix.makeBasis(_right, _currentUp, finalFwd);
     _qTarget.setFromRotationMatrix(_matrix);
 
-    // Slerp from flat to terrain slope target
-    const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
-    const t = 1.0 - Math.exp(-18.0 * dt);
-    mesh.quaternion.slerp(targetQ, t);
+    // Apply height-based alignment weight (fades out terrain alignment if jumping/flying)
+    mesh.quaternion.copy(_qFlat).slerp(_qTarget, alignmentWeight);
   }
 }
 

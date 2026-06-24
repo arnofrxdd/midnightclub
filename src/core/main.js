@@ -1287,11 +1287,6 @@ class Game {
     // in slow-motion after any heavy synchronous work (e.g. mesh creation)
     // that causes the clock to accumulate a large delta in one frame.
     const dt = Math.max(0.001, Math.min(rawDt, 0.05));
-    const physicsStep = 1 / 60;
-    const maxPhysicsSubsteps = 5;
-    if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
-    if (this.prevPhysicsPosition === undefined) this.prevPhysicsPosition = this.physics.position.clone();
-    if (this.prevPhysicsHeading === undefined) this.prevPhysicsHeading = this.physics.heading || 0;
     if (this.renderPhysicsPosition === undefined) this.renderPhysicsPosition = this.physics.position.clone();
     if (this.renderPhysicsHeading === undefined) this.renderPhysicsHeading = this.physics.heading || 0;
 
@@ -2245,35 +2240,21 @@ class Game {
     window.gameTime += scaledDt;
 
     // Update physics
+    // Update physics at native frame rate for zero input lag and perfect monitor sync
     const tPhysicsStart = performance.now();
-    this.physicsAccumulator += scaledDt;
-    let physicsSteps = 0;
     const isCinematic = this.cinematicManager && this.cinematicManager.state !== 'none';
-    while (this.physicsAccumulator >= physicsStep && physicsSteps < maxPhysicsSubsteps) {
-      this.prevPhysicsPosition.copy(this.physics.position);
-      this.prevPhysicsHeading = this.physics.heading || 0;
-      if (this.inMainMenu || isCinematic) {
-        this.physics.speed = 0;
-        this.physics.velocity.set(0, 0, 0);
-        this.physics.angularVelocity = 0;
-      } else {
-        const activeKeys = this.inFeedbackMenu ? {} : this.keys;
-        this.physics.update(physicsStep, activeKeys, this.world);
-      }
-      this.physicsAccumulator -= physicsStep;
-      physicsSteps++;
+    
+    if (this.inMainMenu || isCinematic) {
+      this.physics.speed = 0;
+      this.physics.velocity.set(0, 0, 0);
+      this.physics.angularVelocity = 0;
+    } else {
+      const activeKeys = this.inFeedbackMenu ? {} : this.keys;
+      this.physics.update(scaledDt, activeKeys, this.world);
     }
-    if (physicsSteps === maxPhysicsSubsteps) {
-      this.physicsAccumulator = Math.min(this.physicsAccumulator, physicsStep);
-    }
-
-    const physicsAlpha = Math.min(1, this.physicsAccumulator / physicsStep);
-    this.renderPhysicsPosition.copy(this.prevPhysicsPosition).lerp(this.physics.position, physicsAlpha);
-    const currentHeading = this.physics.heading || 0;
-    let headingDelta = currentHeading - this.prevPhysicsHeading;
-    if (headingDelta > Math.PI) headingDelta -= Math.PI * 2;
-    if (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
-    this.renderPhysicsHeading = this.prevPhysicsHeading + headingDelta * physicsAlpha;
+    
+    this.renderPhysicsPosition.copy(this.physics.position);
+    this.renderPhysicsHeading = this.physics.heading || 0;
 
     // Player wall collision check (applied damage, debris, slow-mo)
     if (this.physics.justCrashed) {

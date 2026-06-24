@@ -3543,11 +3543,9 @@ class Game {
             this.clearAIMeshes();
           }, 8000);
 
-          // Restore full traffic density in free roam
+          // Restore full traffic density in free roam smoothly over time
           if (this.traffic) {
-            this.traffic.clear();
             this.traffic.maxVehicles = 40;
-            this.traffic.init(this.physics.position, this.world);
           }
 
           // Select new world event

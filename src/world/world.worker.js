@@ -24,6 +24,9 @@ class MockWorld {
     this.tilePuddles = new Map();
     
     // Set up mock materials for mapping. We set the name attribute so they serialize nicely
+    this.slFlareTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    this.slFlareTex.needsUpdate = true;
+
     this.concreteMat = new THREE.MeshStandardMaterial({ name: 'concreteMat' });
     this.yellowLineMat = new THREE.MeshStandardMaterial({ name: 'yellowLineMat' });
     this.whiteLineMat = new THREE.MeshStandardMaterial({ name: 'whiteLineMat' });
@@ -388,9 +391,20 @@ function serializeMaterial(mat) {
 }
 
 function serializeObject(obj) {
+  let type = 'Group';
+  if (obj.isInstancedMesh) {
+    type = 'InstancedMesh';
+  } else if (obj.isMesh) {
+    type = 'Mesh';
+  } else if (obj.isSprite) {
+    type = 'Sprite';
+  } else if (obj.isLOD) {
+    type = 'LOD';
+  }
+
   const data = {
     name: obj.name,
-    type: obj.constructor.name,
+    type: type,
     position: obj.position.toArray(),
     quaternion: obj.quaternion.toArray(),
     scale: obj.scale.toArray(),

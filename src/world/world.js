@@ -8,6 +8,7 @@ import {
   createWindowTextures,
   createCityEnvMap
 } from './textures.js';
+import WorldWorker from './world.worker.js?worker&inline';
 import {
   getTrafficLightState,
   applySidewalkUVs,
@@ -175,6 +176,8 @@ export class World {
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
+    this.ledGroundLightPoolMat.name = 'ledGroundLightPoolMat';
+
     this.sodiumGroundLightPoolMat = new THREE.MeshBasicMaterial({
       map: this.groundLightPoolTex,
       color: 0xffb85c, // Warm sodium golden amber illumination tint (more natural)
@@ -183,6 +186,7 @@ export class World {
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
+    this.sodiumGroundLightPoolMat.name = 'sodiumGroundLightPoolMat';
     
     // Storefront ground light pool geometry and material
     this.storefrontLightPoolGeo = new THREE.PlaneGeometry(24, 24);
@@ -196,6 +200,7 @@ export class World {
       depthWrite: false,
       side: THREE.DoubleSide
     });
+    this.storefrontGroundLightPoolMat.name = 'storefrontGroundLightPoolMat';
 
     // Volumetric streetlight light cone setup (procedural soft 2D cone texture)
     const coneCanvas = document.createElement('canvas');
@@ -240,6 +245,8 @@ export class World {
       depthWrite: false,
       side: THREE.DoubleSide
     });
+    this.lightConeMatLED.name = 'lightConeMatLED';
+
     this.lightConeMatSodium = new THREE.MeshBasicMaterial({
       map: this.lightConeTex,
       color: 0xffb85c,
@@ -249,6 +256,7 @@ export class World {
       depthWrite: false,
       side: THREE.DoubleSide
     });
+    this.lightConeMatSodium.name = 'lightConeMatSodium';
 
     // Alley ground light pool geometry
     this.alleyLightPoolGeo = new THREE.PlaneGeometry(32, 32);
@@ -261,7 +269,10 @@ export class World {
     this.glassySlateMat = new THREE.MeshStandardMaterial({ color: 0x1d2229, metalness: 0.75, roughness: 0.25 }); // Dark tinted glass
     this.darkConcreteMat = new THREE.MeshStandardMaterial({ color: 0x47494f, roughness: 0.7 }); // Dark charcoal concrete
     this.brickDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2b27, roughness: 0.85 }); // Soot-stained dark industrial brick
-    this.materials = [this.brickMat, this.buildingConcreteMat, this.slateMat, this.sandstoneMat, this.glassySlateMat, this.darkConcreteMat, this.brickDarkMat];
+    this.materials = [this.brickMat, this.buildingConcreteMat, this.slateMat, this.sandstoneMat, this.glassySlateMat, this.darkConcreteMat, this.brickDarkMat].map((m, idx) => {
+      m.name = `materials_${idx}`;
+      return m;
+    });
 
     this.windowYellowMat = new THREE.MeshStandardMaterial({ color: 0xfffae6, emissive: 0xffcb66, emissiveIntensity: 4.2, roughness: 0.2 });
     this.windowBlueMat = new THREE.MeshStandardMaterial({ color: 0xe6f7ff, emissive: 0x3ac3ff, emissiveIntensity: 3.8, roughness: 0.2 });
@@ -333,7 +344,7 @@ export class World {
     this.generateTemplates();
 
     // Initialize Web Worker for background world generation
-    this.worker = new Worker(new URL('./world.worker.js', import.meta.url), { type: 'module' });
+    this.worker = new WorldWorker();
     this.loadingTiles = new Set();
     
     this.worker.onmessage = (e) => {
@@ -484,23 +495,37 @@ export class World {
   createNewspaperBoxMesh() {
     return createNewspaperBoxMesh.call(this);
   }
-
   getFadedMaterial(origMat, opacity) {
+    if (!origMat || typeof origMat.clone !== 'function') {
+      return origMat || this.concreteMat;
+    }
     if (!this.materialOpacityPool) this.materialOpacityPool = new Map();
     
     if (!this.materialOpacityPool.has(origMat)) {
       const steps = [];
       for (let i = 0; i <= 10; i++) {
-        const cloned = origMat.clone();
-        cloned.transparent = true;
-        cloned.opacity = i / 10;
-        steps.push(cloned);
+        try {
+          const cloned = origMat.clone();
+          if (cloned) {
+            cloned.transparent = true;
+            cloned.opacity = i / 10;
+            steps.push(cloned);
+          } else {
+            steps.push(origMat);
+          }
+        } catch (e) {
+          steps.push(origMat);
+        }
       }
       this.materialOpacityPool.set(origMat, steps);
     }
     
-    const index = Math.max(0, Math.min(10, Math.round(opacity * 10)));
-    return this.materialOpacityPool.get(origMat)[index];
+    let index = Math.round(opacity * 10);
+    if (isNaN(index)) index = 0;
+    index = Math.max(0, Math.min(10, index));
+    
+    const pool = this.materialOpacityPool.get(origMat);
+    return (pool && pool[index]) ? pool[index] : origMat;
   }
 
   segmentIntersectsAABB(p1x, p1z, p2x, p2z, xMin, xMax, zMin, zMax) {
@@ -622,7 +647,7 @@ export class World {
       const distSq = dx * dx + dz * dz;
 
       // Update baked ground light pool opacity smoothly based ONLY on distance to player
-      if (src.poolMesh) {
+      if (src.poolMesh && src.poolMesh.material) {
         if (distSq >= 12100) { // 110m * 110m
           src.poolMesh.material.opacity = src.defaultOpacity;
         } else if (distSq <= 2025) { // 45m * 45m

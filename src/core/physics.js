@@ -19,11 +19,11 @@ export class CarPhysics {
 
     // Steering and drifting
     this.steeringAngle = 0;
-    this.maxSteerAngle = 0.58; // Radians (~33 deg, slightly sharper steer)
-    this.steeringSpeed = 5.2; // Responsive steering response
+    this.maxSteerAngle = 0.82; // Increased to ~47 degrees for ultra-sharp arcade navigation
+    this.steeringSpeed = 12.0; // Snaps the tires left/right almost instantly
 
     // Advanced Traction / Slip Model
-    this.gripNormal = 18.5; // High base grip for snappy response
+    this.gripNormal = 28.5; // Cranked up for immediate, tight corner bite without washing out
     this.gripDrift = 3.6;   // Floor grip during slide
     this.isDrifting = false;
     this.driftTraction = 1.0; // Dynamic grip coefficient (1.0 = full grip, 0.0 = sliding)
@@ -101,21 +101,29 @@ export class CarPhysics {
     // DO NOT reset justLanded here! It must be consumed by main.js at the end of the frame
     // because physics.update may run multiple sub-steps per frame!
 
-    // 1. Process steering input
+    // 1. Process steering input (Optimized Speed-Sensitive Handling)
     let targetSteer = 0;
-    // Dynamic steering angle boost when drifting to allow catching deep angles
-    let activeMaxSteer = this.isDrifting ? 0.72 : this.maxSteerAngle;
+    let activeMaxSteer = this.maxSteerAngle;
 
-    // Massive understeer during brake lockup
+    if (this.isDrifting) {
+      activeMaxSteer = 0.85; // Give more steering authority inside slides
+    } else {
+      // Damping reduced to 0.008 so you retain agile cornering command even at extreme speeds
+      const speedFactor = Math.max(0, this.velocity.length());
+      activeMaxSteer = this.maxSteerAngle * (1.0 / (1.0 + speedFactor * 0.008));
+    }
+
+    // Forgiving understeer during brake lockup (Toned down from 85% loss to 40% loss)
     if (this.brakeLockup) {
-      activeMaxSteer *= 0.15; // 85% loss of steering
+      activeMaxSteer *= 0.60;
     }
 
     if (keys['a'] || keys['arrowleft']) targetSteer = activeMaxSteer;
     if (keys['d'] || keys['arrowright']) targetSteer = -activeMaxSteer;
 
-    // Smooth steering transition
-    this.steeringAngle += (targetSteer - this.steeringAngle) * this.steeringSpeed * dt;
+    // Increase steering transition speed when returning to center for snappy corrections
+    const currentSteerSpeed = targetSteer === 0 ? this.steeringSpeed * 1.5 : this.steeringSpeed;
+    this.steeringAngle += (targetSteer - this.steeringAngle) * currentSteerSpeed * dt;
 
     // 2. Local forward and right vectors (reuse preallocated scratch vectors)
     const forwardVec = this._fwdVec.set(Math.sin(this.heading), 0, Math.cos(this.heading));
@@ -416,9 +424,9 @@ export class CarPhysics {
       // Increased damping so if we jump while drifting, we don't spin uncontrollably
       this.angularVelocity *= Math.exp(-3.8 * dt);
     } else if (speedMagnitude > 0.5) {
-      // Handbrake or brake slide increases rotational rotation
-      const slideFactor = this.isDrifting ? 1.95 : 1.0;
-      const turnFactor = Math.min(1.0, forwardSpeed / 8.0);
+      // Smooth out turnFactor progression so high speeds feel linear and stable
+      const slideFactor = this.isDrifting ? 1.65 : 1.0;
+      const turnFactor = forwardSpeed < 12.0 ? (forwardSpeed / 12.0) : 1.0;
       let yawSpeed = this.steeringAngle * turnFactor * slideFactor;
 
       // Counter-steering stabilization assist during drift

@@ -310,7 +310,10 @@ export function updateParticles(dt) {
     for (const p of this.particlePool) {
       if (p.life > 0) {
         p.life -= dt;
-
+        if (!shouldUpdateParticle(this, p.mesh)) {
+          if (p.life <= 0) p.mesh.visible = false;
+          continue;
+        }
         p.mesh.position.addScaledVector(p.velocity, dt);
         
         if (p.isWater) {
@@ -330,9 +333,8 @@ export function updateParticles(dt) {
           if (p.mesh.position.y < floorY) {
             p.mesh.position.y = floorY;
             p.velocity.y = 0;
-            const friction = Math.exp(-10.0 * dt);
-            p.velocity.x *= friction;
-            p.velocity.z *= friction;
+            p.velocity.x *= 0.85;
+            p.velocity.z *= 0.85;
           }
         } else if (p.isSpark) {
           p.velocity.y -= 25.0 * dt; // Gravity

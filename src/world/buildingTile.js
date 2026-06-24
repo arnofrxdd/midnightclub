@@ -619,16 +619,12 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     facadeMesh.receiveShadow = true;
     highGroup.add(facadeMesh);
 
-    groundGeo.isCached = true;
-    mergedFacade.isCached = true;
-
     let windowGeo = null;
     let windowMeshShared = null;
     if (windowGeoms.length > 0) {
       const merged = BufferGeometryUtils.mergeGeometries(windowGeoms);
       merged.translate(0, buildingBaseHeight, 0);
       windowGeo = merged;
-      windowGeo.isCached = true;
       windowMeshShared = new THREE.Mesh(merged, this.windowDetailedMat);
       highGroup.add(windowMeshShared);
     }
@@ -638,7 +634,6 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const merged = BufferGeometryUtils.mergeGeometries(doorGeoms);
       merged.translate(0, buildingBaseHeight, 0);
       doorGeo = merged;
-      doorGeo.isCached = true;
       highGroup.add(new THREE.Mesh(merged, this.doorMat));
     }
     
@@ -647,7 +642,6 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const merged = BufferGeometryUtils.mergeGeometries(accessoryGeoms);
       merged.translate(0, buildingBaseHeight, 0);
       accessoryGeo = merged;
-      accessoryGeo.isCached = true;
       highGroup.add(new THREE.Mesh(merged, this.accessoryMat));
     }
     
@@ -657,7 +651,6 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const mergedBill = BufferGeometryUtils.mergeGeometries(billboardGeoms);
       mergedBill.translate(0, buildingBaseHeight, 0);
       billboardGeo = mergedBill;
-      billboardGeo.isCached = true;
       const neonMat = new THREE.MeshStandardMaterial({
         color: 0x111111,
         emissive: billboardColor,
@@ -673,7 +666,6 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const merged = BufferGeometryUtils.mergeGeometries(beaconGeoms);
       merged.translate(0, buildingBaseHeight, 0);
       beaconGeo = merged;
-      beaconGeo.isCached = true;
       const beaconMat = new THREE.MeshStandardMaterial({
         color: 0xff0000,
         emissive: 0xff0000,

@@ -286,6 +286,7 @@ class Game {
         // Set body opacity
         const carBody = v.meshGroup.getObjectByName("carBody");
         if (carBody && carBody.material) {
+          carBody.material.transparent = bodyOpacity < 0.99;
           carBody.material.opacity = bodyOpacity;
         }
 
@@ -295,6 +296,7 @@ class Game {
             if (child.name !== "carBody" && child.name !== "headlightPool") {
               child.traverse(sub => {
                 if (sub.isMesh && sub.material) {
+                  sub.material.transparent = detailOpacity < 0.99;
                   sub.material.opacity = detailOpacity;
                 }
               });
@@ -1285,6 +1287,11 @@ class Game {
     // in slow-motion after any heavy synchronous work (e.g. mesh creation)
     // that causes the clock to accumulate a large delta in one frame.
     const dt = Math.max(0.001, Math.min(rawDt, 0.05));
+    const physicsStep = 1 / 60;
+    const maxPhysicsSubsteps = 5;
+    if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
+    if (this.prevPhysicsPosition === undefined) this.prevPhysicsPosition = this.physics.position.clone();
+    if (this.prevPhysicsHeading === undefined) this.prevPhysicsHeading = this.physics.heading || 0;
     if (this.renderPhysicsPosition === undefined) this.renderPhysicsPosition = this.physics.position.clone();
     if (this.renderPhysicsHeading === undefined) this.renderPhysicsHeading = this.physics.heading || 0;
 
@@ -2238,21 +2245,35 @@ class Game {
     window.gameTime += scaledDt;
 
     // Update physics
-    // Update physics at native frame rate for zero input lag and perfect monitor sync
     const tPhysicsStart = performance.now();
+    this.physicsAccumulator += scaledDt;
+    let physicsSteps = 0;
     const isCinematic = this.cinematicManager && this.cinematicManager.state !== 'none';
-    
-    if (this.inMainMenu || isCinematic) {
-      this.physics.speed = 0;
-      this.physics.velocity.set(0, 0, 0);
-      this.physics.angularVelocity = 0;
-    } else {
-      const activeKeys = this.inFeedbackMenu ? {} : this.keys;
-      this.physics.update(scaledDt, activeKeys, this.world);
+    while (this.physicsAccumulator >= physicsStep && physicsSteps < maxPhysicsSubsteps) {
+      this.prevPhysicsPosition.copy(this.physics.position);
+      this.prevPhysicsHeading = this.physics.heading || 0;
+      if (this.inMainMenu || isCinematic) {
+        this.physics.speed = 0;
+        this.physics.velocity.set(0, 0, 0);
+        this.physics.angularVelocity = 0;
+      } else {
+        const activeKeys = this.inFeedbackMenu ? {} : this.keys;
+        this.physics.update(physicsStep, activeKeys, this.world);
+      }
+      this.physicsAccumulator -= physicsStep;
+      physicsSteps++;
     }
-    
-    this.renderPhysicsPosition.copy(this.physics.position);
-    this.renderPhysicsHeading = this.physics.heading || 0;
+    if (physicsSteps === maxPhysicsSubsteps) {
+      this.physicsAccumulator = Math.min(this.physicsAccumulator, physicsStep);
+    }
+
+    const physicsAlpha = Math.min(1, this.physicsAccumulator / physicsStep);
+    this.renderPhysicsPosition.copy(this.prevPhysicsPosition).lerp(this.physics.position, physicsAlpha);
+    const currentHeading = this.physics.heading || 0;
+    let headingDelta = currentHeading - this.prevPhysicsHeading;
+    if (headingDelta > Math.PI) headingDelta -= Math.PI * 2;
+    if (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
+    this.renderPhysicsHeading = this.prevPhysicsHeading + headingDelta * physicsAlpha;
 
     // Player wall collision check (applied damage, debris, slow-mo)
     if (this.physics.justCrashed) {
@@ -2522,12 +2543,19 @@ class Game {
         this.updateVehicleLOD(v, dist, targetOpacity);
 
         const isTeleport = v.meshGroup.position.distanceToSquared(v.position) > 100.0;
-        v.meshGroup.position.copy(v.position);
-        this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, isTeleport ? 999.0 : scaledDt);
-        if (v.roll || v.pitch) {
-          const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
-          const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
-          v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
+        const hasMovedSq = v.meshGroup.position.distanceToSquared(v.position);
+        const needsAlignment = hasMovedSq > 0.001 || !v._aligned || v.impactVelocity.lengthSq() > 0.1;
+
+        if (needsAlignment) {
+          v.meshGroup.position.copy(v.position);
+          this.world.alignMeshToTerrain(v.meshGroup, v.position, v.heading, v.isAirborne, isTeleport ? 999.0 : scaledDt);
+          if (v.roll || v.pitch) {
+            const rollQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), v.roll || 0);
+            const pitchQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), v.pitch || 0);
+            v.meshGroup.quaternion.multiply(rollQ).multiply(pitchQ);
+          }
+          v.meshGroup.updateMatrixWorld(true);
+          v._aligned = true;
         }
 
         const headlightPool = v.meshGroup.getObjectByName("headlightPool");

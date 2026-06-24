@@ -810,6 +810,11 @@ export class World {
                 child._origMaterial = child.material;
               }
               
+              if (child.name && child.name.includes('poolMesh')) {
+                // Do not apply opacity fade to ground light pools; they are managed by distance logic
+                return;
+              }
+
               // If it's a ground mesh and the tile is currently occluding,
               // don't drop the ground opacity below 1.0 (unless it's still fading in from initial load).
               // Since occluding pulls fadeProgress to 0.2, we override it to 1.0 for the ground.
@@ -1010,9 +1015,12 @@ export class World {
     });
   }
 
-  reconstructGeometry(geomData, cache) {
+  reconstructGeometry(geomData, cache, localCache) {
     if (geomData.cached) {
       return cache.get(geomData.uuid);
+    }
+    if (geomData.localCached) {
+      return localCache.get(geomData.uuid);
     }
 
     const geom = new THREE.BufferGeometry();
@@ -1038,6 +1046,9 @@ export class World {
     geom.isCached = geomData.isCached;
     if (geom.isCached) {
       cache.set(geom.uuid, geom);
+    } else if (localCache) {
+      localCache.set(geom.uuid, geom);
+      geom.isLocalCached = true;
     }
 
     return geom;
@@ -1050,22 +1061,32 @@ export class World {
     if (!matData) return null;
 
     if (matData.type === 'sprite') {
-      return new THREE.SpriteMaterial({
-        map: this.slFlareTex,
-        color: matData.color,
-        transparent: true,
-        opacity: matData.opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
-      });
+      const cacheKey = `sprite_${matData.color}_${matData.opacity}`;
+      if (!this._spriteMatCache) this._spriteMatCache = new Map();
+      if (!this._spriteMatCache.has(cacheKey)) {
+        this._spriteMatCache.set(cacheKey, new THREE.SpriteMaterial({
+          map: this.slFlareTex,
+          color: matData.color,
+          transparent: true,
+          opacity: matData.opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        }));
+      }
+      return this._spriteMatCache.get(cacheKey);
     }
 
     if (matData.type === 'custom_emissive') {
-      return new THREE.MeshStandardMaterial({
-        color: 0x111111,
-        emissive: matData.color,
-        emissiveIntensity: 4.0
-      });
+      const cacheKey = `custom_emissive_${matData.color}`;
+      if (!this._emissiveMatCache) this._emissiveMatCache = new Map();
+      if (!this._emissiveMatCache.has(cacheKey)) {
+        this._emissiveMatCache.set(cacheKey, new THREE.MeshStandardMaterial({
+          color: 0x111111,
+          emissive: matData.color,
+          emissiveIntensity: 4.0
+        }));
+      }
+      return this._emissiveMatCache.get(cacheKey);
     }
 
     const name = matData.name || "";
@@ -1089,7 +1110,7 @@ export class World {
     return this.concreteMat;
   }
 
-  reconstructObject(data, cache) {
+  reconstructObject(data, cache, localCache) {
     if (data.type === 'Group') {
       const group = new THREE.Group();
       group.name = data.name;
@@ -1098,7 +1119,7 @@ export class World {
       group.scale.fromArray(data.scale);
       if (data.children) {
         for (const childData of data.children) {
-          group.add(this.reconstructObject(childData, cache));
+          group.add(this.reconstructObject(childData, cache, localCache));
         }
       }
       return group;
@@ -1111,14 +1132,14 @@ export class World {
       lod.quaternion.fromArray(data.quaternion);
       lod.scale.fromArray(data.scale);
       for (const level of data.levels) {
-        lod.addLevel(this.reconstructObject(level.object, cache), level.distance);
+        lod.addLevel(this.reconstructObject(level.object, cache, localCache), level.distance);
       }
       return lod;
     }
 
     let geom;
     if (data.geometry) {
-      geom = this.reconstructGeometry(data.geometry, cache);
+      geom = this.reconstructGeometry(data.geometry, cache, localCache);
     }
 
     let mat;
@@ -1154,7 +1175,7 @@ export class World {
 
     if (data.children) {
       for (const childData of data.children) {
-        obj.add(this.reconstructObject(childData, cache));
+        obj.add(this.reconstructObject(childData, cache, localCache));
       }
     }
 
@@ -1176,10 +1197,14 @@ export class World {
       }
     }
 
-    const tileGroup = this.reconstructObject(serializedGroup, this.buildingGeoCache);
+    const localCache = new Map();
+    const tileGroup = this.reconstructObject(serializedGroup, this.buildingGeoCache, localCache);
     
     tileGroup.traverse(child => {
       if (child.isMesh && child.material) {
+        if (child.name && child.name.includes('poolMesh')) {
+          return; // Skip fade overriding on light pools
+        }
         if (Array.isArray(child.material)) {
           child._origMaterial = child.material;
           child.material = child.material.map(m => this.getFadedMaterial(m, 0.0));
@@ -1307,7 +1332,7 @@ export class World {
     // Dispose resources
     tile.group.traverse(child => {
       if (child.isMesh) {
-        if (child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo && child.geometry !== this.lightConeGeo && !child.geometry.isCached) {
+        if (child.geometry && child.geometry !== this.lightPoolGeo && child.geometry !== this.storefrontLightPoolGeo && child.geometry !== this.alleyLightPoolGeo && child.geometry !== this.lightConeGeo && !child.geometry.isTemplate) {
           child.geometry.dispose();
         }
         // Restore original material if still fading to prevent memory leaks
@@ -1610,16 +1635,8 @@ export class World {
     _qFlat.setFromAxisAngle(_yAxis, heading);
 
     if (alignmentWeight <= 0.001) {
-      const _currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion);
-      const lerpT = 1.0 - Math.exp(-18.0 * dt);
-      _currentUp.lerp(_yAxis, lerpT).normalize();
-      
-      const _flatFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(_qFlat);
-      _right.crossVectors(_currentUp, _flatFwd).normalize();
-      _fwd.crossVectors(_right, _currentUp).normalize();
-      _matrix.makeBasis(_right, _currentUp, _fwd);
-      
-      mesh.quaternion.setFromRotationMatrix(_matrix);
+      const t = Math.min(1.0, 18.0 * dt);
+      mesh.quaternion.slerp(_qFlat, t);
       return;
     }
 
@@ -1660,24 +1677,15 @@ export class World {
     _side.subVectors(_pRight, _pLeft);
     
     _up.crossVectors(_fwd, _side).normalize();
+    _right.crossVectors(_up, _fwd).normalize();
     
-    // Smoothly blend the UP vector to follow terrain
-    const _currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion);
-    const lerpT = 1.0 - Math.exp(-18.0 * dt);
-    _currentUp.lerp(_up, lerpT).normalize();
-
-    // Reconstruct basis using the EXACT physics heading (yaw) so steering is 100% instantly responsive
-    const _flatFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(_qFlat);
-    _right.crossVectors(_currentUp, _flatFwd).normalize();
-    
-    // Create a local final forward vector rather than re-using the terrain one
-    const finalFwd = new THREE.Vector3().crossVectors(_right, _currentUp).normalize();
-
-    _matrix.makeBasis(_right, _currentUp, finalFwd);
+    _matrix.makeBasis(_right, _up, _fwd);
     _qTarget.setFromRotationMatrix(_matrix);
 
-    // Apply height-based alignment weight (fades out terrain alignment if jumping/flying)
-    mesh.quaternion.copy(_qFlat).slerp(_qTarget, alignmentWeight);
+    // Slerp from flat to terrain slope target
+    const targetQ = _qFlat.clone().slerp(_qTarget, alignmentWeight);
+    const t = 1.0 - Math.exp(-18.0 * dt);
+    mesh.quaternion.slerp(targetQ, t);
   }
 }
 

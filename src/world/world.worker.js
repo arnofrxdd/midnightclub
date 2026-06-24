@@ -288,11 +288,14 @@ class MockWorld {
 let mockWorld = null;
 const geometryCache = new Map();
 
-function serializeGeometry(geo) {
+function serializeGeometry(geo, localGeoMap) {
   if (geo.isCached && geo.uuid) {
     if (geometryCache.has(geo.uuid)) {
       return { uuid: geo.uuid, cached: true };
     }
+  }
+  if (localGeoMap && geo.uuid && localGeoMap.has(geo.uuid)) {
+    return { uuid: geo.uuid, localCached: true };
   }
 
   const attributes = {};
@@ -320,6 +323,8 @@ function serializeGeometry(geo) {
 
   if (geo.isCached) {
     geometryCache.set(geo.uuid, data);
+  } else if (localGeoMap && geo.uuid) {
+    localGeoMap.set(geo.uuid, data);
   }
 
   return data;
@@ -390,7 +395,7 @@ function serializeMaterial(mat) {
   };
 }
 
-function serializeObject(obj) {
+function serializeObject(obj, localGeoMap) {
   let type = 'Group';
   if (obj.isInstancedMesh) {
     type = 'InstancedMesh';
@@ -415,7 +420,7 @@ function serializeObject(obj) {
 
   if (obj.isMesh || obj.isInstancedMesh) {
     data.material = serializeMaterial(obj.material);
-    data.geometry = serializeGeometry(obj.geometry);
+    data.geometry = serializeGeometry(obj.geometry, localGeoMap);
   } else if (obj.isSprite) {
     data.material = serializeMaterial(obj.material);
   }
@@ -428,12 +433,12 @@ function serializeObject(obj) {
   if (obj.isLOD) {
     data.levels = obj.levels.map(level => ({
       distance: level.distance,
-      object: serializeObject(level.object)
+      object: serializeObject(level.object, localGeoMap)
     }));
   }
 
   if (obj.children && obj.children.length > 0 && !obj.isLOD) {
-    data.children = obj.children.map(child => serializeObject(child));
+    data.children = obj.children.map(child => serializeObject(child, localGeoMap));
   }
 
   return data;
@@ -522,7 +527,8 @@ self.onmessage = function (e) {
       mockWorld.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
     }
 
-    const serializedGroup = serializeObject(tileGroup);
+    const localGeoMap = new Map();
+    const serializedGroup = serializeObject(tileGroup, localGeoMap);
 
     const responseBreakables = mockWorld.breakables.map(b => {
       return {

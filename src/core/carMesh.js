@@ -469,47 +469,61 @@ function getCachedMaterials(bodyColorHex) {
   const bodyMat = new THREE.MeshStandardMaterial({
     color: bodyColorHex,
     roughness: 0.15,
-    metalness: 0.8
+    metalness: 0.8,
+    transparent: true,
+    depthWrite: true
   });
   
   const carbonMat = new THREE.MeshStandardMaterial({
     color: 0x1e1e1e, // Dark grey trim / spoilers
     roughness: 0.6,
-    metalness: 0.3
+    metalness: 0.3,
+    transparent: true,
+    depthWrite: true
   });
 
   const wheelMat = new THREE.MeshStandardMaterial({
     color: 0x151515,
-    roughness: 0.85
+    roughness: 0.85,
+    transparent: true,
+    depthWrite: true
   });
 
   const rimMat = new THREE.MeshStandardMaterial({
     color: 0xd4af37, // Gold Alloy Rims
     roughness: 0.2,
-    metalness: 0.9
+    metalness: 0.9,
+    transparent: true,
+    depthWrite: true
   });
 
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0x111622,
     roughness: 0.1,
-    metalness: 0.9
+    metalness: 0.9,
+    transparent: true,
+    depthWrite: true
   });
 
-  const headlampMat = new THREE.MeshBasicMaterial({ color: 0xfffcd4 }); // Warm halogen headlamps
-  const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc1111 });
+  const headlampMat = new THREE.MeshBasicMaterial({ color: 0xfffcd4, transparent: true, depthWrite: true }); // Warm halogen headlamps
+  const taillightMat = new THREE.MeshBasicMaterial({ color: 0xcc1111, transparent: true, depthWrite: true });
 
-  const whiteCabinMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.15, metalness: 0.7 });
+  const whiteCabinMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.15, metalness: 0.7, transparent: true, depthWrite: true });
   const sirenBlueMat = new THREE.MeshStandardMaterial({
     color: 0x0022ff,
     emissive: 0x0022ff,
     emissiveIntensity: 0.1,
-    roughness: 0.1
+    roughness: 0.1,
+    transparent: true,
+    depthWrite: true
   });
   const sirenRedMat = new THREE.MeshStandardMaterial({
     color: 0xff0022,
     emissive: 0xff0022,
     emissiveIntensity: 0.1,
-    roughness: 0.1
+    roughness: 0.1,
+    transparent: true,
+    depthWrite: true
   });
 
   materialCache[bodyColorHex] = {

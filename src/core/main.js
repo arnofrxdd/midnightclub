@@ -286,7 +286,6 @@ class Game {
         // Set body opacity
         const carBody = v.meshGroup.getObjectByName("carBody");
         if (carBody && carBody.material) {
-          carBody.material.transparent = bodyOpacity < 0.99;
           carBody.material.opacity = bodyOpacity;
         }
 
@@ -296,7 +295,6 @@ class Game {
             if (child.name !== "carBody" && child.name !== "headlightPool") {
               child.traverse(sub => {
                 if (sub.isMesh && sub.material) {
-                  sub.material.transparent = detailOpacity < 0.99;
                   sub.material.opacity = detailOpacity;
                 }
               });

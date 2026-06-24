@@ -1270,11 +1270,17 @@ class Game {
 
     // Use rAF timestamp for perfect v-sync aligned delta (eliminates wake-up jitter at high refresh rates)
     const currentTime = time !== undefined ? time : performance.now();
+    
+    if (this.lastCalledTime === undefined) this.lastCalledTime = currentTime;
+    const elapsedSinceCall = currentTime - this.lastCalledTime;
+    this.lastCalledTime = currentTime;
+
+    const rawDt = elapsedSinceCall / 1000;
+    
     if (this.lastFrameTime === undefined) {
       this.lastFrameTime = currentTime;
       this.clock.getDelta(); // flush clock just in case
     }
-    const rawDt = (currentTime - this.lastFrameTime) / 1000;
     this.lastFrameTime = currentTime;
 
     // Clamp dt to max 50ms (20fps floor). This prevents physics from running

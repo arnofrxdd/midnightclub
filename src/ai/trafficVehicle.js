@@ -540,7 +540,7 @@ export class TrafficVehicle {
     this.pitchVelocity = 0.0;
   }
 
-  update(dt, playerPos, playerHeading = 0, otherCars = [], forceFade = false, frustum = null, activeCops = []) {
+  update(dt, playerPos, playerHeading = 0, aiRacers = [], vehicles = [], parkedVehicles = [], forceFade = false, frustum = null, activeCops = []) {
     const distToPlayer = this.position.distanceTo(playerPos);
     
     // Project direction to see if the vehicle is in front of or behind the player camera (pure scalar)
@@ -740,10 +740,11 @@ export class TrafficVehicle {
     const rgtSin = -Math.sin(this.heading);
 
     // Minimum safe following distance — scales with current speed so fast cars brake earlier
+    // Minimum safe following distance — scales with current speed so fast cars brake earlier
     const minFollowDist = Math.max(12.0, this.speed * 1.4);
 
-    for (let ci = 0; ci < otherCars.length; ci++) {
-      const car = otherCars[ci];
+    const checkDodging = (car) => {
+      if (car === this || !car.position || car.isActive === false) return false;
       const cx = car.position.x - this.position.x;
       const cz = car.position.z - this.position.z;
       const localZ = cx * fwdSin + cz * fwdCos;
@@ -751,8 +752,25 @@ export class TrafficVehicle {
 
       // If the other vehicle is in front of us within dynamic safe distance and in the same lane (width 4.5m)
       if (localZ > 0.5 && localZ < minFollowDist && Math.abs(localX) < 4.5) {
-        stopForCar = true;
-        break;
+        return true;
+      }
+      return false;
+    };
+
+    if (playerPos && checkDodging({position: playerPos})) stopForCar = true;
+    if (!stopForCar) {
+      for (let i = 0; i < aiRacers.length; i++) {
+        if (checkDodging(aiRacers[i])) { stopForCar = true; break; }
+      }
+    }
+    if (!stopForCar) {
+      for (let i = 0; i < vehicles.length; i++) {
+        if (checkDodging(vehicles[i])) { stopForCar = true; break; }
+      }
+    }
+    if (!stopForCar) {
+      for (let i = 0; i < parkedVehicles.length; i++) {
+        if (checkDodging(parkedVehicles[i])) { stopForCar = true; break; }
       }
     }
 
@@ -767,14 +785,27 @@ export class TrafficVehicle {
       }
       // If close to intersection but not yet inside the center zone
       if (approachDist > 6.0 && approachDist < 18.0) {
-        // Check if any other car is already inside the intersection box
-        for (let ci = 0; ci < otherCars.length; ci++) {
-          const otherCar = otherCars[ci];
-          const otherDistX = Math.abs(otherCar.position.x - currentBlockX);
-          const otherDistZ = Math.abs(otherCar.position.z - currentBlockZ);
-          if (otherDistX < 8.5 && otherDistZ < 8.5) {
-            yieldForIntersectionCar = true;
-            break;
+        const checkIntersection = (car) => {
+          if (car === this || !car.position || car.isActive === false) return false;
+          const otherDistX = Math.abs(car.position.x - currentBlockX);
+          const otherDistZ = Math.abs(car.position.z - currentBlockZ);
+          return (otherDistX < 8.5 && otherDistZ < 8.5);
+        };
+
+        if (playerPos && checkIntersection({position: playerPos})) yieldForIntersectionCar = true;
+        if (!yieldForIntersectionCar) {
+          for (let i = 0; i < aiRacers.length; i++) {
+            if (checkIntersection(aiRacers[i])) { yieldForIntersectionCar = true; break; }
+          }
+        }
+        if (!yieldForIntersectionCar) {
+          for (let i = 0; i < vehicles.length; i++) {
+            if (checkIntersection(vehicles[i])) { yieldForIntersectionCar = true; break; }
+          }
+        }
+        if (!yieldForIntersectionCar) {
+          for (let i = 0; i < parkedVehicles.length; i++) {
+            if (checkIntersection(parkedVehicles[i])) { yieldForIntersectionCar = true; break; }
           }
         }
       }
@@ -927,15 +958,29 @@ export class TrafficVehicle {
 
         // Don't accelerate into another vehicle while recovering
         let recoverySafe = true;
-        for (let ci = 0; ci < otherCars.length; ci++) {
-          const car = otherCars[ci];
+        const checkRecoverySafe = (car) => {
+          if (car === this || !car.position || car.isActive === false) return false;
           const cx = car.position.x - this.position.x;
           const cz = car.position.z - this.position.z;
           const localZ = cx * fwdSin + cz * fwdCos;
           const localX = cx * rgtCos + cz * rgtSin;
-          if (localZ > 0.5 && localZ < 10.0 && Math.abs(localX) < 4.5) {
-            recoverySafe = false;
-            break;
+          return (localZ > 0.5 && localZ < 10.0 && Math.abs(localX) < 4.5);
+        };
+        
+        if (playerPos && checkRecoverySafe({position: playerPos})) recoverySafe = false;
+        if (recoverySafe) {
+          for (let i = 0; i < aiRacers.length; i++) {
+            if (checkRecoverySafe(aiRacers[i])) { recoverySafe = false; break; }
+          }
+        }
+        if (recoverySafe) {
+          for (let i = 0; i < vehicles.length; i++) {
+            if (checkRecoverySafe(vehicles[i])) { recoverySafe = false; break; }
+          }
+        }
+        if (recoverySafe) {
+          for (let i = 0; i < parkedVehicles.length; i++) {
+            if (checkRecoverySafe(parkedVehicles[i])) { recoverySafe = false; break; }
           }
         }
 

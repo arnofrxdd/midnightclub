@@ -83,23 +83,6 @@ export class TrafficManager {
     }
     const frustum = camera ? this._frustum : null;
 
-    // Build the obstacle list for traffic vehicles collision avoidance
-    const allObstacles = [];
-    if (playerPos) {
-      allObstacles.push({ id: 'player', position: playerPos });
-    }
-    aiRacers.forEach(ai => {
-      allObstacles.push({ id: 'ai_' + ai.id, position: ai.position });
-    });
-    this.vehicles.forEach(v => {
-      if (v.isActive !== false) {
-        allObstacles.push({ id: 'traffic_' + v.id, position: v.position });
-      }
-    });
-    this.parkedVehicles.forEach(v => {
-      allObstacles.push({ id: 'parked_' + v.id, position: v.position });
-    });
-
     // Hoist player forward scalars — constant for all vehicles this frame
     const pFwdX = Math.sin(playerHeading);
     const pFwdZ = Math.cos(playerHeading);
@@ -108,7 +91,7 @@ export class TrafficManager {
     for (let i = this.parkedVehicles.length - 1; i >= 0; i--) {
       const pv = this.parkedVehicles[i];
       // Parked vehicles fade out if player is far away, and resolve sliding physics when hit
-      const needsRecycle = pv.update(dt, playerPos, playerHeading, [], false, frustum, []);
+      const needsRecycle = pv.update(dt, playerPos, playerHeading, aiRacers, this.vehicles, this.parkedVehicles, false, frustum, activeCops);
       if (needsRecycle) {
         // Collect existing positions to avoid spawning on top of other cars or cops
         const existingPositions = [];
@@ -135,10 +118,6 @@ export class TrafficManager {
       const v = this.vehicles[i];
       if (v.isActive === false) continue;
 
-      // Build per-update obstacle list excluding self (reuse allObstacles, skip by id)
-      const selfKey = 'traffic_' + v.id;
-      const others = allObstacles.filter(o => o.id !== selfKey);
-
       // Check if near any active roadblock
       let nearRoadblock = false;
       roadblocks.forEach(rb => {
@@ -147,8 +126,8 @@ export class TrafficManager {
         }
       });
       
-      // Update vehicle state
-      const needsRecycle = v.update(dt, playerPos, playerHeading, others, nearRoadblock, frustum, activeCops);
+      // Update vehicle state by passing raw arrays to avoid GC allocations
+      const needsRecycle = v.update(dt, playerPos, playerHeading, aiRacers, this.vehicles, this.parkedVehicles, nearRoadblock, frustum, activeCops);
 
       if (needsRecycle) {
         if (activeCount > activeMax) {

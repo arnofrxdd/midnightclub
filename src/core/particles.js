@@ -55,15 +55,14 @@ export function getSmokeMaterial(color, opacity) {
 }
 
 export function initParticles() {
-  // Particle pool: 140 for smoke, 80 for water, 60 for sparks
+  // Particle pool: 600 for smoke, 200 for water
   this.particlePool = [];
-  this.maxParticles = 280;
+  this.maxParticles = 800;
 
   const pGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
 
   for (let i = 0; i < this.maxParticles; i++) {
-    const isWater = (i >= 140 && i < 220);
-    const isSpark = (i >= 220);
+    const isWater = (i >= 600);
 
     let pMat;
     if (isWater) {
@@ -73,14 +72,6 @@ export function initParticles() {
         opacity: 0.4,
         roughness: 0.1,
         metalness: 0.8,
-        depthWrite: false
-      });
-    } else if (isSpark) {
-      pMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 1.0,
-        blending: THREE.AdditiveBlending,
         depthWrite: false
       });
     } else {
@@ -103,10 +94,44 @@ export function initParticles() {
       maxLife: 1.0,
       velocity: new THREE.Vector3(),
       isWater: isWater,
-      isSpark: isSpark,
-      color: isWater ? 0xaaddff : (isSpark ? 0xffffff : 0xcccccc)
+      color: isWater ? 0xaaddff : 0xcccccc
     });
   }
+
+  // Optimized InstancedMesh for Sparks
+  this.maxSparks = 800;
+  this.sparkPool = [];
+  const sparkGeo = new THREE.BoxGeometry(1, 1, 1);
+  const sparkMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  this.sparkMesh = new THREE.InstancedMesh(sparkGeo, sparkMat, this.maxSparks);
+  this.sparkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  this.sparkMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxSparks * 3), 3);
+  this.sparkMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  this.sparkMesh.frustumCulled = false;
+  this.scene.add(this.sparkMesh);
+
+  const dummy = new THREE.Object3D();
+  dummy.scale.set(0, 0, 0);
+  dummy.updateMatrix();
+  for (let i = 0; i < this.maxSparks; i++) {
+    this.sparkMesh.setMatrixAt(i, dummy.matrix);
+    this.sparkMesh.setColorAt(i, new THREE.Color(0xffffff));
+    this.sparkPool.push({
+      life: 0, maxLife: 1,
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(),
+      color: new THREE.Color()
+    });
+  }
+  this._sparkDummy = dummy;
+  this.sparkMesh.instanceMatrix.needsUpdate = true;
+  this.sparkMesh.instanceColor.needsUpdate = true;
 }
 
 export function initCheckpointSmoke() {
@@ -224,8 +249,32 @@ export function spawnSkidmarkSegment(p1, p2) {
 
 export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = false, isSpark = false) {
   let spawned = 0;
+
+  if (isSpark) {
+    for (let i = 0; i < this.maxSparks; i++) {
+      const p = this.sparkPool[i];
+      if (p.life <= 0) {
+        p.pos.copy(pos);
+        p.vel.set(
+          (Math.random() - 0.5) * 10.0 + dir.x * 18.0,
+          Math.random() * 2.0 + 0.5 + (dir.y || 0) * 4.0, // Much lower vertical velocity for realistic floor sparks
+          (Math.random() - 0.5) * 10.0 + dir.z * 18.0
+        );
+        p.life = 0.25 + Math.random() * 0.3;
+        p.maxLife = p.life;
+        p.color.setHex(color);
+        this.sparkMesh.setColorAt(i, p.color);
+        
+        spawned++;
+        if (spawned >= count) break;
+      }
+    }
+    this.sparkMesh.instanceColor.needsUpdate = true;
+    return;
+  }
+
   for (const p of this.particlePool) {
-    if (p.life <= 0 && p.isWater === isWater && p.isSpark === isSpark) {
+    if (p.life <= 0 && p.isWater === isWater) {
       p.mesh.position.copy(pos);
       p.mesh.visible = true;
       // Mutate the per-particle material color in-place (no material swap)
@@ -233,11 +282,10 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
         p.color = color;
         p.mat.color.setHex(color);
       }
-      p.mat.opacity = isWater ? 0.45 : (isSpark ? 1.0 : 0.4);
-      p.life = isWater ? (0.35 + Math.random() * 0.35) : (isSpark ? (0.15 + Math.random() * 0.15) : (0.5 + Math.random() * 0.5));
+      p.mat.opacity = isWater ? 0.45 : 0.4;
+      p.life = isWater ? (0.35 + Math.random() * 0.35) : (0.5 + Math.random() * 0.5);
       p.maxLife = p.life;
       p.isWater = isWater;
-      p.isSpark = isSpark;
 
       if (isWater) {
         p.velocity.set(
@@ -246,17 +294,6 @@ export function spawnParticles(pos, dir, color = 0x888888, count = 1, isWater = 
           (Math.random() - 0.5) * 5.2 + dir.z * 4.2
         );
         p.mesh.scale.setScalar(0.6 + Math.random() * 0.6);
-      } else if (isSpark) {
-        // Sparks are high speed streaks of light bursting outward
-        p.velocity.set(
-          (Math.random() - 0.5) * 10.0 + dir.x * 10.0,
-          Math.random() * 6.0 + 3.0 + (dir.y || 0) * 5.0,
-          (Math.random() - 0.5) * 10.0 + dir.z * 10.0
-        );
-        p.mesh.scale.set(0.04, 0.04, 0.35);
-
-        _skidTarget.copy(pos).add(p.velocity);
-        p.mesh.lookAt(_skidTarget);
       } else {
         p.velocity.set(
           (Math.random() - 0.5) * 3 + dir.x * 1.5,
@@ -312,6 +349,53 @@ export function updateParticles(dt) {
     _particleFrustum.setFromProjectionMatrix(_particleViewProjection);
   }
 
+  let sparksUpdated = false;
+  for (let i = 0; i < this.maxSparks; i++) {
+    const p = this.sparkPool[i];
+    if (p.life > 0) {
+      p.life -= dt;
+      if (p.life <= 0) {
+        this._sparkDummy.scale.set(0,0,0);
+        this._sparkDummy.updateMatrix();
+        this.sparkMesh.setMatrixAt(i, this._sparkDummy.matrix);
+        sparksUpdated = true;
+        continue;
+      }
+      p.vel.y -= 25.0 * dt; // Gravity
+      
+      const baseHeight = this.world.getBaseHeight(p.pos.x, p.pos.z);
+      const floorY = 0.24 + baseHeight;
+      if (p.pos.y < floorY) {
+        p.pos.y = floorY + 0.05;
+        p.vel.y = -p.vel.y * (0.1 + Math.random() * 0.2); // Reduced bounce for heavy sparks
+        p.vel.x *= 0.5;
+        p.vel.z *= 0.5;
+      }
+      
+      p.pos.addScaledVector(p.vel, dt);
+
+      _skidTarget.copy(p.pos).add(p.vel);
+      this._sparkDummy.position.copy(p.pos);
+      this._sparkDummy.lookAt(_skidTarget);
+      
+      const factor = p.life / p.maxLife;
+      const speed = p.vel.length();
+      this._sparkDummy.scale.set(0.12, 0.12, Math.max(0.3, speed * 0.1)); // Much larger, visible streaks
+      this._sparkDummy.updateMatrix();
+      
+      this.sparkMesh.setMatrixAt(i, this._sparkDummy.matrix);
+      
+      // Fade to black/transparent
+      const tempColor = p.color.clone().multiplyScalar(factor * factor * 1.5);
+      this.sparkMesh.setColorAt(i, tempColor);
+      sparksUpdated = true;
+    }
+  }
+  if (sparksUpdated) {
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+    this.sparkMesh.instanceColor.needsUpdate = true;
+  }
+
   for (const p of this.particlePool) {
     if (p.life > 0) {
       p.life -= dt;
@@ -341,26 +425,6 @@ export function updateParticles(dt) {
           p.velocity.x *= 0.85;
           p.velocity.z *= 0.85;
         }
-      } else if (p.isSpark) {
-        p.velocity.y -= 25.0 * dt; // Gravity
-
-        const baseHeight = this.world.getBaseHeight(p.mesh.position.x, p.mesh.position.z);
-        const floorY = 0.24 + baseHeight;
-        if (p.mesh.position.y < floorY) {
-          p.mesh.position.y = floorY + 0.05;
-          p.velocity.y = -p.velocity.y * (0.3 + Math.random() * 0.3); // Bounce
-          p.velocity.x *= 0.6;
-          p.velocity.z *= 0.6;
-        }
-
-        // Face the velocity vector to look like a streak
-        _skidTarget.copy(p.mesh.position).add(p.velocity);
-        p.mesh.lookAt(_skidTarget);
-
-        const factor = p.life / p.maxLife;
-        const speed = p.velocity.length();
-        p.mesh.scale.set(0.04, 0.04, Math.max(0.1, speed * 0.06)); // Stretch based on speed
-        p.mat.opacity = factor * factor; // Fade out quickly
       } else {
         // Smoke logic
         p.velocity.y += 0.2 * dt;

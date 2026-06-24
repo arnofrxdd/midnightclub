@@ -171,7 +171,7 @@ export class AICar {
       this.velocity.copy(fwd).multiplyScalar(this.speed);
       this.position.addScaledVector(this.velocity, dt);
       const targetY = (world && typeof world.getGroundHeight === 'function')
-        ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
+        ? world.getGroundHeight(this.position.x, this.position.z) + 0.46 : 0.96;
       if (this.velocityY === undefined) this.velocityY = 0;
       this.velocityY -= 18.0 * dt;
       const nextY = this.position.y + this.velocityY * dt;
@@ -539,7 +539,7 @@ export class AICar {
     // ── 14. Position update ───────────────────────────────────────────────────
     this.position.addScaledVector(this.velocity, dt);
     const targetY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(this.position.x, this.position.z)
+      ? world.getGroundHeight(this.position.x, this.position.z) + 0.46
       : 0.5;
 
     if (this.velocityY === undefined) this.velocityY = 0;
@@ -893,7 +893,7 @@ export class AICar {
     );
     this.position.addScaledVector(this.velocity, dt);
     const targetY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
+      ? world.getGroundHeight(this.position.x, this.position.z) + 0.46 : 0.96;
     if (this.velocityY === undefined) this.velocityY = 0;
     this.velocityY -= 18.0 * dt;
     const nextY = this.position.y + this.velocityY * dt;
@@ -923,7 +923,7 @@ export class AICar {
     );
     this.position.addScaledVector(this.velocity, dt);
     const targetY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(this.position.x, this.position.z) : 0.5;
+      ? world.getGroundHeight(this.position.x, this.position.z) + 0.46 : 0.96;
     if (this.velocityY === undefined) this.velocityY = 0;
     this.velocityY -= 18.0 * dt;
     const nextY = this.position.y + this.velocityY * dt;

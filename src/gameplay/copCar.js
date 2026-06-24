@@ -317,7 +317,7 @@ export class CopCar {
     // Apply movement
     this.position.addScaledVector(this.velocity, dt);
     const targetY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(this.position.x, this.position.z)
+      ? world.getGroundHeight(this.position.x, this.position.z) + 0.46
       : 0.5;
 
     if (this.velocityY === undefined) this.velocityY = 0;
@@ -371,7 +371,7 @@ export class CopCar {
     this.velocity.set(Math.sin(this.heading) * this.speed, 0, Math.cos(this.heading) * this.speed);
     this.position.addScaledVector(this.velocity, dt);
     const targetY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(this.position.x, this.position.z)
+      ? world.getGroundHeight(this.position.x, this.position.z) + 0.46
       : 0.5;
 
     if (this.velocityY === undefined) this.velocityY = 0;

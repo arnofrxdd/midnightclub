@@ -250,6 +250,12 @@ export class Roadblock {
         } else if (child.name === "sirenRed") {
           child.material.emissiveIntensity = flashState ? 6.0 : 0.05;
         }
+      } else if (child.isSprite) {
+        if (child.name === "sirenBlueSprite") {
+          child.material.opacity = flashState ? 0.0 : 1.0;
+        } else if (child.name === "sirenRedSprite") {
+          child.material.opacity = flashState ? 1.0 : 0.0;
+        }
       }
 
       // Update baked headlight pool based on distance to player

@@ -510,8 +510,8 @@ export class TrafficVehicle {
     }
 
     const spawnY = (world && typeof world.getGroundHeight === 'function')
-      ? world.getGroundHeight(spawnX, spawnZ)
-      : 0.5;
+      ? world.getGroundHeight(spawnX, spawnZ) + 0.46
+      : 0.96;
     this.position.set(spawnX, spawnY, spawnZ);
     this.roadAxis = axis;
     this.dirSign = dirSign;
@@ -651,8 +651,8 @@ export class TrafficVehicle {
       if (this.pitchVelocity === undefined) this.pitchVelocity = 0.0;
 
       const targetY = (this.world && typeof this.world.getGroundHeight === 'function')
-        ? this.world.getGroundHeight(this.position.x, this.position.z)
-        : 0.5;
+        ? this.world.getGroundHeight(this.position.x, this.position.z) + 0.46
+        : 0.96;
 
       if (this.crashedAirborne) {
         const heightAboveGround = this.position.y - targetY;
@@ -898,8 +898,8 @@ export class TrafficVehicle {
     if (this.pitchVelocity === undefined) this.pitchVelocity = 0.0;
 
     const targetY = (this.world && typeof this.world.getGroundHeight === 'function')
-      ? this.world.getGroundHeight(this.position.x, this.position.z)
-      : 0.5;
+      ? this.world.getGroundHeight(this.position.x, this.position.z) + 0.46
+      : 0.96;
 
     if (this.crashedAirborne) {
       const heightAboveGround = this.position.y - targetY;

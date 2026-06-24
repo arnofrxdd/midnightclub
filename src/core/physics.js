@@ -164,13 +164,18 @@ export class CarPhysics {
       if (steeringDirection === slidingDirection && steeringDirection !== 0) {
         // Counter-steering: recover traction smoothly but fast
         this.driftTraction = Math.min(1.0, this.driftTraction + 1.8 * dt);
+      } else if (Math.abs(this.steeringAngle) < 0.05) {
+        // Steering straight: recover traction quickly to prevent straight-line drifting
+        this.driftTraction = Math.min(1.0, this.driftTraction + 3.0 * dt);
       } else {
         // Holding drift: slide continues, keep traction low
         this.driftTraction = Math.min(1.0, this.driftTraction + 0.35 * dt);
       }
 
-      // End drift once speed drops too low or traction recovers fully
-      if (speedMagnitude < 4.0 || (this.driftTraction > 0.88 && Math.abs(lateralSpeed) < 2.0)) {
+      // End drift once speed drops too low, traction recovers fully, or sliding straightens out
+      if (speedMagnitude < 4.0 || 
+         (this.driftTraction > 0.88 && Math.abs(lateralSpeed) < 2.0) ||
+         (Math.abs(this.steeringAngle) < 0.05 && Math.abs(lateralSpeed) < 3.5)) {
         this.isDrifting = false;
       }
     } else {
@@ -763,11 +768,7 @@ export class CarPhysics {
     // Hard floor ceiling clamp to avoid clipping through ground on heavy drop impact
     if (this.position.y < avgGroundHeight) {
       this.position.y = avgGroundHeight;
-      if (this.velocityY < -2.0) {
-        this.velocityY = -this.velocityY * 0.15; // spring rebound bounce
-      } else {
-        this.velocityY = 0.0;
-      }
+      this.velocityY = 0.0;
     }
 
     // Rollover Tumbling updates
@@ -780,7 +781,7 @@ export class CarPhysics {
     }
 
     // 9. World collision detection & reaction (Horizontal plane)
-    const collResult = world.checkCollision(this.position.x, this.position.z, 2.0);
+    const collResult = world.checkCollision(this.position.x, this.position.z, 2.0, this.position.y);
     if (collResult.collision) {
       // Reposition out of collision
       this.position.x += collResult.normalX * collResult.overlap;
@@ -800,10 +801,14 @@ export class CarPhysics {
       }
 
       if (dotProd < 0) {
-        // Bounce response
-        this.velocity.addScaledVector(normal, -1.4 * dotProd);
-        this.angularVelocity *= -0.5;
-        this.isDrifting = false;
+        // Smooth slide/bounce response
+        this.velocity.addScaledVector(normal, -1.1 * dotProd);
+        
+        // Only kill steering/angular velocity on hard impacts, not light scrapes!
+        if (dotProd < -4.0) {
+          this.angularVelocity *= -0.5;
+          this.isDrifting = false;
+        }
 
         // Wall crash tracking
         const impactSpeed = -dotProd;

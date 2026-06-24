@@ -1370,7 +1370,15 @@ export class World {
     const tilePosX = tile.posX;
     const tilePosZ = tile.posZ;
     this.trafficLights = this.trafficLights.filter(tl => tl.tileX !== tilePosX || tl.tileZ !== tilePosZ);
-    this.breakables = this.breakables.filter(b => b.tileX !== tilePosX || b.tileZ !== tilePosZ);
+    this.breakables = this.breakables.filter(b => {
+      if (b.tileX === tilePosX && b.tileZ === tilePosZ) {
+        if (b.broken && b.group && b.group.parent) {
+          b.group.parent.remove(b.group);
+        }
+        return false;
+      }
+      return true;
+    });
 
     this.tilePuddles.delete(key);
     this.loadedTiles.delete(key);
@@ -1404,7 +1412,7 @@ export class World {
     return buildBuildingTile.call(this, gridX, gridZ, posX, posZ, group, obstacles, lights);
   }
 
-  checkCollision(posX, posZ, radius = 2.2) {
+  checkCollision(posX, posZ, radius = 2.2, posY = null) {
     // Spatial hash lookup: only check obstacles in nearby grid cells
     const cs = this.spatialCellSize;
     const cx0 = Math.floor((posX - radius) / cs);
@@ -1427,6 +1435,10 @@ export class World {
           obs._lastCheckId = currentCheckId;
 
           if (obs.isRamp) continue; // Skip ramps for horizontal collision resolution
+          if (posY !== null) {
+            const h = obs.height || obs.yMax || 1000;
+            if (posY > h + 0.2) continue; // Passed cleanly above the obstacle
+          }
 
           const closestX = Math.max(obs.xMin, Math.min(posX, obs.xMax));
           const closestZ = Math.max(obs.zMin, Math.min(posZ, obs.zMax));
@@ -1474,31 +1486,13 @@ export class World {
     const gridX = Math.floor(x / this.tileSize + 0.5);
     const gridZ = Math.floor(z / this.tileSize + 0.5);
 
-    // Check if primary tile is a road tile
-    const isRoad = this.roadColumns.has(gridX) || this.roadRows.has(gridZ);
-    if (!isRoad) return false;
-
-    // Check point is within road lane boundary (road width = 26m, sidewalks outside)
-    const { rwX, rwZ } = this.getRoadWidthForGrid(gridX, gridZ);
-    const localX = x - gridX * this.tileSize;
-    const localZ = z - gridZ * this.tileSize;
-    const isIntersection = this.roadColumns.has(gridX) && this.roadRows.has(gridZ);
-
-    if (!isIntersection) {
-      if (this.roadRows.has(gridZ)) {
-        if (Math.abs(localZ) > rwZ / 2) return false;
-      } else {
-        if (Math.abs(localX) > rwX / 2) return false;
-      }
-    }
-
     // Primary tile check
     if (checkTile(gridX, gridZ)) return true;
 
-    // Near a tile boundary? Check neighbouring road tiles too (prevents misses at seams)
+    // Near a tile boundary? Check neighbouring tiles too (prevents misses at seams)
     const boundaryThresh = 3.0; // within 3m of tile edge
-    const tileCenterX = gridX * this.tileSize;
-    const tileCenterZ = gridZ * this.tileSize;
+    const localX = x - gridX * this.tileSize;
+    const localZ = z - gridZ * this.tileSize;
     const distToEdgeX = this.tileSize / 2 - Math.abs(localX);
     const distToEdgeZ = this.tileSize / 2 - Math.abs(localZ);
 
@@ -1510,7 +1504,11 @@ export class World {
       const nz = gridZ + (localZ > 0 ? 1 : -1);
       if (checkTile(gridX, nz)) return true;
     }
-
+    if (distToEdgeX < boundaryThresh && distToEdgeZ < boundaryThresh) {
+      const nx = gridX + (localX > 0 ? 1 : -1);
+      const nz = gridZ + (localZ > 0 ? 1 : -1);
+      if (checkTile(nx, nz)) return true;
+    }
     return false;
   }
 

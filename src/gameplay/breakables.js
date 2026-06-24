@@ -83,9 +83,17 @@ export function checkBreakablesCollision(dt) {
       if (!b.broken) {
         // Check collision against all entities
         for (let ent of entities) {
-          const dist = ent.position.distanceTo(b.position);
+          const dx = ent.position.x - b.position.x;
+          const dz = ent.position.z - b.position.z;
+          const dist2D = Math.sqrt(dx * dx + dz * dz);
+          
+          const dy = ent.position.y - b.position.y;
+          const propHeight = (b.type === 'hydrant' || b.type === 'bench' || b.type === 'trashcan' || b.type === 'parkingmeter') ? 1.5 : 8.0;
+          
           const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
-          if (dist < collisionDist) {
+          if (dist2D < collisionDist && dy > -2.0 && dy < propHeight + ent.radius) {
+            // Re-calculate actual overlap based on 2D distance for pushing out
+            const dist = dist2D;
             const speed = ent.velocity.length();
             if (speed < 4.0) {
               // Solid collision: push out and bounce velocity
@@ -104,7 +112,7 @@ export function checkBreakablesCollision(dt) {
 
             // CRASH! Break the streetlight
             b.broken = true;
-            b.fadeTimer = 10.0; // minimum stay time before eligible for off-camera cleanup (increased from 3.5s)
+            b.fadeTimer = 180.0; // Keep broken props for 3 minutes!
 
             // Handle Instanced Mesh breakables dynamically by spawning a real mesh to fly away
             if (b.isInstanced && b.instancedMeshes) {
@@ -145,16 +153,25 @@ export function checkBreakablesCollision(dt) {
             const impactForceDir = ent.velocity.clone().normalize();
             if (speed > 2.0) {
               // Pole flies off in the direction of the impact velocity (heavier, less explosive flight)
-              const launchSpeed = Math.max(speed * 0.82 + 3.5, 6.0);
-              b.velocity.copy(impactForceDir).multiplyScalar(launchSpeed);
-              b.velocity.y = Math.max(speed * 0.32 + 3.8, 4.5); // upward launch speed
-              
-              // Add heavy, minimal spin
-              b.angularVelocity.set(
-                (Math.random() - 0.5) * 4.5,
-                (Math.random() - 0.5) * 1.5,
-                (Math.random() - 0.5) * 4.5
-              );
+              if (b.type === 'lamp' || b.type === 'trafficlight' || b.type === 'hydrant') {
+                b.velocity.copy(impactForceDir).multiplyScalar(speed * 0.35); // Heavier object = less launch speed
+                b.velocity.y = Math.max(speed * 0.25 + 2.5, 3.5); // Less upward launch for heavy metal poles
+                
+                // Add heavy, minimal spin
+                b.angularVelocity.set(
+                  (Math.random() - 0.5) * 2.5,
+                  (Math.random() - 0.5) * 1.0,
+                  (Math.random() - 0.5) * 2.5
+                );
+              } else {
+                b.velocity.copy(impactForceDir).multiplyScalar(speed * 0.45); // Lighter objects like signs
+                b.velocity.y = 3.5;
+                b.angularVelocity.set(
+                  (Math.random() - 0.5) * 3.5,
+                  (Math.random() - 0.5) * 1.0,
+                  (Math.random() - 0.5) * 3.5
+                );
+              }
             } else {
               b.velocity.copy(impactForceDir).multiplyScalar(4.0);
               b.velocity.y = 4.5;
@@ -187,9 +204,9 @@ export function checkBreakablesCollision(dt) {
               });
             }
 
-            // Turn off light cones visually on crash
+            // Turn off light cones and flares visually on the newly spawned physics crash object
             b.group.traverse(child => {
-              if (child.name === "lightCone") {
+              if (child.name === "lightCone" || child.name.toLowerCase().includes("flare")) {
                 child.visible = false;
               }
             });
@@ -207,8 +224,8 @@ export function checkBreakablesCollision(dt) {
             // Screen shake / crash feedback if player rammed it
             if (ent.isPlayer && speed > 8.0) {
               this.crashShake = Math.min(0.5, speed * 0.025);
-              // Deduct a little forward speed from player on impact (heavy pole resistance)
-              this.physics.velocity.multiplyScalar(0.92);
+              // Deduct significant forward speed from player on impact (heavy pole resistance)
+              this.physics.velocity.multiplyScalar(0.78);
               // if (this.hypeManager) this.hypeManager.addStunt('smash'); // Disabled per user request
             }
 
@@ -227,8 +244,48 @@ export function checkBreakablesCollision(dt) {
           }
         }
       } else {
+        // Allow physical interaction with already broken props!
+        for (let ent of entities) {
+          if (!b.group) break;
+          const dx = ent.position.x - b.group.position.x;
+          const dz = ent.position.z - b.group.position.z;
+          const dist2D = Math.sqrt(dx * dx + dz * dz);
+          const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6) + 1.2;
+          
+          const dy = ent.position.y - b.group.position.y;
+          if (dist2D < collisionDist && Math.abs(dy) < 4.0) {
+            const speed = ent.velocity.length();
+            if (speed > 2.0) {
+              const impactForceDir = ent.velocity.clone().normalize();
+              // Much higher multiplier so players can easily push/carry broken props with their car
+              b.velocity.add(impactForceDir.multiplyScalar(speed * 0.55));
+              b.velocity.y = Math.max(b.velocity.y, speed * 0.15 + 1.5); // Kick up into the air a bit more so it rides on the hood
+              b.angularVelocity.x += (Math.random() - 0.5) * speed * 0.2;
+              b.angularVelocity.z += (Math.random() - 0.5) * speed * 0.2;
+              b.fadeTimer = 180.0; // Refresh despawn timer
+            }
+          }
+        }
+
         // Update physics of falling breakable prop (increased gravity to make it feel heavier)
         b.velocity.y += -46.0 * dt; // stronger gravity so the fall commits immediately
+        
+        // Static world collision for the sliding broken prop
+        if (b.group) {
+          const nextPos = b.group.position.clone().addScaledVector(b.velocity, dt);
+          const coll = this.world.checkCollision(nextPos.x, nextPos.z, 0.8, nextPos.y);
+          if (coll.collision) {
+            // Bounce off buildings/obstacles
+            const normal = new THREE.Vector3(coll.normalX, 0, coll.normalZ);
+            const dot = b.velocity.dot(normal);
+            if (dot < 0) {
+              b.velocity.addScaledVector(normal, -1.5 * dot); // Restitution
+              b.angularVelocity.x += (Math.random() - 0.5) * 4.0;
+              b.angularVelocity.z += (Math.random() - 0.5) * 4.0;
+            }
+          }
+        }
+        
         b.group.position.addScaledVector(b.velocity, dt);
 
         b.group.rotation.x += b.angularVelocity.x * dt;
@@ -368,6 +425,15 @@ export function checkBreakablesCollision(dt) {
           const alignStrength = isFlat ? 7.0 : 2.5;
           b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
           b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
+          
+          // Scratching spark physics when rubbing ground
+          if (b.velocity.lengthSq() > 15.0) {
+             const sparkPos = b.group.position.clone();
+             sparkPos.y = groundHeight + 0.1;
+             const slideDir = b.velocity.clone().normalize().negate(); // Sparks shoot backwards
+             slideDir.y = 0.1; // Very slight upward spray, mostly backwards along the floor
+             this.spawnParticles(sparkPos, slideDir, 0xffdd55, 10, false, true);
+          }
         }
 
         // Fade out/scale down only when off-camera

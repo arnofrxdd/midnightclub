@@ -245,8 +245,8 @@ class Game {
     });
   }
 
-  createVoxelCarMesh(bodyColorHex, type = 'sports') {
-    return createVoxelCarMesh(bodyColorHex, type, this.lensflareTex);
+  createVoxelCarMesh(bodyColorHex, type = 'sports', isPlayer = false) {
+    return createVoxelCarMesh(bodyColorHex, type, this.lensflareTex, isPlayer);
   }
 
   updateVehicleLOD(v, dist, targetOpacity = 1.0) {
@@ -266,7 +266,7 @@ class Game {
         v.wheels.forEach(w => w.visible = !useLowLOD);
       }
       v.meshGroup.children.forEach(child => {
-        if (child.name !== "carBody" && child.name !== "headlightPool") {
+        if (child.name !== "carBody" && child.name !== "headlightPool" && child.name !== "bakedShadow") {
           child.visible = !useLowLOD;
         }
       });
@@ -293,7 +293,7 @@ class Game {
         // Set detail opacity
         if (!useLowLOD) {
           v.meshGroup.children.forEach(child => {
-            if (child.name !== "carBody" && child.name !== "headlightPool") {
+            if (child.name !== "carBody" && child.name !== "headlightPool" && child.name !== "bakedShadow") {
               child.traverse(sub => {
                 if (sub.isMesh && sub.material) {
                   sub.material.transparent = detailOpacity < 0.99;
@@ -309,7 +309,7 @@ class Game {
 
   createCarMesh() {
     // Voxel Tuner Car for the player (Less sporty, more 'car' look per user request)
-    const { carGroup, wheels } = this.createVoxelCarMesh(0x1a3d8c, 'sedan');
+    const { carGroup, wheels } = this.createVoxelCarMesh(0x1a3d8c, 'sedan', true);
     const playerHeadlightPool = carGroup.getObjectByName("headlightPool");
     if (playerHeadlightPool) {
       playerHeadlightPool.material.opacity = 0.0;
@@ -2907,7 +2907,7 @@ class Game {
           if (velAlongNormal < 0) {
             const restitution = 0.5;
             const m1 = 1350; // Player
-            const m2 = 1600; // Heavy Cop Cruiser
+            const m2 = 1100; // Cop Cruiser
 
             const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
             const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
@@ -2994,7 +2994,7 @@ class Game {
               if (velAlongNormal < 0) {
                 const restitution = 0.5;
                 const m1 = 1350;
-                const m2 = 1600;
+                const m2 = 1100;
                 const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
                 const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
@@ -3043,7 +3043,7 @@ class Game {
               if (velAlongNormal < 0) {
                 const restitution = 0.5;
                 const m1 = 1500; // Traffic
-                const m2 = 1600; // Cop
+                const m2 = 1100; // Cop
 
                 const impulseScalar = -(1.0 + restitution) * velAlongNormal / (1.0 / m1 + 1.0 / m2);
                 const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
@@ -3103,12 +3103,12 @@ class Game {
 
             if (velAlongNormal < 0) {
               const restitution = 0.5;
-              // Both cops have the same mass (1600kg)
-              const impulseScalar = -(1.0 + restitution) * velAlongNormal / (2.0 / 1600.0);
+              // Both cops have the same mass (1100kg)
+              const impulseScalar = -(1.0 + restitution) * velAlongNormal / (2.0 / 1100.0);
               const impulseVec = pushDir.clone().multiplyScalar(impulseScalar);
 
-              const impulseVector1 = impulseVec.clone().multiplyScalar(1.0 / 1600.0);
-              const impulseVector2 = impulseVec.clone().multiplyScalar(-1.0 / 1600.0);
+              const impulseVector1 = impulseVec.clone().multiplyScalar(1.0 / 1100.0);
+              const impulseVector2 = impulseVec.clone().multiplyScalar(-1.0 / 1100.0);
 
               // Project impulse back to forward speed
               cop1.speed += impulseVector1.dot(cop1Forward);
@@ -3166,6 +3166,25 @@ class Game {
     // Body roll/pitch dynamics
     this.carGroup.rotation.z = this.physics.bodyRoll;
     this.carGroup.rotation.x = this.physics.bodyPitch;
+
+    // Fade baked shadow if airborne
+    const playerShadow = this.carGroup.getObjectByName("bakedShadow");
+    if (playerShadow && playerShadow.material) {
+      if (this.physics.isAirborne) {
+        const groundHeight = this.world.getGroundHeight(this.physics.position.x, this.physics.position.z);
+        // physics rest height is 0.63. Fade from 0.8m to 3.0m
+        const height = this.physics.position.y - groundHeight;
+        const fade = Math.max(0.0, 1.0 - (height - 0.8) / 2.2);
+        playerShadow.material.opacity = fade * 0.9;
+        
+        // Slightly shrink shadow
+        const scale = 0.6 + 0.4 * fade;
+        playerShadow.scale.set(scale, scale, scale);
+      } else {
+        playerShadow.material.opacity = 0.9;
+        playerShadow.scale.set(1.0, 1.0, 1.0);
+      }
+    }
 
     // Wall scraping sparks
     if (this.physics.isScraping) {
@@ -3229,7 +3248,7 @@ class Game {
       // For burnouts, velocity might be near 0, so calculate exact backward direction from heading
       const backDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0.2, -Math.cos(this.physics.heading)).normalize();
       const particleDir = this.physics.isBurnout ? backDir : this.physics.velocity.clone().negate().normalize();
-      const smokeCount = this.physics.isBurnout ? 4 : 2; // Thicker smoke for burnout
+      const smokeCount = this.physics.isBurnout ? 6 : 4; // Thicker smoke for drifting and burnouts
 
       if (!leftWet) this.spawnParticles(leftRear, particleDir, 0xaaaaaa, smokeCount);
       if (!rightWet) this.spawnParticles(rightRear, particleDir, 0xaaaaaa, smokeCount);
@@ -3804,8 +3823,11 @@ class Game {
           const headingDir = new THREE.Vector3(-Math.sin(this.physics.heading), 0, -Math.cos(this.physics.heading));
           const backPos = contactPos.clone().addScaledVector(headingDir, 1.5);
           const frontPos = contactPos.clone().addScaledVector(headingDir, -1.5);
-          this.spawnParticles(backPos, new THREE.Vector3(0, 4.0, 0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
-          this.spawnParticles(frontPos, new THREE.Vector3(0, 4.0, 0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
+          if (leftWet) this.spawnParticles(backPos, new THREE.Vector3(-1.0, 0.2, -1.0), 0xccddee, Math.floor(sparkCount * 0.6), true);
+          else this.spawnParticles(backPos, new THREE.Vector3(-1.0, 0.2, -1.0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
+          
+          if (rightWet) this.spawnParticles(frontPos, new THREE.Vector3(1.0, 0.2, 1.0), 0xccddee, Math.floor(sparkCount * 0.6), true);
+          else this.spawnParticles(frontPos, new THREE.Vector3(1.0, 0.2, 1.0), 0xffee88, Math.floor(sparkCount * 0.6), false, true);
 
           // Spawn physical dirt/rocks debris on landing impact
           const debrisCount = Math.min(20, Math.floor(impact * 1.5) + 5);

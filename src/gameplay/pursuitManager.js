@@ -489,9 +489,16 @@ export class PursuitManager {
       if (cop.meshGroup && !cop._lastLOD) {
         const sirenBlue = cop.meshGroup.getObjectByName("sirenBlue");
         const sirenRed = cop.meshGroup.getObjectByName("sirenRed");
+        const sirenBlueSprite = cop.meshGroup.getObjectByName("sirenBlueSprite");
+        const sirenRedSprite = cop.meshGroup.getObjectByName("sirenRedSprite");
+
         if (sirenBlue && sirenRed) {
           sirenBlue.material.emissiveIntensity = cop.sirenState ? 0.05 : 6.0;
           sirenRed.material.emissiveIntensity = cop.sirenState ? 6.0 : 0.05;
+        }
+        if (sirenBlueSprite && sirenRedSprite) {
+          sirenBlueSprite.material.opacity = cop.sirenState ? 0.0 : 1.0;
+          sirenRedSprite.material.opacity = cop.sirenState ? 1.0 : 0.0;
         }
       }
     });

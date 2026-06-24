@@ -528,7 +528,7 @@ function getCachedMaterials(bodyColorHex) {
   return materialCache[bodyColorHex];
 }
 
-export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex = null) {
+export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex = null, isPlayer = false) {
     const carGroup = new THREE.Group();
     const mats = getCachedMaterials(bodyColorHex);
 
@@ -640,6 +640,36 @@ export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex =
       const sirenRedMesh = new THREE.Mesh(cached.copSirenRedGeo.clone(), sirenRedMatClone);
       sirenRedMesh.name = "sirenRed";
       carGroup.add(sirenRedMesh);
+
+      if (lensflareTex) {
+        const sirenBlueSpriteMat = new THREE.SpriteMaterial({
+          map: lensflareTex,
+          color: 0x2288ff,
+          transparent: true,
+          opacity: 0.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sirenBlueSprite = new THREE.Sprite(sirenBlueSpriteMat);
+        sirenBlueSprite.position.set(-0.4, 0.95, -0.15); // Sit on top of light bar
+        sirenBlueSprite.scale.set(4.0, 1.0, 1.0);
+        sirenBlueSprite.name = "sirenBlueSprite";
+        carGroup.add(sirenBlueSprite);
+
+        const sirenRedSpriteMat = new THREE.SpriteMaterial({
+          map: lensflareTex,
+          color: 0xff2222,
+          transparent: true,
+          opacity: 0.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sirenRedSprite = new THREE.Sprite(sirenRedSpriteMat);
+        sirenRedSprite.position.set(0.4, 0.95, -0.15);
+        sirenRedSprite.scale.set(4.0, 1.0, 1.0);
+        sirenRedSprite.name = "sirenRedSprite";
+        carGroup.add(sirenRedSprite);
+      }
     }
 
     // 6. Wheels & Gold Rims (kept separate for rolling rotation)
@@ -683,8 +713,64 @@ export function createVoxelCarMesh(bodyColorHex, type = 'sports', lensflareTex =
     headlightPoolMesh.name = "headlightPool";
     carGroup.add(headlightPoolMesh);
 
+    // 7. Add optimized baked shadow under the car
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: getShadowTex(),
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+    const shadowGeo = new THREE.PlaneGeometry(2.8, 5.4);
+    shadowGeo.rotateX(-Math.PI / 2);
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowMesh.name = "bakedShadow";
+    // Place at local ground level. Player car physics sits 0.63m high, AI sits 0.46m high.
+    shadowMesh.position.y = isPlayer ? -0.58 : -0.41; 
+    shadowMesh.visible = isPlayer; // Hide AI shadows completely as requested
+    carGroup.add(shadowMesh);
+
+    // Apply global fix for floating car issue
+    // Shift all visual elements down to compensate for physics center being 0.63m above ground.
+    const yOffset = -0.46;
+    carGroup.children.forEach(child => {
+        if (child.name !== "headlightPool" && child.name !== "bakedShadow") {
+            child.position.y += yOffset;
+        }
+    });
+
     return { carGroup, wheels };
   }
+
+let sharedShadowTex = null;
+function getShadowTex() {
+  if (!sharedShadowTex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(128, 256);
+    for (let y = 0; y < 256; y++) {
+      const dy = (y / 255) - 0.5;
+      for (let x = 0; x < 128; x++) {
+        const dx = (x / 127) - 0.5;
+        // Oval distance (stretch along Z, compress along X)
+        // Ensure oval fits within canvas bounds so edges are fully transparent (alpha 0)
+        const dist = Math.sqrt(dx*dx*3.0 + dy*dy*1.2);
+        const falloff = Math.max(0, 1.0 - dist * 2.0);
+        const intensity = falloff * falloff * (3.0 - 2.0 * falloff); // smoothstep
+        
+        const idx = (y * 128 + x) * 4;
+        imgData.data[idx] = 0;
+        imgData.data[idx + 1] = 0;
+        imgData.data[idx + 2] = 0;
+        imgData.data[idx + 3] = Math.round(intensity * 200);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    sharedShadowTex = new THREE.CanvasTexture(canvas);
+  }
+  return sharedShadowTex;
+}
 
 let sharedHeadlightPoolTex = null;
 let sharedHeadlightPoolGeo = null;
@@ -698,7 +784,7 @@ function getHeadlightPoolTex() {
     const imgData = ctx.createImageData(128, 256);
     for (let y = 0; y < 256; y++) {
       const py = y / 255; // 0 to 1 (near bumper to far)
-      const beamCenterWidth = 0.15 + py * 0.75; // Widens dramatically as it goes forward
+      const beamCenterWidth = 0.15 + py * 0.3; // Ensure beam doesn't bleed off the left/right canvas edges
       for (let x = 0; x < 128; x++) {
         const px = x / 127; // 0 to 1
         const dx = Math.abs(px - 0.5);

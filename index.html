@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,600;1,700;1,800;1,900&family=Outfit:wght@300;400;600;800&display=swap"
     rel="stylesheet">
-  <script type="module" crossorigin src="/midnightclub/assets/index-CHAGvQwz.js"></script>
+  <script type="module" crossorigin src="/midnightclub/assets/index-RGBcNiiE.js"></script>
   <link rel="stylesheet" crossorigin href="/midnightclub/assets/index-CwYrst9l.css">
 </head>
 
@@ -120,8 +120,7 @@
         physics anomalies.
       </p>
       <div class="feedback-actions" style="margin-top: 15px; gap: 12px;">
-        <button type="button" id="btn-hz-cancel" class="feedback-btn cancel" style="font-size: 16px;">CHANGE TO
-          60HZ</button>
+        <button type="button" id="btn-hz-cancel" class="feedback-btn cancel" style="font-size: 16px;">Close</button>
         <button type="button" id="btn-hz-continue" class="feedback-btn submit"
           style="background: rgba(255, 59, 48, 0.15); border-color: #ff3b30; color: #ff3b30; text-shadow: 0 0 5px rgba(255, 59, 48, 0.5); font-size: 16px;">PLAY
           ANYWAY</button>
@@ -408,7 +407,7 @@
         }
       }, true); // <--- 'true' enables capture phase interception
 
-      // "Change to 60Hz" closes modal
+      // "Close" closes modal
       btnCancel.addEventListener('click', () => {
         hzModal.style.display = 'none';
       });

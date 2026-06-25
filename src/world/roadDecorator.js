@@ -54,37 +54,61 @@ export function decorateChunk(chunkPosX, chunkPosZ, tileSize, mapGraph, mockWorl
       // We check a radius to ensure items spawn correctly if they are on the chunk border
       if (px < minX - 10 || px > maxX + 10 || pz < minZ - 10 || pz > maxZ + 10) continue;
 
-      // Both sides of the road
-      for (const side of [1, -1]) {
-        const sx = px + nx * hw * side;
-        const sz = pz + nz * hw * side;
+    // Both sides of the road
+    for (const side of [1, -1]) {
+      const sx = px + nx * hw * side;
+      const sz = pz + nz * hw * side;
 
-        // Strict chunk bounds check for the actual prop position
-        if (sx >= minX && sx < maxX && sz >= minZ && sz < maxZ) {
-          
-          const seed = hashInt(Math.floor(sx), Math.floor(sz), 0);
-          
-          // Add Streetlight (every 40m)
-          const angle = Math.atan2(dz, dx) + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
-          
-          const tf = new THREE.Matrix4().makeTranslation(sx, 0, sz);
-          tf.multiply(new THREE.Matrix4().makeRotationY(angle));
-          
-          result.streetlightTransforms.push({
-            matrix: tf,
-            x: sx,
-            z: sz,
-            nx: nx * side,
-            nz: nz * side,
-            angle: angle,
-            seed: seed
-          });
+      // Strict chunk bounds check for the actual prop position
+      if (sx >= minX && sx < maxX && sz >= minZ && sz < maxZ) {
+        
+        // Safety check: Don't spawn props on road asphalt or inside intersections
+        const isNearIntersection = (x, z) => {
+          const nearestNode = mapGraph.getNearestNode(x, z);
+          if (nearestNode) {
+            const dx = nearestNode.x - x;
+            const dz = nearestNode.z - z;
+            if (dx * dx + dz * dz < 28 * 28) return true; // 28m clearance from intersection center
+          }
+          return false;
+        };
 
-          // Add Tree (offset slightly from streetlight)
-          if (seed > 0.2) {
-            const treeX = sx + (dx / len) * 20;
-            const treeZ = sz + (dz / len) * 20;
-            if (treeX >= minX && treeX < maxX && treeZ >= minZ && treeZ < maxZ) {
+        const isOnRoad = (x, z) => {
+          const { edge, distSq } = mapGraph.getNearestEdge(x, z);
+          if (edge) {
+            const roadHalfWidth = edge.width / 2;
+            if (distSq < roadHalfWidth * roadHalfWidth) return true;
+          }
+          return false;
+        };
+
+        if (isNearIntersection(sx, sz) || isOnRoad(sx, sz)) continue;
+
+        const seed = hashInt(Math.floor(sx), Math.floor(sz), 0);
+        
+        // Add Streetlight (every 40m)
+        const angle = Math.atan2(dz, dx) + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+        
+        const tf = new THREE.Matrix4().makeTranslation(sx, 0, sz);
+        tf.multiply(new THREE.Matrix4().makeRotationY(angle));
+        
+        result.streetlightTransforms.push({
+          matrix: tf,
+          x: sx,
+          z: sz,
+          nx: nx * side,
+          nz: nz * side,
+          angle: angle,
+          seed: seed
+        });
+
+        // Add Tree (offset slightly from streetlight)
+        if (seed > 0.2) {
+          const treeX = sx + (dx / len) * 20;
+          const treeZ = sz + (dz / len) * 20;
+          if (treeX >= minX && treeX < maxX && treeZ >= minZ && treeZ < maxZ) {
+            // Check if tree position is safe (not on road/intersection)
+            if (!isNearIntersection(treeX, treeZ) && !isOnRoad(treeX, treeZ)) {
               const tSeed = hashInt(Math.floor(treeX), Math.floor(treeZ), 1);
               
               const trunkGeo = new THREE.BoxGeometry(0.8, 4.0, 0.8);
@@ -103,13 +127,16 @@ export function decorateChunk(chunkPosX, chunkPosZ, tileSize, mapGraph, mockWorl
               }
             }
           }
+        }
 
-          // Random props (Benches, Trash Cans, Hydrants)
-          const propSeed = hashInt(Math.floor(sx), Math.floor(sz), 2);
-          if (propSeed < 0.3) {
-            const propX = sx + (dx / len) * 10;
-            const propZ = sz + (dz / len) * 10;
-            if (propX >= minX && propX < maxX && propZ >= minZ && propZ < maxZ) {
+        // Random props (Benches, Trash Cans, Hydrants)
+        const propSeed = hashInt(Math.floor(sx), Math.floor(sz), 2);
+        if (propSeed < 0.3) {
+          const propX = sx + (dx / len) * 10;
+          const propZ = sz + (dz / len) * 10;
+          if (propX >= minX && propX < maxX && propZ >= minZ && propZ < maxZ) {
+            // Check if prop position is safe
+            if (!isNearIntersection(propX, propZ) && !isOnRoad(propX, propZ)) {
               const tf = new THREE.Matrix4().makeTranslation(propX, 0, propZ);
               const rot = new THREE.Matrix4().makeRotationY(angle);
               tf.multiply(rot);
@@ -125,6 +152,7 @@ export function decorateChunk(chunkPosX, chunkPosZ, tileSize, mapGraph, mockWorl
           }
         }
       }
+    }
     }
   }
 

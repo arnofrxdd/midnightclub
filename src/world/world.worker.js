@@ -759,9 +759,9 @@ self.onmessage = function (e) {
         roadClipPolys.push([circle]);
       }
 
-      // Subdivide the chunk into a 3x3 grid of sub-cells.
+      // Subdivide the chunk into a 2x2 grid of sub-cells.
       // Each sub-cell is clipped against roads individually, producing varied building footprints.
-      const SUBDIVISIONS = 3;
+      const SUBDIVISIONS = 2;
       const cellW = ts / SUBDIVISIONS;
 
       for (let ci = 0; ci < SUBDIVISIONS; ci++) {

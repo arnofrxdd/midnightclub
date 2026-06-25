@@ -760,6 +760,10 @@ export function buildScatterBuilding(posX, posZ, bMat, scaleX, scaleZ, height, s
     const rand = seed - Math.floor(seed);
     const hasDoor = true;
 
+    // Dynamically cap building height to maintain proper skyscraper aspect ratio (no thin sticks)
+    const maxBase = Math.max(scaleX, scaleZ);
+    const adjustedHeight = Math.min(height, maxBase * 2.2);
+
     const facadeGeoms = [];
     const windowGeoms = [];
     const doorGeoms = [];
@@ -767,35 +771,103 @@ export function buildScatterBuilding(posX, posZ, bMat, scaleX, scaleZ, height, s
     const billboardGeoms = [];
     const beaconGeoms = [];
 
-    const baseGeo = new THREE.BoxGeometry(scaleX, height + 5.0, scaleZ);
-    baseGeo.translate(0, (height - 5.0) / 2, 0);
+    // 1. Base facade box
+    const baseGeo = new THREE.BoxGeometry(scaleX, adjustedHeight + 5.0, scaleZ);
+    baseGeo.translate(0, (adjustedHeight - 5.0) / 2, 0);
     facadeGeoms.push(baseGeo);
 
+    // 2. Corner Columns (Voxel detailing)
+    const colW = 0.8;
+    const colOffset = colW / 2;
+    const corners = [
+      [-scaleX/2 + colOffset, -scaleZ/2 + colOffset],
+      [scaleX/2 - colOffset, -scaleZ/2 + colOffset],
+      [-scaleX/2 + colOffset, scaleZ/2 - colOffset],
+      [scaleX/2 - colOffset, scaleZ/2 - colOffset]
+    ];
+    corners.forEach(([cx, cz]) => {
+      const c = new THREE.BoxGeometry(colW, adjustedHeight + 5.0, colW);
+      c.translate(cx, (adjustedHeight - 5.0) / 2, cz);
+      facadeGeoms.push(c);
+    });
+
+    // 3. Molding Ledges
+    const ledgeHeight = 0.6;
+    if (adjustedHeight > 12) {
+      const midLedge = new THREE.BoxGeometry(scaleX + 0.4, ledgeHeight, scaleZ + 0.4);
+      midLedge.translate(0, 8 - ledgeHeight / 2, 0);
+      facadeGeoms.push(midLedge);
+    }
+    const roofLedge = new THREE.BoxGeometry(scaleX + 0.4, ledgeHeight, scaleZ + 0.4);
+    roofLedge.translate(0, adjustedHeight - ledgeHeight / 2, 0);
+    facadeGeoms.push(roofLedge);
+
+    // 4. Ground door
     if (hasDoor) {
       const frontDoor = new THREE.BoxGeometry(1.8, 3.0, 0.2);
       frontDoor.translate(0, 1.5, scaleZ / 2 + 0.1);
       doorGeoms.push(frontDoor);
     }
 
+    // 5. Windows on all 4 facades
     const winW = 1.2;
     const winH = 1.5;
-    for (let y = 6; y < height - 2; y += 4) {
+    
+    // Front (Z+)
+    for (let y = 6; y < adjustedHeight - 2; y += 4) {
       for (let x = -scaleX/2 + 2; x < scaleX/2 - 1; x += 3) {
-        if (hashInt(Math.floor(x), Math.floor(y), Math.floor(seed*1000)) > 0.3) {
+        if (hashInt(Math.floor(x), Math.floor(y), Math.floor(seed * 1000)) > 0.3) {
            const win = createDetailedWindowGeometry(winW, winH, 0.1);
-           win.translate(x, y, scaleZ / 2 + 0.1);
+           win.translate(x, y, scaleZ / 2 + 0.05);
+           windowGeoms.push(win);
+        }
+      }
+    }
+    
+    // Back (Z-)
+    for (let y = 6; y < adjustedHeight - 2; y += 4) {
+      for (let x = -scaleX/2 + 2; x < scaleX/2 - 1; x += 3) {
+        if (hashInt(Math.floor(x), Math.floor(y), Math.floor(seed * 1001)) > 0.3) {
+           const win = createDetailedWindowGeometry(winW, winH, 0.1);
+           win.rotateY(Math.PI);
+           win.translate(x, y, -scaleZ / 2 - 0.05);
            windowGeoms.push(win);
         }
       }
     }
 
+    // Left (X-)
+    for (let y = 6; y < adjustedHeight - 2; y += 4) {
+      for (let z = -scaleZ/2 + 2; z < scaleZ/2 - 1; z += 3) {
+        if (hashInt(Math.floor(z), Math.floor(y), Math.floor(seed * 1002)) > 0.3) {
+           const win = createDetailedWindowGeometry(winW, winH, 0.1);
+           win.rotateY(Math.PI / 2);
+           win.translate(-scaleX / 2 - 0.05, y, z);
+           windowGeoms.push(win);
+        }
+      }
+    }
+
+    // Right (X+)
+    for (let y = 6; y < adjustedHeight - 2; y += 4) {
+      for (let z = -scaleZ/2 + 2; z < scaleZ/2 - 1; z += 3) {
+        if (hashInt(Math.floor(z), Math.floor(y), Math.floor(seed * 1003)) > 0.3) {
+           const win = createDetailedWindowGeometry(winW, winH, 0.1);
+           win.rotateY(-Math.PI / 2);
+           win.translate(scaleX / 2 + 0.05, y, z);
+           windowGeoms.push(win);
+        }
+      }
+    }
+
+    // 6. Rooftop details
     const ac = new THREE.BoxGeometry(2.0, 1.5, 2.0);
-    ac.translate(0, height + 0.75, 0);
+    ac.translate(0, adjustedHeight + 0.75, 0);
     accessoryGeoms.push(ac);
 
     if (rand > 0.8) {
       const beaconG = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-      beaconG.translate(0, height + 2.0, 0);
+      beaconG.translate(0, adjustedHeight + 2.0, 0);
       beaconGeoms.push(beaconG);
     }
 
@@ -859,7 +931,7 @@ export function buildScatterBuilding(posX, posZ, bMat, scaleX, scaleZ, height, s
       xMax: posX + scaleX / 2,
       zMin: posZ - scaleZ / 2,
       zMax: posZ + scaleZ / 2,
-      height: height
+      height: adjustedHeight
     });
 }
 
@@ -875,8 +947,41 @@ function hashInt(x, y, seed) {
 export function buildPolygonalBlock(poly, bMat, height, group, obstacles, mockWorld) {
     if (!poly || poly.length === 0) return;
 
-    const exteriorRing = poly[0];
-    if (!exteriorRing || exteriorRing.length < 3) return;
+    const originalExterior = poly[0];
+    if (!originalExterior || originalExterior.length < 3) return;
+
+    // Compute centroid of the exterior ring
+    let cx = 0;
+    let cz = 0;
+    const n = originalExterior.length - 1; // Last point duplicates the first
+    for (let i = 0; i < n; i++) {
+      cx += originalExterior[i][0];
+      cz += originalExterior[i][1];
+    }
+    cx /= n;
+    cz /= n;
+
+    // Calculate bounding box dimensions to determine aspect ratios
+    let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+    for (let k = 0; k < originalExterior.length; k++) {
+      const px = originalExterior[k][0];
+      const pz = originalExterior[k][1];
+      if (px < xMin) xMin = px;
+      if (px > xMax) xMax = px;
+      if (pz < zMin) zMin = pz;
+      if (pz > zMax) zMax = pz;
+    }
+    const width = xMax - xMin;
+    const depth = zMax - zMin;
+    if (width < 3.5 || depth < 3.5) return; // Skip thin splinters/slivers
+
+    // Dynamically cap building height to maintain proper skyscraper aspect ratio (no thin sticks)
+    const maxBase = Math.max(width, depth);
+    const adjustedHeight = Math.min(height, maxBase * 2.2);
+
+    // ZERO GAPS & ZERO OVERLAPS: scaleFactor is 1.0 (perfect touching)
+    const scaleFactor = 1.0; 
+    const exteriorRing = originalExterior;
 
     const shape = new THREE.Shape();
     shape.moveTo(exteriorRing[0][0], exteriorRing[0][1]);
@@ -896,51 +1001,139 @@ export function buildPolygonalBlock(poly, bMat, height, group, obstacles, mockWo
     }
 
     const extrudeSettings = {
-      depth: height,
+      depth: adjustedHeight,
       bevelEnabled: false
     };
 
     const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     geometry.rotateX(Math.PI / 2);
-    geometry.translate(0, height + 0.35, 0);
+    geometry.translate(0, adjustedHeight + 0.35, 0);
 
-    // Map textures based on world coordinates so they look like windows
-    const posAttr = geometry.attributes.position;
-    const uvAttr = geometry.attributes.uv;
-    for (let i = 0; i < posAttr.count; i++) {
-      const x = posAttr.getX(i);
-      const y = posAttr.getY(i);
-      const z = posAttr.getZ(i);
-      
-      // A simple heuristic to detect vertical walls vs flat roofs
-      const ny = geometry.attributes.normal ? geometry.attributes.normal.getY(i) : 0;
-      if (Math.abs(ny) < 0.5) {
-         // vertical wall, map UVs based on world X/Z and Y
-         // we use x+z to give continuous wrapping around corners
-         uvAttr.setXY(i, (x + z) * 0.2, y * 0.2);
-      } else {
-         // roof, map UVs based on world X and Z
-         uvAttr.setXY(i, x * 0.2, z * 0.2);
+    const facadeMesh = new THREE.Mesh(geometry, bMat);
+    facadeMesh.castShadow = true;
+    facadeMesh.receiveShadow = true;
+    group.add(facadeMesh);
+
+    // Calculate tile boundaries dynamically based on centroid (tileSize is 40)
+    const ts = 40;
+    const tileX = Math.round(cx / ts) * ts;
+    const tileZ = Math.round(cz / ts) * ts;
+    const xMinBoundary = tileX - ts/2;
+    const xMaxBoundary = tileX + ts/2;
+    const zMinBoundary = tileZ - ts/2;
+    const zMaxBoundary = tileZ + ts/2;
+
+    // Helper to check if a wall segment lies exactly on a tile boundary (party wall)
+    const isTileBoundary = (p1, p2) => {
+      const margin = 0.2;
+      return (Math.abs(p1[0] - xMinBoundary) < margin && Math.abs(p2[0] - xMinBoundary) < margin) ||
+             (Math.abs(p1[0] - xMaxBoundary) < margin && Math.abs(p2[0] - xMaxBoundary) < margin) ||
+             (Math.abs(p1[1] - zMinBoundary) < margin && Math.abs(p2[1] - zMinBoundary) < margin) ||
+             (Math.abs(p1[1] - zMaxBoundary) < margin && Math.abs(p2[1] - zMaxBoundary) < margin);
+    };
+
+    const windowGeoms = [];
+    const doorGeoms = [];
+    const moldingGeoms = [];
+    let doorPlaced = false;
+
+    const winW = 1.2;
+    const winH = 1.5;
+
+    for (let i = 0; i < exteriorRing.length - 1; i++) {
+      const p1 = exteriorRing[i];
+      const p2 = exteriorRing[i+1];
+      const dx = p2[0] - p1[0];
+      const dz = p2[1] - p1[1];
+      const len = Math.sqrt(dx*dx + dz*dz);
+      if (len < 3.0) continue; // Wall too short
+
+      // Check if this segment is a boundary wall
+      if (isTileBoundary(p1, p2)) {
+        continue; // Skip window, door, and molding generation on interior party walls
       }
+
+      const nx = -dz / len;
+      const nz = dx / len;
+      const normAngle = Math.atan2(nx, nz);
+
+      // Place a door on the first suitable ground wall
+      if (!doorPlaced && len >= 4.0) {
+        const doorGeom = new THREE.BoxGeometry(1.8, 3.0, 0.2);
+        doorGeom.rotateY(normAngle);
+        doorGeom.translate(p1[0] + dx/2 + nx*0.1, 1.5 + 0.35, p1[1] + dz/2 + nz*0.1);
+        doorGeoms.push(doorGeom);
+        doorPlaced = true;
+      }
+
+      // Windows along the wall orientation
+      for (let y = 6; y < adjustedHeight - 2; y += 4) {
+        for (let t = 1.5; t < len - 1.5; t += 3) {
+          const seedVal = Math.sin(p1[0] * 12.9898 + p1[1] * 78.233 + t * 13.5 + y * 7.1) * 43758.5453;
+          const seedRand = seedVal - Math.floor(seedVal);
+          if (seedRand > 0.3) {
+            const win = createDetailedWindowGeometry(winW, winH, 0.1);
+            win.rotateY(normAngle);
+            win.translate(p1[0] + (dx/len)*t + nx*0.05, y + 0.35, p1[1] + (dz/len)*t + nz*0.05);
+            windowGeoms.push(win);
+          }
+        }
+      }
+
+      // Modular Molding Ledge Box (at Y = 8 and Y = adjustedHeight)
+      const generateWallLedge = (ledgeY) => {
+        const ledgeW = 0.4;
+        const ledgeGeom = new THREE.BoxGeometry(len, 0.6, ledgeW);
+        ledgeGeom.rotateY(normAngle);
+        // Translate to the middle of the wall, offset slightly outward along normal
+        ledgeGeom.translate(p1[0] + dx/2 + nx*ledgeW/2, ledgeY + 0.35, p1[1] + dz/2 + nz*ledgeW/2);
+        moldingGeoms.push(ledgeGeom);
+      };
+
+      if (adjustedHeight > 12) {
+        generateWallLedge(8); // Middle molding
+      }
+      generateWallLedge(adjustedHeight); // Roof molding
     }
-    geometry.attributes.uv.needsUpdate = true;
 
-    const mesh = new THREE.Mesh(geometry, bMat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    geometry.computeBoundingBox();
-    const box = geometry.boundingBox;
-    
-    group.add(mesh);
-
-    if (box) {
-      obstacles.push({
-        xMin: box.min.x,
-        xMax: box.max.x,
-        zMin: box.min.z,
-        zMax: box.max.z,
-        height: height
-      });
+    if (windowGeoms.length > 0) {
+      const mergedWin = BufferGeometryUtils.mergeGeometries(windowGeoms);
+      group.add(new THREE.Mesh(mergedWin, mockWorld.windowDetailedMat));
     }
+    if (doorGeoms.length > 0) {
+      const mergedDoor = BufferGeometryUtils.mergeGeometries(doorGeoms);
+      group.add(new THREE.Mesh(mergedDoor, mockWorld.doorMat));
+    }
+    if (moldingGeoms.length > 0) {
+      const mergedMoldings = BufferGeometryUtils.mergeGeometries(moldingGeoms);
+      group.add(new THREE.Mesh(mergedMoldings, bMat));
+    }
+
+    // 3. Rooftop AC accessories and warning beacons
+    const accessoryGeoms = [];
+    const ac = new THREE.BoxGeometry(2.0, 1.5, 2.0);
+    ac.translate(cx, adjustedHeight + 0.75 + 0.35, cz);
+    accessoryGeoms.push(ac);
+
+    const seedVal = Math.sin(cx * 12.9898 + cz * 78.233) * 43758.5453;
+    const seedRand = seedVal - Math.floor(seedVal);
+    if (seedRand > 0.8) {
+      const beaconG = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      beaconG.translate(cx, adjustedHeight + 2.0 + 0.35, cz);
+      const beaconMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 6.0 });
+      group.add(new THREE.Mesh(beaconG, beaconMat));
+    }
+
+    if (accessoryGeoms.length > 0) {
+      const mergedAcc = BufferGeometryUtils.mergeGeometries(accessoryGeoms);
+      group.add(new THREE.Mesh(mergedAcc, mockWorld.accessoryMat));
+    }
+
+    obstacles.push({
+      xMin: xMin,
+      xMax: xMax,
+      zMin: zMin,
+      zMax: zMax,
+      height: adjustedHeight
+    });
 }

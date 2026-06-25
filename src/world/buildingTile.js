@@ -754,3 +754,193 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       }
     }
   }
+
+
+export function buildScatterBuilding(posX, posZ, bMat, scaleX, scaleZ, height, seed, group, obstacles, mockWorld, angle = 0) {
+    const rand = seed - Math.floor(seed);
+    const hasDoor = true;
+
+    const facadeGeoms = [];
+    const windowGeoms = [];
+    const doorGeoms = [];
+    const accessoryGeoms = [];
+    const billboardGeoms = [];
+    const beaconGeoms = [];
+
+    const baseGeo = new THREE.BoxGeometry(scaleX, height + 5.0, scaleZ);
+    baseGeo.translate(0, (height - 5.0) / 2, 0);
+    facadeGeoms.push(baseGeo);
+
+    if (hasDoor) {
+      const frontDoor = new THREE.BoxGeometry(1.8, 3.0, 0.2);
+      frontDoor.translate(0, 1.5, scaleZ / 2 + 0.1);
+      doorGeoms.push(frontDoor);
+    }
+
+    const winW = 1.2;
+    const winH = 1.5;
+    for (let y = 6; y < height - 2; y += 4) {
+      for (let x = -scaleX/2 + 2; x < scaleX/2 - 1; x += 3) {
+        if (hashInt(Math.floor(x), Math.floor(y), Math.floor(seed*1000)) > 0.3) {
+           const win = createDetailedWindowGeometry(winW, winH, 0.1);
+           win.translate(x, y, scaleZ / 2 + 0.1);
+           windowGeoms.push(win);
+        }
+      }
+    }
+
+    const ac = new THREE.BoxGeometry(2.0, 1.5, 2.0);
+    ac.translate(0, height + 0.75, 0);
+    accessoryGeoms.push(ac);
+
+    if (rand > 0.8) {
+      const beaconG = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      beaconG.translate(0, height + 2.0, 0);
+      beaconGeoms.push(beaconG);
+    }
+
+    const lod = new THREE.LOD();
+    lod.position.set(posX, 0.35, posZ);
+    lod.rotation.y = angle;
+
+    const highGroup = new THREE.Group();
+    if (facadeGeoms.length > 0) {
+      const mergedFacade = BufferGeometryUtils.mergeGeometries(facadeGeoms);
+      const facadeMesh = new THREE.Mesh(mergedFacade, bMat);
+      facadeMesh.castShadow = true;
+      facadeMesh.receiveShadow = true;
+      highGroup.add(facadeMesh);
+    }
+    if (windowGeoms.length > 0) {
+      const mergedWin = BufferGeometryUtils.mergeGeometries(windowGeoms);
+      highGroup.add(new THREE.Mesh(mergedWin, mockWorld.windowDetailedMat));
+    }
+    if (doorGeoms.length > 0) {
+      const mergedDoor = BufferGeometryUtils.mergeGeometries(doorGeoms);
+      highGroup.add(new THREE.Mesh(mergedDoor, mockWorld.doorMat));
+    }
+    if (accessoryGeoms.length > 0) {
+      const mergedAcc = BufferGeometryUtils.mergeGeometries(accessoryGeoms);
+      highGroup.add(new THREE.Mesh(mergedAcc, mockWorld.accessoryMat));
+    }
+    if (beaconGeoms.length > 0) {
+      const mergedBeacon = BufferGeometryUtils.mergeGeometries(beaconGeoms);
+      const beaconMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 6.0 });
+      highGroup.add(new THREE.Mesh(mergedBeacon, beaconMat));
+    }
+    lod.addLevel(highGroup, 0);
+
+    const medGroup = new THREE.Group();
+    if (facadeGeoms.length > 0) {
+      const mergedFacade = BufferGeometryUtils.mergeGeometries(facadeGeoms);
+      const facadeMesh = new THREE.Mesh(mergedFacade, bMat);
+      facadeMesh.castShadow = true;
+      facadeMesh.receiveShadow = true;
+      medGroup.add(facadeMesh);
+    }
+    if (windowGeoms.length > 0) {
+      const mergedWin = BufferGeometryUtils.mergeGeometries(windowGeoms);
+      medGroup.add(new THREE.Mesh(mergedWin, mockWorld.windowDetailedMat));
+    }
+    lod.addLevel(medGroup, 280);
+
+    const lowGroup = new THREE.Group();
+    if (facadeGeoms.length > 0) {
+      const mergedFacade = BufferGeometryUtils.mergeGeometries(facadeGeoms);
+      const facadeMesh = new THREE.Mesh(mergedFacade, bMat);
+      lowGroup.add(facadeMesh);
+    }
+    lod.addLevel(lowGroup, 400);
+
+    group.add(lod);
+
+    obstacles.push({
+      xMin: posX - scaleX / 2,
+      xMax: posX + scaleX / 2,
+      zMin: posZ - scaleZ / 2,
+      zMax: posZ + scaleZ / 2,
+      height: height
+    });
+}
+
+function hashInt(x, y, seed) {
+  let h = Math.imul(x ^ (y << 16) ^ seed, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296.0;
+}
+
+
+export function buildPolygonalBlock(poly, bMat, height, group, obstacles, mockWorld) {
+    if (!poly || poly.length === 0) return;
+
+    const exteriorRing = poly[0];
+    if (!exteriorRing || exteriorRing.length < 3) return;
+
+    const shape = new THREE.Shape();
+    shape.moveTo(exteriorRing[0][0], exteriorRing[0][1]);
+    for (let i = 1; i < exteriorRing.length; i++) {
+      shape.lineTo(exteriorRing[i][0], exteriorRing[i][1]);
+    }
+
+    for (let h = 1; h < poly.length; h++) {
+      const holeRing = poly[h];
+      if (!holeRing || holeRing.length < 3) continue;
+      const holePath = new THREE.Path();
+      holePath.moveTo(holeRing[0][0], holeRing[0][1]);
+      for (let i = 1; i < holeRing.length; i++) {
+        holePath.lineTo(holeRing[i][0], holeRing[i][1]);
+      }
+      shape.holes.push(holePath);
+    }
+
+    const extrudeSettings = {
+      depth: height,
+      bevelEnabled: false
+    };
+
+    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geometry.rotateX(Math.PI / 2);
+    geometry.translate(0, height + 0.35, 0);
+
+    // Map textures based on world coordinates so they look like windows
+    const posAttr = geometry.attributes.position;
+    const uvAttr = geometry.attributes.uv;
+    for (let i = 0; i < posAttr.count; i++) {
+      const x = posAttr.getX(i);
+      const y = posAttr.getY(i);
+      const z = posAttr.getZ(i);
+      
+      // A simple heuristic to detect vertical walls vs flat roofs
+      const ny = geometry.attributes.normal ? geometry.attributes.normal.getY(i) : 0;
+      if (Math.abs(ny) < 0.5) {
+         // vertical wall, map UVs based on world X/Z and Y
+         // we use x+z to give continuous wrapping around corners
+         uvAttr.setXY(i, (x + z) * 0.2, y * 0.2);
+      } else {
+         // roof, map UVs based on world X and Z
+         uvAttr.setXY(i, x * 0.2, z * 0.2);
+      }
+    }
+    geometry.attributes.uv.needsUpdate = true;
+
+    const mesh = new THREE.Mesh(geometry, bMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    
+    group.add(mesh);
+
+    if (box) {
+      obstacles.push({
+        xMin: box.min.x,
+        xMax: box.max.x,
+        zMin: box.min.z,
+        zMax: box.max.z,
+        height: height
+      });
+    }
+}

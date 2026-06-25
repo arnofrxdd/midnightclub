@@ -11,6 +11,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "polygon-clipping": "^0.15.7",
     "three": "^0.160.0"
   },
   "devDependencies": {

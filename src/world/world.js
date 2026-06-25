@@ -18,6 +18,7 @@ import { createFireHydrantMesh, createNewspaperBoxMesh, spawnTemplateTree, creat
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
+import { generateNaturalMap } from './mapGenerators/naturalGenerator.js';
 
 
 
@@ -37,83 +38,25 @@ export class World {
     this.scene = scene;
     this.tileSize = 40;
 
-    // Generate variable road columns and rows (spacings of 3 to 7 tiles)
-    // Use a random session seed to ensure the grid is unique on every game launch
-    const seedOffset = Math.random() * 10000;
-    this.mainRoadColumns = new Set();
-    this.mainRoadRows = new Set();
-    this.mainRoadColumns.add(0);
-    this.mainRoadRows.add(0);
+    // Use the new MapGraph generation system
+    this.mapGraph = generateNaturalMap(Math.random() * 10000, 3000, 200, 80);
 
-    let curr = 0;
-    while (curr < 1000) {
-      const seed = Math.sin((curr + seedOffset) * 1.5) * 43758.5453;
-      const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5); // Spacing of 3 to 7 tiles
-      this.mainRoadColumns.add(curr);
-    }
-    curr = 0;
-    while (curr > -1000) {
-      const seed = Math.sin((curr - seedOffset) * 1.5) * 43758.5453;
-      const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
-      this.mainRoadColumns.add(curr);
-    }
-
-    curr = 0;
-    while (curr < 1000) {
-      const seed = Math.sin((curr + seedOffset) * 2.7) * 43758.5453;
-      const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5);
-      this.mainRoadRows.add(curr);
-    }
-    curr = 0;
-    while (curr > -1000) {
-      const seed = Math.sin((curr - seedOffset) * 2.7) * 43758.5453;
-      const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
-      this.mainRoadRows.add(curr);
-    }
-
-    // Now generate shortcut columns (alleys) between main road columns
-    this.shortcutColumns = new Set();
-    this.shortcutRows = new Set();
-
-    const sortedCols = Array.from(this.mainRoadColumns).sort((a, b) => a - b);
-    for (let i = 0; i < sortedCols.length - 1; i++) {
-      const c1 = sortedCols[i];
-      const c2 = sortedCols[i + 1];
-      const diff = c2 - c1;
-      if (diff >= 3) {
-        const seed = Math.sin(c1 * 12.9898 + c2 * 78.233) * 43758.5453;
-        const rand = seed - Math.floor(seed);
-        if (rand < 0.2) { // 20% chance of a shortcut alley (more buildings, less alleys)
-          const mid = c1 + Math.floor(diff / 2);
-          this.shortcutColumns.add(mid);
-        }
-      }
-    }
-
-    const sortedRows = Array.from(this.mainRoadRows).sort((a, b) => a - b);
-    for (let i = 0; i < sortedRows.length - 1; i++) {
-      const r1 = sortedRows[i];
-      const r2 = sortedRows[i + 1];
-      const diff = r2 - r1;
-      if (diff >= 3) {
-        const seed = Math.sin(r1 * 53.1374 + r2 * 21.9427) * 43758.5453;
-        const rand = seed - Math.floor(seed);
-        if (rand < 0.2) { // 20% chance of a shortcut alley (more buildings, less alleys)
-          const mid = r1 + Math.floor(diff / 2);
-          this.shortcutRows.add(mid);
-        }
-      }
-    }
-
-    // roadColumns and roadRows contains all drivable roads (main + shortcuts)
-    this.roadColumns = new Set([...this.mainRoadColumns, ...this.shortcutColumns]);
-    this.roadRows = new Set([...this.mainRoadRows, ...this.shortcutRows]);
-    this.sortedColumnsArray = Array.from(this.roadColumns).sort((a, b) => a - b);
-    this.sortedRowsArray = Array.from(this.roadRows).sort((a, b) => a - b);
+    // Provide backwards compatibility facades for legacy code
+    this.roadColumns = { has: (gx) => true, values: () => [0, 10, -10] };
+    this.roadRows = { has: (gz) => true, values: () => [0, 10, -10] };
+    this.shortcutColumns = { has: (gx) => false, values: () => [] };
+    this.shortcutRows = { has: (gz) => false, values: () => [] };
+    this.mainRoadColumns = { has: (gx) => true, values: () => [0] };
+    this.mainRoadRows = { has: (gz) => true, values: () => [0] };
+    
+    // Add helpers for gameplay scripts
+    this.isIntersection = (x, z) => {
+      const node = this.mapGraph.getNearestNode(x, z);
+      if (!node) return false;
+      const dx = node.x - x;
+      const dz = node.z - z;
+      return (dx*dx + dz*dz) < 100; // Within 10m of intersection center
+    };
 
     // Generate baked city environment reflections
     const envMap = createCityEnvMap();
@@ -358,14 +301,7 @@ export class World {
       type: 'init',
       data: {
         tileSize: this.tileSize,
-        mainRoadColumns: Array.from(this.mainRoadColumns),
-        mainRoadRows: Array.from(this.mainRoadRows),
-        shortcutColumns: Array.from(this.shortcutColumns),
-        shortcutRows: Array.from(this.shortcutRows),
-        roadColumns: Array.from(this.roadColumns),
-        roadRows: Array.from(this.roadRows),
-        sortedColumnsArray: this.sortedColumnsArray,
-        sortedRowsArray: this.sortedRowsArray,
+        mapGraphData: this.mapGraph.serialize(),
         asphaltLocalCircles: this.asphaltLocalCircles
       }
     });
@@ -857,86 +793,34 @@ export class World {
     return { rwX, rwZ };
   }
 
-  getBlockInfo(gridX, gridZ) {
-    let colLeft = 0;
-    let colRight = 0;
-    for (let x = gridX; x >= -1000; x--) {
-      if (this.roadColumns.has(x)) {
-        colLeft = x;
-        break;
-      }
-    }
-    for (let x = gridX + 1; x <= 1000; x++) {
-      if (this.roadColumns.has(x)) {
-        colRight = x;
-        break;
-      }
-    }
-
-    let rowTop = 0;
-    let rowBottom = 0;
-    for (let z = gridZ; z >= -1000; z--) {
-      if (this.roadRows.has(z)) {
-        rowTop = z;
-        break;
-      }
-    }
-    for (let z = gridZ + 1; z <= 1000; z++) {
-      if (this.roadRows.has(z)) {
-        rowBottom = z;
-        break;
-      }
-    }
-
+  getBlockBounds(gridX, gridZ) {
+    // Legacy support fallback
     return {
-      colLeft,
-      colRight,
-      rowTop,
-      rowBottom,
-      blockWidth: colRight - colLeft,
-      blockHeight: rowBottom - rowTop,
-      dx: gridX - colLeft,
-      dz: gridZ - rowTop
+      colLeft: gridX - 2,
+      colRight: gridX + 2,
+      rowTop: gridZ - 2,
+      rowBottom: gridZ + 2,
+      blockWidth: 4,
+      blockHeight: 4,
+      dx: 2,
+      dz: 2
     };
   }
 
   isAlley(gridX, gridZ) {
-    if (this.mainRoadColumns.has(gridX) || this.mainRoadRows.has(gridZ)) return false;
-    return this.shortcutColumns.has(gridX) || this.shortcutRows.has(gridZ);
+    // New graph system uses edge types instead of grid columns
+    return false;
   }
 
   snapToNearestIntersection(x, z) {
-    const gridX = Math.round(x / this.tileSize);
-    const gridZ = Math.round(z / this.tileSize);
-
-    let nearestCol = 0;
-    let minColDist = Infinity;
-    for (let cx = gridX - 8; cx <= gridX + 8; cx++) {
-      if (this.roadColumns.has(cx)) {
-        const dist = Math.abs(cx - gridX);
-        if (dist < minColDist) {
-          minColDist = dist;
-          nearestCol = cx;
-        }
-      }
+    const node = this.mapGraph.getNearestNode(x, z);
+    if (node) {
+      return {
+        col: Math.round(node.x / this.tileSize),
+        row: Math.round(node.z / this.tileSize)
+      };
     }
-
-    let nearestRow = 0;
-    let minRowDist = Infinity;
-    for (let cz = gridZ - 8; cz <= gridZ + 8; cz++) {
-      if (this.roadRows.has(cz)) {
-        const dist = Math.abs(cz - gridZ);
-        if (dist < minRowDist) {
-          minRowDist = dist;
-          nearestRow = cz;
-        }
-      }
-    }
-
-    return {
-      x: nearestCol * this.tileSize,
-      z: nearestRow * this.tileSize
-    };
+    return { col: Math.round(x / this.tileSize), row: Math.round(z / this.tileSize) };
   }
 
   generateTile(gridX, gridZ) {

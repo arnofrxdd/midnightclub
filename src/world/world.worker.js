@@ -2,32 +2,21 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
-import { buildBuildingTile, buildScatterBuilding, buildPolygonalBlock } from './buildingTile.js';
+import { buildBuildingTile } from './buildingTile.js';
 import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
-import polygonClipping from 'polygon-clipping';
-
-import { MapGraph } from './mapGraph.js';
-import { generateRoadGeometryForChunk, generateSidewalkGeometryForChunk } from './roadGeometry.js';
-import { decorateChunk } from './roadDecorator.js';
 
 class MockWorld {
   constructor(initData) {
     this.tileSize = initData.tileSize;
-    
-    this.mapGraph = new MapGraph();
-    if (initData.mapGraphData) {
-      this.mapGraph.deserialize(initData.mapGraphData);
-    }
-    
+    this.mainRoadColumns = new Set(initData.mainRoadColumns);
+    this.mainRoadRows = new Set(initData.mainRoadRows);
+    this.shortcutColumns = new Set(initData.shortcutColumns);
+    this.shortcutRows = new Set(initData.shortcutRows);
+    this.roadColumns = new Set(initData.roadColumns);
+    this.roadRows = new Set(initData.roadRows);
+    this.sortedColumnsArray = initData.sortedColumnsArray;
+    this.sortedRowsArray = initData.sortedRowsArray;
     this.asphaltLocalCircles = initData.asphaltLocalCircles;
-
-    // Provide backwards compatibility facades for legacy building generation scripts
-    this.roadColumns = { has: (gx) => false, values: () => [] };
-    this.roadRows = { has: (gz) => false, values: () => [] };
-    this.shortcutColumns = { has: (gx) => false, values: () => [] };
-    this.shortcutRows = { has: (gz) => false, values: () => [] };
-    this.mainRoadColumns = { has: (gx) => false, values: () => [] };
-    this.mainRoadRows = { has: (gz) => false, values: () => [] };
 
     // Arrays for tracking inside the tile build context
     this.breakables = [];
@@ -237,11 +226,42 @@ class MockWorld {
   }
 
   isAlley(gridX, gridZ) {
-    return false;
+    if (this.mainRoadColumns.has(gridX) || this.mainRoadRows.has(gridZ)) return false;
+    return this.shortcutColumns.has(gridX) || this.shortcutRows.has(gridZ);
   }
 
   getBaseHeight(x, z) {
-    return 0; // Legacy height deformation removed, roads are flat for now
+    if (!this.sortedColumnsArray || !this.sortedRowsArray || this.sortedColumnsArray.length < 2 || this.sortedRowsArray.length < 2) {
+      return 0;
+    }
+    const tileX = x / this.tileSize;
+    const tileZ = z / this.tileSize;
+
+    const idxX = findIntervalIndex(this.sortedColumnsArray, tileX);
+    const idxZ = findIntervalIndex(this.sortedRowsArray, tileZ);
+
+    const colIdx1 = Math.max(0, Math.min(this.sortedColumnsArray.length - 2, idxX));
+    const colIdx2 = colIdx1 + 1;
+    const col1 = this.sortedColumnsArray[colIdx1];
+    const col2 = this.sortedColumnsArray[colIdx2];
+
+    const rowIdx1 = Math.max(0, Math.min(this.sortedRowsArray.length - 2, idxZ));
+    const rowIdx2 = rowIdx1 + 1;
+    const row1 = this.sortedRowsArray[rowIdx1];
+    const row2 = this.sortedRowsArray[rowIdx2];
+
+    const h00 = getIntersectionHeight(colIdx1, rowIdx1);
+    const h10 = getIntersectionHeight(colIdx2, rowIdx1);
+    const h01 = getIntersectionHeight(colIdx1, rowIdx2);
+    const h11 = getIntersectionHeight(colIdx2, rowIdx2);
+
+    let u = (tileX - col1) / (col2 - col1);
+    let v = (tileZ - row1) / (row2 - row1);
+
+    u = linearRamp(u);
+    v = linearRamp(v);
+
+    return (1 - u) * (1 - v) * h00 + u * (1 - v) * h10 + (1 - u) * v * h01 + u * v * h11;
   }
 
   deformGeometryToHills(geometry, tileX, tileZ) {
@@ -453,357 +473,57 @@ self.onmessage = function (e) {
     }
     const { gridX, gridZ, posX, posZ, key } = data;
 
+    const isAlley = mockWorld.isAlley(gridX, gridZ);
+    const isRoad = mockWorld.roadColumns.has(gridX) || mockWorld.roadRows.has(gridZ);
+
     const tileGroup = new THREE.Group();
     const obstacles = [];
     const lights = [];
 
-    // Generate dynamic polygon roads based on MapGraph
-    const roadGeo = generateRoadGeometryForChunk(posX, posZ, mockWorld.tileSize, mockWorld.mapGraph);
-    if (roadGeo) {
-      // 0. Concrete Foundation
-      const foundationGeo = new THREE.PlaneGeometry(mockWorld.tileSize, mockWorld.tileSize);
-      foundationGeo.rotateX(-Math.PI / 2);
-      foundationGeo.translate(posX, -0.1, posZ);
-      const foundationMesh = new THREE.Mesh(foundationGeo, mockWorld.concreteMat);
-      foundationMesh.receiveShadow = true;
-      tileGroup.add(foundationMesh);
+    if (isAlley) {
+      mockWorld.buildAlleyTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
+    } else if (isRoad) {
+      mockWorld.buildRoadTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
 
-      // 1. Sidewalks
-      const sidewalkGeo = generateSidewalkGeometryForChunk(posX, posZ, mockWorld.tileSize, mockWorld.mapGraph);
-      if (sidewalkGeo) {
-        const sidewalkMesh = new THREE.Mesh(sidewalkGeo, mockWorld.concreteMat);
-        sidewalkMesh.receiveShadow = true;
-        tileGroup.add(sidewalkMesh);
-      }
+      // Compute world-space puddle circles
+      const tileCircles = [];
+      const matIndex = Math.abs(gridX * 17 + gridZ * 23) % mockWorld.asphaltMaterials.length;
+      const localCircles = mockWorld.asphaltLocalCircles[matIndex];
 
-      // 2. Asphalt Roads
-      const roadMesh = new THREE.Mesh(roadGeo, mockWorld.asphaltMat);
-      roadMesh.receiveShadow = true;
-      tileGroup.add(roadMesh);
+      if (localCircles && localCircles.length > 0) {
+        const ox = Math.abs((gridX * 0.317 + gridZ * 0.713) % 1.0);
+        const oy = Math.abs((gridX * 0.893 + gridZ * 0.149) % 1.0);
 
-      // 3. Decorations (Props, Lights, Trees)
-      const decor = decorateChunk(posX, posZ, mockWorld.tileSize, mockWorld.mapGraph, mockWorld);
-
-      // Add streetlights individually to handle light flares and cones
-      decor.streetlightTransforms.forEach((stf) => {
-        const sx = stf.x;
-        const sz = stf.z;
-        const angle = stf.angle;
-        const isLED = stf.seed > 0.6;
-        const lightColor = isLED ? 0xe0f7fa : 0xffd5a1;
-
-        const slObject = mockWorld.templates.streetlight.clone();
-        slObject.position.set(sx, 0, sz);
-        slObject.rotation.y = angle;
-        slObject.updateMatrixWorld(true);
-
-        const coneMesh = new THREE.Mesh(mockWorld.lightConeGeo, isLED ? mockWorld.lightConeMatLED : mockWorld.lightConeMatSodium);
-        coneMesh.position.set(1.3, 0.25, 0);
-        coneMesh.name = "lightCone";
-        slObject.add(coneMesh);
-
-        const poolMeshName = `poolMesh_${lights.length}`;
-        const poolMesh = new THREE.Mesh(
-          mockWorld.lightPoolGeo,
-          (isLED ? mockWorld.ledGroundLightPoolMat : mockWorld.sodiumGroundLightPoolMat).clone()
-        );
-        poolMesh.name = poolMeshName;
-        poolMesh.position.set(1.3, -3.89, 0);
-        slObject.add(poolMesh);
-
-        const flareName = `flare_0`;
-        const flare = new THREE.Sprite(new THREE.SpriteMaterial({
-          color: lightColor,
-          transparent: true,
-          opacity: 0.70,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false
-        }));
-        flare.name = flareName;
-        flare.position.set(1.3, 4.15, 0);
-        flare.scale.set(3.8, 3.8, 1.0);
-        slObject.add(flare);
-
-        const lightSrc = {
-          x: sx - stf.nx * 1.3,
-          y: 7.5,
-          z: sz - stf.nz * 1.3,
-          intensity: 26.0,
-          color: lightColor,
-          poolMeshName: poolMeshName,
-          poolMesh: poolMesh,
-          defaultOpacity: isLED ? 0.16 : 0.22
-        };
-        lights.push(lightSrc);
-
-        const slGroupName = `slObject_${mockWorld.breakables.length}`;
-        slObject.name = slGroupName;
-
-        mockWorld.breakables.push({
-          type: 'streetlight',
-          position: new THREE.Vector3(sx, 0, sz),
-          groupName: slGroupName,
-          group: slObject,
-          flareNames: [flareName],
-          flares: [flare],
-          lightIndices: [lights.indexOf(lightSrc)],
-          lights: [lightSrc],
-          poolMeshNames: [poolMeshName],
-          poolMeshes: [poolMesh],
-          broken: false,
-          tileX: posX,
-          tileZ: posZ,
-          velocity: new THREE.Vector3(),
-          angularVelocity: new THREE.Vector3()
-        });
-
-        tileGroup.add(slObject);
-      });
-
-      if (decor.localTrunks.length > 0) {
-        const mergedTrunks = BufferGeometryUtils.mergeGeometries(decor.localTrunks);
-        const trunkMesh = new THREE.Mesh(mergedTrunks, new THREE.MeshStandardMaterial({ name: 'materials_3' }));
-        trunkMesh.castShadow = true;
-        tileGroup.add(trunkMesh);
-      }
-
-      const leafTypes = [
-        { arr: decor.localLeaves, matName: 'materials_1' },
-        { arr: decor.localLeavesCherry, matName: 'materials_2' },
-        { arr: decor.localLeavesAutumn, matName: 'materials_4' }
-      ];
-      leafTypes.forEach(lt => {
-        if (lt.arr.length > 0) {
-          const mergedLeaves = BufferGeometryUtils.mergeGeometries(lt.arr);
-          const leafMesh = new THREE.Mesh(mergedLeaves, new THREE.MeshStandardMaterial({ name: lt.matName }));
-          leafMesh.castShadow = true;
-          tileGroup.add(leafMesh);
-        }
-      });
-
-      // Breakable Props
-      const instantiateProps = (transforms, templateName, type, comHeight, radius) => {
-        if (transforms.length === 0) return;
-        const template = mockWorld.templates[templateName];
-        const instancedMeshes = [];
-        template.children.forEach((child, childIdx) => {
-          const im = new THREE.InstancedMesh(child.geometry, child.material, transforms.length);
-          im.name = `instanced_${templateName}_${childIdx}`;
-          im.castShadow = true;
-          im.receiveShadow = child.receiveShadow || false;
-          for (let i = 0; i < transforms.length; i++) {
-            const childMatrix = new THREE.Matrix4();
-            childMatrix.compose(child.position, child.quaternion, child.scale);
-            const finalMatrix = transforms[i].clone().multiply(childMatrix);
-            im.setMatrixAt(i, finalMatrix);
+        let sizeX = mockWorld.tileSize;
+        let sizeZ = mockWorld.tileSize;
+        const isIntersection = mockWorld.roadColumns.has(gridX) && mockWorld.roadRows.has(gridZ);
+        if (!isIntersection) {
+          const { rwX, rwZ } = mockWorld.getRoadWidthForGrid(gridX, gridZ);
+          if (mockWorld.roadRows.has(gridZ)) {
+            sizeZ = rwZ;
+          } else {
+            sizeX = rwX;
           }
-          tileGroup.add(im);
-          instancedMeshes.push(im);
-        });
-
-        transforms.forEach((tf, i) => {
-          const pos = new THREE.Vector3();
-          pos.setFromMatrixPosition(tf);
-          const breakable = {
-            type: type,
-            comHeight: comHeight,
-            radius: radius,
-            position: pos,
-            group: null,
-            flares: [],
-            lights: [],
-            broken: false,
-            tileX: posX,
-            tileZ: posZ,
-            velocity: new THREE.Vector3(),
-            angularVelocity: new THREE.Vector3(),
-            isInstanced: true,
-            templateName: templateName,
-            instanceId: i,
-            instancedMeshNames: template.children.map((_, childIdx) => `instanced_${templateName}_${childIdx}`),
-            instancedMeshes: instancedMeshes
-          };
-          mockWorld.breakables.push(breakable);
-        });
-      };
-
-      instantiateProps(decor.benchTransforms, 'bench', 'bench', 0.6, 0.4);
-      instantiateProps(decor.trashCanTransforms, 'trashCan', 'trashcan', 0.5, 0.4);
-      instantiateProps(decor.hydrantTransforms, 'fireHydrant', 'hydrant', 0.45, 0.3);
-      instantiateProps(decor.phoneBoothTransforms, 'phoneBooth', 'phonebooth', 1.4, 0.6);
-
-      decor.trafficLights.forEach((tl) => {
-        const tlGroup = new THREE.Group();
-        tlGroup.position.set(tl.x, 0, tl.z);
-        
-        const poleGeo = new THREE.BoxGeometry(0.4, 8.5, 0.4);
-        const poleMesh = new THREE.Mesh(poleGeo, mockWorld.streetlightPoleMat);
-        poleMesh.position.y = 4.25;
-        poleMesh.castShadow = true;
-        tlGroup.add(poleMesh);
-
-        // Add arm and housing
-        const isX = tl.axis === 'x';
-        const sign = isX ? -Math.sign(tl.cx) : -Math.sign(tl.cz);
-        
-        const armGeo = isX ? new THREE.BoxGeometry(0.15, 0.15, 3.5) : new THREE.BoxGeometry(3.5, 0.15, 0.15);
-        const armMesh = new THREE.Mesh(armGeo, mockWorld.streetlightPoleMat);
-        if (isX) armMesh.position.set(0, 7.5, sign * 1.75);
-        else armMesh.position.set(sign * 1.75, 7.5, 0);
-        tlGroup.add(armMesh);
-
-        const housingGeo = new THREE.BoxGeometry(0.4, 1.2, 0.4);
-        const housingMesh = new THREE.Mesh(housingGeo, mockWorld.tlHousingMat);
-        if (isX) {
-          housingMesh.position.set(0, 7.1, sign * 3.5);
-          housingMesh.rotation.y = tl.cx > 0 ? -Math.PI / 2 : Math.PI / 2;
-        } else {
-          housingMesh.position.set(sign * 3.5, 7.1, 0);
-          housingMesh.rotation.y = tl.cz > 0 ? Math.PI : 0;
-        }
-        tlGroup.add(housingMesh);
-
-        const bulbGeo = new THREE.BoxGeometry(0.24, 0.24, 0.1);
-        
-        const redGroup = new THREE.Group();
-        redGroup.position.copy(housingMesh.position);
-        redGroup.rotation.copy(housingMesh.rotation);
-        const redMesh = new THREE.Mesh(bulbGeo, mockWorld.tlRedOffMat);
-        redMesh.position.set(0, 0.35, 0.21);
-        redMesh.name = tl.redName;
-        redGroup.add(redMesh);
-        tlGroup.add(redGroup);
-
-        const yellowGroup = new THREE.Group();
-        yellowGroup.position.copy(housingMesh.position);
-        yellowGroup.rotation.copy(housingMesh.rotation);
-        const yellowMesh = new THREE.Mesh(bulbGeo, mockWorld.tlYellowOffMat);
-        yellowMesh.position.set(0, 0, 0.21);
-        yellowMesh.name = tl.yellowName;
-        yellowGroup.add(yellowMesh);
-        tlGroup.add(yellowGroup);
-
-        const greenGroup = new THREE.Group();
-        greenGroup.position.copy(housingMesh.position);
-        greenGroup.rotation.copy(housingMesh.rotation);
-        const greenMesh = new THREE.Mesh(bulbGeo, mockWorld.tlGreenOffMat);
-        greenMesh.position.set(0, -0.35, 0.21);
-        greenMesh.name = tl.greenName;
-        greenGroup.add(greenMesh);
-        tlGroup.add(greenGroup);
-
-        tileGroup.add(tlGroup);
-        mockWorld.trafficLights.push(tl);
-      });
-
-      // 4. Polygonal Building Generation
-      const ts = mockWorld.tileSize;
-
-      const roadClipPolys = [];
-      const SIDEWALK_OFFSET = 12;
-      const BUILDING_BUFFER = 4;
-
-      const clipMargin = 40;
-      const minX = posX - ts/2 - clipMargin;
-      const maxX = posX + ts/2 + clipMargin;
-      const minZ = posZ - ts/2 - clipMargin;
-      const maxZ = posZ + ts/2 + clipMargin;
-
-      for (const edge of mockWorld.mapGraph.edges.values()) {
-        const nA = edge.nodeA;
-        const nB = edge.nodeB;
-        
-        if (Math.min(nA.x, nB.x) > maxX || Math.max(nA.x, nB.x) < minX ||
-            Math.min(nA.z, nB.z) > maxZ || Math.max(nA.z, nB.z) < minZ) {
-          continue;
         }
 
-        const dx = nB.x - nA.x;
-        const dz = nB.z - nA.z;
-        const len = Math.sqrt(dx*dx + dz*dz);
-        if (len === 0) continue;
+        localCircles.forEach(c => {
+          const u = c.x / 1024;
+          const v = c.y / 1024;
+          const shiftedU = (u - ox + 2.0) % 1.0;
+          const shiftedV = (v + oy) % 1.0;
+          const localX = shiftedU * sizeX - sizeX / 2;
+          const localZ = shiftedV * sizeZ - sizeZ / 2;
 
-        const nx = -dz / len;
-        const nz = dx / len;
-        
-        const hw = edge.width / 2 + SIDEWALK_OFFSET + BUILDING_BUFFER;
-        const ext = 2; // extension
-
-        roadClipPolys.push([[
-          [nA.x + nx * hw - (dx/len)*ext, nA.z + nz * hw - (dz/len)*ext],
-          [nB.x + nx * hw + (dx/len)*ext, nB.z + nz * hw + (dz/len)*ext],
-          [nB.x - nx * hw + (dx/len)*ext, nB.z - nz * hw + (dz/len)*ext],
-          [nA.x - nx * hw - (dx/len)*ext, nA.z - nz * hw - (dz/len)*ext],
-          [nA.x + nx * hw - (dx/len)*ext, nA.z + nz * hw - (dz/len)*ext]
-        ]]);
-      }
-
-      for (const node of mockWorld.mapGraph.nodes.values()) {
-        let maxWidth = 0;
-        for (const e of node.edges) {
-          if (e.width > maxWidth) maxWidth = e.width;
-        }
-        const r = maxWidth / 2 + SIDEWALK_OFFSET + BUILDING_BUFFER;
-        
-        if (node.x + r < minX || node.x - r > maxX || node.z + r < minZ || node.z - r > maxZ) {
-          continue;
-        }
-
-        const circle = [];
-        const segments = 12;
-        for (let i = 0; i < segments; i++) {
-          const angle = (i / segments) * Math.PI * 2;
-          circle.push([node.x + Math.cos(angle) * r, node.z + Math.sin(angle) * r]);
-        }
-        circle.push([circle[0][0], circle[0][1]]);
-        roadClipPolys.push([circle]);
-      }
-
-      // Subdivide the chunk into a 2x2 grid of sub-cells.
-      // Each sub-cell is clipped against roads individually, producing varied building footprints.
-      const SUBDIVISIONS = 2;
-      const cellW = ts / SUBDIVISIONS;
-
-      for (let ci = 0; ci < SUBDIVISIONS; ci++) {
-        for (let cj = 0; cj < SUBDIVISIONS; cj++) {
-          const cxMin = posX - ts/2 + ci * cellW;
-          const cxMax = cxMin + cellW;
-          const czMin = posZ - ts/2 + cj * cellW;
-          const czMax = czMin + cellW;
-
-          const cellPoly = [[[cxMin, czMin],[cxMax, czMin],[cxMax, czMax],[cxMin, czMax],[cxMin, czMin]]];
-
-          let resultPolys = [cellPoly];
-          if (roadClipPolys.length > 0) {
-            try {
-              resultPolys = polygonClipping.difference(resultPolys, ...roadClipPolys);
-            } catch (e) {
-              resultPolys = [];
-            }
-          }
-
-          resultPolys.forEach((poly, idx) => {
-            // Compute polygon area to skip slivers
-            let area = 0;
-            const ring = poly[0];
-            for (let k = 0; k < ring.length - 1; k++) {
-              area += ring[k][0] * ring[k+1][1] - ring[k+1][0] * ring[k][1];
-            }
-            area = Math.abs(area) / 2;
-            if (area < 4) return; // Skip slivers smaller than 2x2m
-
-            const seed = Math.sin((cxMin + cxMax)/2 * 12.9898 + (czMin + czMax)/2 * 78.233 + idx * 13.5 + ci * 7.1 + cj * 3.3) * 43758.5453;
-            const rand = seed - Math.floor(seed);
-            const bMat = mockWorld.materials[Math.floor(rand * mockWorld.materials.length)];
-            const height = 12 + rand * 35; // 12m to 47m — strong variety
-            
-            buildPolygonalBlock(poly, bMat, height, tileGroup, obstacles, mockWorld);
+          tileCircles.push({
+            x: posX + localX,
+            z: posZ + localZ,
+            rx: (c.r / 1024) * sizeX,
+            rz: (c.r / 1024) * sizeZ
           });
-        }
+        });
       }
-
+      mockWorld.tilePuddles.set(key, tileCircles);
     } else {
-      // If no roads, spawn a building tile
       mockWorld.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
     }
 

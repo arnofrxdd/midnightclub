@@ -18,6 +18,7 @@ import { createFireHydrantMesh, createNewspaperBoxMesh, spawnTemplateTree, creat
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
+import { buildMallTile, isMallBlock } from './mallTile.js';
 
 
 
@@ -161,6 +162,13 @@ export class World {
     });
     this.yellowLineMat = new THREE.MeshStandardMaterial({ color: 0xe5a93b, roughness: 0.6 });
     this.whiteLineMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.6 });
+    
+    // Mall specific materials
+    this.mallFacadeMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f7, roughness: 0.1, metalness: 0.1, emissive: 0x111111 });
+    this.mallFloorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.2, emissive: 0x222222 });
+    this.mallGlassMat = new THREE.MeshStandardMaterial({ color: 0x1166dd, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.2, depthWrite: false, emissive: 0x001133 });
+    this.mallFrameMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.2, metalness: 0.8 });
+
     this.streetlightPoleMat = new THREE.MeshStandardMaterial({ color: 0x22252c, metalness: 0.8, roughness: 0.5 });
     this.streetlightBulbMat = new THREE.MeshStandardMaterial({ color: 0xfff6dd, emissive: 0xffcc88, emissiveIntensity: 3.5 });
 
@@ -951,7 +959,12 @@ export class World {
       const tileLights = [];
       const posX = gridX * this.tileSize;
       const posZ = gridZ * this.tileSize;
-      this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+      const isMall = isMallBlock(gridX, gridZ, this.roadColumns, this.roadRows, this.isAlley.bind(this), this.getBaseHeight.bind(this));
+      if (isMall) {
+        this.buildMallTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+      } else {
+        this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+      }
 
       // Initialize tile meshes to 0.0 opacity using the pool
       tileGroup.traverse(child => {
@@ -1410,6 +1423,10 @@ export class World {
 
   buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {
     return buildBuildingTile.call(this, gridX, gridZ, posX, posZ, group, obstacles, lights);
+  }
+
+  buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {
+    return buildMallTile.call(this, gridX, gridZ, posX, posZ, group, obstacles, lights);
   }
 
   checkCollision(posX, posZ, radius = 2.2, posY = null) {

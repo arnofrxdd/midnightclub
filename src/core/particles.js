@@ -498,8 +498,13 @@ export function spawnDebris(pos, dir, color, count = 5) {
       d.mesh.position.z += (Math.random() - 0.5) * 0.8;
       d.mesh.visible = true;
       d.material.color.setHex(color);
-      d.material.opacity = 1.0;
-      d.material.transparent = false;
+      if (color === 0x88ccff || color === 0xffffff || color === 0xddeeef) {
+        d.material.transparent = true;
+        d.material.opacity = 0.55;
+      } else {
+        d.material.transparent = false;
+        d.material.opacity = 1.0;
+      }
 
       d.life = 1.2 + Math.random() * 1.5;
       d.maxLife = d.life;

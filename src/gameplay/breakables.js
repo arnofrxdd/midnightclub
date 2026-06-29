@@ -88,10 +88,18 @@ export function checkBreakablesCollision(dt) {
           const dist2D = Math.sqrt(dx * dx + dz * dz);
           
           const dy = ent.position.y - b.position.y;
-          const propHeight = (b.type === 'hydrant' || b.type === 'bench' || b.type === 'trashcan' || b.type === 'parkingmeter') ? 1.5 : 8.0;
+          
+          let minDy = -2.0;
+          let propHeight = 8.0;
+          if (b.type === 'hydrant' || b.type === 'bench' || b.type === 'trashcan' || b.type === 'parkingmeter') {
+            propHeight = 1.5;
+          } else if (b.type === 'glass') {
+            minDy = -10.0; // Glass center is 4.5m up; we need to reach down to the ground!
+            propHeight = 10.0;
+          }
           
           const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
-          if (dist2D < collisionDist && dy > -2.0 && dy < propHeight + ent.radius) {
+          if (dist2D < collisionDist && dy > minDy && dy < propHeight + ent.radius) {
             // Re-calculate actual overlap based on 2D distance for pushing out
             const dist = dist2D;
             const speed = ent.velocity.length();
@@ -113,6 +121,15 @@ export function checkBreakablesCollision(dt) {
             // CRASH! Break the streetlight
             b.broken = true;
             b.fadeTimer = 180.0; // Keep broken props for 3 minutes!
+
+            // Instantly hide the massive glass wall
+            if (b.type === 'glass') {
+              if (b.group) {
+                b.group.traverse(child => {
+                  if (child.isMesh) child.visible = false;
+                });
+              }
+            }
 
             // Handle Instanced Mesh breakables dynamically by spawning a real mesh to fly away
             if (b.isInstanced && b.instancedMeshes) {
@@ -224,8 +241,12 @@ export function checkBreakablesCollision(dt) {
             // Screen shake / crash feedback if player rammed it
             if (ent.isPlayer && speed > 8.0) {
               this.crashShake = Math.min(0.5, speed * 0.025);
-              // Deduct significant forward speed from player on impact (heavy pole resistance)
-              this.physics.velocity.multiplyScalar(0.78);
+              if (b.type === 'glass') {
+                this.physics.velocity.multiplyScalar(0.95); // glass is fragile, minimal slowdown!
+              } else {
+                // Deduct significant forward speed from player on impact (heavy pole resistance)
+                this.physics.velocity.multiplyScalar(0.78);
+              }
               // if (this.hypeManager) this.hypeManager.addStunt('smash'); // Disabled per user request
             }
 
@@ -235,9 +256,61 @@ export function checkBreakablesCollision(dt) {
             if (b.type === 'hydrant') {
               this.spawnParticles(sparkPos, impactForceDir, 0xaaddff, 18, true);
               this.spawnDebris(sparkPos, impactForceDir, 0xdd2222, 5); // red metal shards
+            } else if (b.type === 'glass') {
+              this.spawnParticles(sparkPos, impactForceDir, 0xddeeef, 65, false, true); // white glass sparkles
+              
+              // AAA Shatter Effect: Spawn massive physical glass shards
+              let glassMat = null;
+              if (b.group) {
+                b.group.traverse(c => {
+                  if (c.isMesh && !glassMat) glassMat = c.material;
+                });
+              }
+              if (glassMat) {
+                const shardGeoms = [
+                  new THREE.BoxGeometry(3.5, 2.5, 0.15),
+                  new THREE.BoxGeometry(1.5, 4.5, 0.2),
+                  new THREE.BoxGeometry(2.2, 3.0, 0.15),
+                  new THREE.BoxGeometry(4.0, 1.5, 0.25)
+                ];
+                for(let i=0; i<25; i++) {
+                  const geo = shardGeoms[Math.floor(Math.random() * shardGeoms.length)];
+                  const shardMesh = new THREE.Mesh(geo, glassMat);
+                  
+                  // Distribute shards across the entire pane area
+                  const rx = b.position.x + (Math.random() - 0.5) * 12.0;
+                  const ry = b.position.y + (Math.random() - 0.5) * 8.0;
+                  const rz = b.position.z + (Math.random() - 0.5) * 12.0;
+                  shardMesh.position.set(rx, ry, rz);
+                  
+                  // Explode outwards from the car's impact point, but heavier and less explosive
+                  const explodeVec = new THREE.Vector3(rx - ent.position.x, ry - ent.position.y, rz - ent.position.z).normalize();
+                  const launchVel = explodeVec.multiplyScalar(6 + Math.random() * 8).add(impactForceDir.clone().multiplyScalar(speed * 0.5));
+                  
+                  const shardB = {
+                    type: 'glass_shard',
+                    broken: true, // It is already broken, physics engine will apply gravity/bounces
+                    fadeTimer: 240.0, // Lasts 4 minutes
+                    radius: 0.1,      // Thin collision radius so they lie flat
+                    comHeight: 0.15,  // Very low center of mass so they cannot stand on edge
+                    group: shardMesh,
+                    position: shardMesh.position.clone(),
+                    velocity: launchVel,
+                    angularVelocity: new THREE.Vector3((Math.random()-0.5)*15, (Math.random()-0.5)*15, (Math.random()-0.5)*15),
+                    lights: [], flares: [], poolMeshes: []
+                  };
+                  this.scene.add(shardMesh);
+                  this.world.breakables.push(shardB);
+                }
+              }
             } else {
               this.spawnParticles(sparkPos, impactForceDir, 0xffaa00, 10, false, true);
               this.spawnDebris(sparkPos, impactForceDir, 0x333333, 5); // metal shards
+            }
+
+            // Now that shards are spawned, sever the massive pane from the physics loop so it doesn't tumble!
+            if (b.type === 'glass' && b.group) {
+              b.group = null;
             }
 
             break; // Stop checking other entities for this breakable
@@ -253,7 +326,7 @@ export function checkBreakablesCollision(dt) {
           const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6) + 1.2;
           
           const dy = ent.position.y - b.group.position.y;
-          if (dist2D < collisionDist && Math.abs(dy) < 4.0) {
+          if (dist2D < collisionDist && Math.abs(dy) < 6.0) {
             const speed = ent.velocity.length();
             if (speed > 2.0) {
               const impactForceDir = ent.velocity.clone().normalize();
@@ -286,11 +359,13 @@ export function checkBreakablesCollision(dt) {
           }
         }
         
-        b.group.position.addScaledVector(b.velocity, dt);
+        if (b.group) {
+          b.group.position.addScaledVector(b.velocity, dt);
 
-        b.group.rotation.x += b.angularVelocity.x * dt;
-        b.group.rotation.y += b.angularVelocity.y * dt;
-        b.group.rotation.z += b.angularVelocity.z * dt;
+          b.group.rotation.x += b.angularVelocity.x * dt;
+          b.group.rotation.y += b.angularVelocity.y * dt;
+          b.group.rotation.z += b.angularVelocity.z * dt;
+        }
 
         // Continuous water spray fountain from broken fire hydrant base
         if (b.type === 'hydrant') {
@@ -375,78 +450,84 @@ export function checkBreakablesCollision(dt) {
         }
 
         // Bounce on ground level
-        const groundHeight = this.world.getGroundHeight(b.group.position.x, b.group.position.z);
-        const upVec = new THREE.Vector3(0, 1, 0).applyQuaternion(b.group.quaternion);
-        const tiltCos = Math.abs(upVec.dot(new THREE.Vector3(0, 1, 0))); // 1 = standing, 0 = flat
-        const comHeight = b.comHeight !== undefined ? b.comHeight : 4.25;
-        const radius = b.radius !== undefined ? b.radius : 0.22;
-        const minHeight = groundHeight + THREE.MathUtils.lerp(radius, comHeight, tiltCos);
+        if (b.group) {
+          const groundHeight = this.world.getGroundHeight(b.group.position.x, b.group.position.z);
+          const upVec = new THREE.Vector3(0, 1, 0).applyQuaternion(b.group.quaternion);
+          const tiltCos = Math.abs(upVec.dot(new THREE.Vector3(0, 1, 0))); // 1 = standing, 0 = flat
+          const comHeight = b.comHeight !== undefined ? b.comHeight : 4.25;
+          const radius = b.radius !== undefined ? b.radius : 0.22;
+          const minHeight = groundHeight + THREE.MathUtils.lerp(radius, comHeight, tiltCos);
 
-        if (b.group.position.y < minHeight) {
-          b.group.position.y = minHeight;
-          
-          const isFlat = tiltCos < 0.15;
-          if (isFlat) {
-            // Once flat, damp and stop
-            if (b.velocity.y < -1.5) {
-              b.velocity.y = -b.velocity.y * 0.22; // bounce damping
-            } else {
-              b.velocity.y = 0.0;
-            }
-            b.velocity.x *= 0.48 * Math.exp(-dt * 6.5); // slide friction
-            b.velocity.z *= 0.48 * Math.exp(-dt * 6.5);
-            b.angularVelocity.multiplyScalar(0.35 * Math.exp(-dt * 5.0));
-          } else {
-            // While toppling, satisfy the ground tip contact constraint kinematics.
-            // Do NOT bounce the center of mass vertically.
-            // Instead, apply constant gravity torque to slide the center of mass down.
-            const sinTheta = Math.sqrt(1.0 - tiltCos * tiltCos);
-            const toppleTorque = 16.0 * sinTheta; // Accelerates as it leans further
-            const leanX = upVec.z;
-            const leanZ = -upVec.x;
-            b.angularVelocity.x += leanX * toppleTorque * dt;
-            b.angularVelocity.z += leanZ * toppleTorque * dt;
+          if (b.group.position.y < minHeight) {
+            b.group.position.y = minHeight;
             
-            // Allow natural sliding velocity on the tip contact
-            b.velocity.x *= 0.98;
-            b.velocity.z *= 0.98;
-          }
-          
-          // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
-          let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
-          let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
-          if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
-            if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
-              targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
+            const isFlat = tiltCos < 0.15;
+            if (isFlat) {
+              // Once flat, damp and stop
+              if (b.velocity.y < -1.5) {
+                b.velocity.y = -b.velocity.y * 0.22; // bounce damping
+              } else {
+                b.velocity.y = 0.0;
+              }
+              b.velocity.x *= 0.48 * Math.exp(-dt * 6.5); // slide friction
+              b.velocity.z *= 0.48 * Math.exp(-dt * 6.5);
+              b.angularVelocity.multiplyScalar(0.35 * Math.exp(-dt * 5.0));
             } else {
-              targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+              // While toppling, satisfy the ground tip contact constraint kinematics.
+              // Do NOT bounce the center of mass vertically.
+              // Instead, apply constant gravity torque to slide the center of mass down.
+              const sinTheta = Math.sqrt(1.0 - tiltCos * tiltCos);
+              const toppleTorque = 16.0 * sinTheta; // Accelerates as it leans further
+              const leanX = upVec.z;
+              const leanZ = -upVec.x;
+              b.angularVelocity.x += leanX * toppleTorque * dt;
+              b.angularVelocity.z += leanZ * toppleTorque * dt;
+              
+              // Allow natural sliding velocity on the tip contact
+              b.velocity.x *= 0.98;
+              b.velocity.z *= 0.98;
+            }
+            
+            // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
+            let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
+            let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+            if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
+              if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
+                targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
+              } else {
+                targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+              }
+            }
+            const alignStrength = isFlat ? 7.0 : 2.5;
+            b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
+            b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
+            
+            // Scratching spark physics when rubbing ground
+            if (b.velocity.lengthSq() > 15.0) {
+               const sparkPos = b.group.position.clone();
+               sparkPos.y = groundHeight + 0.1;
+               const slideDir = b.velocity.clone().normalize().negate(); // Sparks shoot backwards
+               slideDir.y = 0.1; // Very slight upward spray, mostly backwards along the floor
+               this.spawnParticles(sparkPos, slideDir, 0xffdd55, 10, false, true);
             }
           }
-          const alignStrength = isFlat ? 7.0 : 2.5;
-          b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
-          b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
-          
-          // Scratching spark physics when rubbing ground
-          if (b.velocity.lengthSq() > 15.0) {
-             const sparkPos = b.group.position.clone();
-             sparkPos.y = groundHeight + 0.1;
-             const slideDir = b.velocity.clone().normalize().negate(); // Sparks shoot backwards
-             slideDir.y = 0.1; // Very slight upward spray, mostly backwards along the floor
-             this.spawnParticles(sparkPos, slideDir, 0xffdd55, 10, false, true);
-          }
-        }
 
-        // Fade out/scale down only when off-camera
-        const inView = frustum.containsPoint(b.group.position);
-        
-        b.fadeTimer -= dt;
-        if (!inView && b.fadeTimer <= 0) {
-          b.group.scale.multiplyScalar(Math.max(0, 1.0 - dt * 2.5));
-          if (b.group.scale.x < 0.05) {
-            b.group.visible = false;
-            this.scene.remove(b.group);
-            b.shouldRemove = true;
+          // Fade out/scale down only when off-camera
+          const inView = frustum.containsPoint(b.group.position);
+          
+          b.fadeTimer -= dt;
+          if (!inView && b.fadeTimer <= 0) {
+            b.group.scale.multiplyScalar(Math.max(0, 1.0 - dt * 2.5));
+            if (b.group.scale.x < 0.05) {
+              b.group.visible = false;
+              this.scene.remove(b.group);
+              b.shouldRemove = true;
+            }
           }
+        } else {
+          // Object is null, just wait out the fade timer and delete it from memory
+          b.fadeTimer -= dt;
+          if (b.fadeTimer <= 0) b.shouldRemove = true;
         }
       }
     });

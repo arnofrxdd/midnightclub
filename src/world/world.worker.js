@@ -3,6 +3,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
+import { buildMallTile, isMallBlock } from './mallTile.js';
 import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
 
 class MockWorld {
@@ -283,6 +284,7 @@ class MockWorld {
   buildAlleyTile = buildAlleyTile;
   buildRoadTile = buildRoadTile;
   buildBuildingTile = buildBuildingTile;
+  buildMallTile = buildMallTile;
 }
 
 let mockWorld = null;
@@ -524,7 +526,12 @@ self.onmessage = function (e) {
       }
       mockWorld.tilePuddles.set(key, tileCircles);
     } else {
-      mockWorld.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
+      const isMall = isMallBlock(gridX, gridZ, mockWorld.roadColumns, mockWorld.roadRows, mockWorld.isAlley.bind(mockWorld), mockWorld.getBaseHeight.bind(mockWorld));
+      if (isMall) {
+        mockWorld.buildMallTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
+      } else {
+        mockWorld.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
+      }
     }
 
     const localGeoMap = new Map();

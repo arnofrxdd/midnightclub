@@ -105,7 +105,11 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
           });
         });
       }
-      obstacles.push(cached.obstacle);
+      if (Array.isArray(cached.obstacle)) {
+        obstacles.push(...cached.obstacle);
+      } else {
+        obstacles.push(cached.obstacle);
+      }
       return;
     }
 
@@ -215,140 +219,292 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     const colOffset = colW / 2;
     const ledgeHeight = 0.8;
 
+    // Shortcut Settings at the Block level
+    let colLeft = gridX;
+    while (!this.roadColumns.has(colLeft) && colLeft > -100) colLeft--;
+    let colRight = gridX;
+    while (!this.roadColumns.has(colRight) && colRight < 100) colRight++;
+
+    let rowTop = gridZ;
+    while (!this.roadRows.has(rowTop) && rowTop > -100) rowTop--;
+    let rowBottom = gridZ;
+    while (!this.roadRows.has(rowBottom) && rowBottom < 100) rowBottom++;
+
+    const blockKey = `${colLeft},${colRight},${rowTop},${rowBottom}`;
+    const blockSeed = Math.sin((colLeft + 17.0) * 12.9898 + (rowTop + 37.0) * 78.233) * 43758.5453;
+    const blockRand = blockSeed - Math.floor(blockSeed);
+
+    const hasShortcut = (blockRand < 0.25);
+    const isTopLeftToBottomRight = (Math.floor(blockRand * 10) % 2 === 0);
+
+    const blockCenterX = ((colLeft + colRight) / 2) * 40;
+    const blockCenterZ = ((rowTop + rowBottom) / 2) * 40;
+
+    const blockDx = (colRight - colLeft) * 40;
+    const blockDz = (rowBottom - rowTop) * 40;
+    const angle = isTopLeftToBottomRight ? Math.atan2(blockDz, blockDx) : Math.atan2(-blockDz, blockDx);
+
+    const tunnelWidth = 12.0;
+    const tunnelHalfWidth = tunnelWidth / 2;
+    const tunnelHeight = 5.0;
+
+    const isNearTunnel = (x, z) => {
+      if (!hasShortcut) return false;
+      const worldX = posX + x;
+      const worldZ = posZ + z;
+      const dist = Math.abs((worldX - blockCenterX) * Math.sin(angle) - (worldZ - blockCenterZ) * Math.cos(angle));
+      return dist < (tunnelHalfWidth + 2.0);
+    };
+
+    const isInsideTunnelCut = (x, z) => {
+      if (!hasShortcut) return false;
+      const worldX = posX + x;
+      const worldZ = posZ + z;
+      const dist = Math.abs((worldX - blockCenterX) * Math.sin(angle) - (worldZ - blockCenterZ) * Math.cos(angle));
+      return dist < tunnelHalfWidth;
+    };
+
+    const buildLayerGeometry = (xMinL, xMaxL, zMinL, zMaxL, yMinL, yMaxL) => {
+      const step = 2.0;
+      const halfStep = step / 2;
+      const layerGeoms = [];
+      const layerH = yMaxL - yMinL;
+      
+      for (let x = xMinL + halfStep; x < xMaxL; x += step) {
+        for (let z = zMinL + halfStep; z < zMaxL; z += step) {
+          if (!isInsideTunnelCut(x, z)) {
+            const b = new THREE.BoxGeometry(step, layerH, step);
+            b.translate(x, yMinL + layerH / 2, z);
+            layerGeoms.push(b);
+          }
+        }
+      }
+      return layerGeoms;
+    };
+
     // Layer 1
     const l1Height = 8 + rand * 4;
-    // Extend downward by 15.0 meters to fill any cutoff/gap issues on slopes
-    const l1Geo = new THREE.BoxGeometry(wX, l1Height + 15.0, wZ, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
-    l1Geo.translate(centerX, (l1Height - 15.0) / 2, centerZ);
-    facadeGeoms.push(l1Geo);
+    const subBlockObstacles = [];
+
+    if (hasShortcut) {
+      const step = 2.0;
+      const halfStep = step / 2;
+      for (let x = xMin + halfStep; x < xMax; x += step) {
+        for (let z = zMin + halfStep; z < zMax; z += step) {
+          if (!isInsideTunnelCut(x, z)) {
+            const b = new THREE.BoxGeometry(step, l1Height + 15.0, step);
+            b.translate(x, (l1Height - 15.0) / 2, z);
+            facadeGeoms.push(b);
+            
+            subBlockObstacles.push({
+              xMin: posX + x - halfStep,
+              xMax: posX + x + halfStep,
+              zMin: posZ + z - halfStep,
+              zMax: posZ + z + halfStep,
+              height: l1Height,
+              isBuilding: true
+            });
+          }
+        }
+      }
+
+      // Add neon arrow warning lights along the sliced building walls inside the cut path
+      const dx = (posX + centerX) - blockCenterX;
+      const dz = (posZ + centerZ) - blockCenterZ;
+      const t = dx * Math.cos(angle) + dz * Math.sin(angle);
+      const projX = blockCenterX + t * Math.cos(angle);
+      const projZ = blockCenterZ + t * Math.sin(angle);
+
+      const numLights = 3;
+      const stepAlong = 12.0;
+      for (let i = 0; i < numLights; i++) {
+        const offset = (i - 1) * stepAlong;
+        const wx = projX + offset * Math.cos(angle);
+        const wz = projZ + offset * Math.sin(angle);
+        const lx = wx - posX;
+        const lz = wz - posZ;
+        if (lx >= xMin && lx <= xMax && lz >= zMin && lz <= zMax) {
+          const perpX = -Math.sin(angle);
+          const perpZ = Math.cos(angle);
+          
+          const lwx = lx + perpX * tunnelHalfWidth;
+          const lwz = lz + perpZ * tunnelHalfWidth;
+          const neonFixtureL = new THREE.BoxGeometry(1.5, 0.4, 0.2);
+          neonFixtureL.rotateY(-angle);
+          neonFixtureL.translate(lwx - perpX * 0.1, 4.0, lwz - perpZ * 0.1);
+          beaconGeoms.push(neonFixtureL);
+
+          const rwx = lx - perpX * tunnelHalfWidth;
+          const rwz = lz - perpZ * tunnelHalfWidth;
+          const neonFixtureR = new THREE.BoxGeometry(1.5, 0.4, 0.2);
+          neonFixtureR.rotateY(-angle);
+          neonFixtureR.translate(rwx + perpX * 0.1, 4.0, rwz + perpZ * 0.1);
+          beaconGeoms.push(neonFixtureR);
+        }
+      }
+    } else {
+      const l1Geo = new THREE.BoxGeometry(wX, l1Height + 15.0, wZ, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
+      l1Geo.translate(centerX, (l1Height - 15.0) / 2, centerZ);
+      facadeGeoms.push(l1Geo);
+    }
 
     // Layer 1 Corner Columns (Voxel detailing) - also extended down by 15m
     if (xMin > -20 && zMin > -20) {
-      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
-      c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
-      facadeGeoms.push(c);
+      if (!hasShortcut || !isNearTunnel(xMin + colOffset, zMin + colOffset)) {
+        const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+        c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
+        facadeGeoms.push(c);
+      }
     }
     if (xMax < 20 && zMin > -20) {
-      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
-      c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
-      facadeGeoms.push(c);
+      if (!hasShortcut || !isNearTunnel(xMax - colOffset, zMin + colOffset)) {
+        const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+        c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMin + colOffset);
+        facadeGeoms.push(c);
+      }
     }
     if (xMin > -20 && zMax < 20) {
-      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
-      c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
-      facadeGeoms.push(c);
+      if (!hasShortcut || !isNearTunnel(xMin + colOffset, zMax - colOffset)) {
+        const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+        c.translate(xMin + colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
+        facadeGeoms.push(c);
+      }
     }
     if (xMax < 20 && zMax < 20) {
-      const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
-      c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
-      facadeGeoms.push(c);
+      if (!hasShortcut || !isNearTunnel(xMax - colOffset, zMax - colOffset)) {
+        const c = new THREE.BoxGeometry(colW, l1Height + 15.0, colW);
+        c.translate(xMax - colOffset, (l1Height - 15.0) / 2, zMax - colOffset);
+        facadeGeoms.push(c);
+      }
     }
 
     // Layer 1 Molding Ledge Belt (Voxel detailing)
-    const ledge1 = new THREE.BoxGeometry(wX + 0.5, ledgeHeight, wZ + 0.5, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
-    ledge1.translate(centerX, l1Height - ledgeHeight / 2, centerZ);
-    facadeGeoms.push(ledge1);
+    if (!hasShortcut) {
+      const ledge1 = new THREE.BoxGeometry(wX + 0.5, ledgeHeight, wZ + 0.5, Math.max(1, Math.round(wX / 2)), 1, Math.max(1, Math.round(wZ / 2)));
+      ledge1.translate(centerX, l1Height - ledgeHeight / 2, centerZ);
+      facadeGeoms.push(ledge1);
+    }
 
     // Only generate ground features (doors, signs, shop windows) on street-facing sides (no building neighbor)
     if (zMax < 20) {
       // Front Facade features
-      if (hasDoor) {
+      if (hasDoor && (!hasShortcut || !isNearTunnel(centerX, zMax))) {
         const frontDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
         frontDoor.translate(centerX, 2.1, zMax + 0.15);
         doorGeoms.push(frontDoor);
       }
 
-      const shopWinW = 6.0;
-      const shopWinH = 4.5;
-      const shopWinLeft = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
-      shopWinLeft.translate(centerX - wX / 4, 2.5, zMax + 0.15);
-      windowGeoms.push(shopWinLeft);
+      if (!hasShortcut || !isNearTunnel(centerX - wX / 4, zMax)) {
+        const shopWinW = 6.0;
+        const shopWinH = 4.5;
+        const shopWinLeft = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
+        shopWinLeft.translate(centerX - wX / 4, 2.5, zMax + 0.15);
+        windowGeoms.push(shopWinLeft);
+      }
 
-      const shopWinRight = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
-      shopWinRight.translate(centerX + wX / 4, 2.5, zMax + 0.15);
-      windowGeoms.push(shopWinRight);
+      if (!hasShortcut || !isNearTunnel(centerX + wX / 4, zMax)) {
+        const shopWinW = 6.0;
+        const shopWinH = 4.5;
+        const shopWinRight = createDetailedWindowGeometry(shopWinW, shopWinH, 0.1);
+        shopWinRight.translate(centerX + wX / 4, 2.5, zMax + 0.15);
+        windowGeoms.push(shopWinRight);
+      }
 
-      const shopSignW = 5.8;
-      const shopSignH = 1.0;
-      const signLeft = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
-      signLeft.translate(centerX - wX / 4, 5.4, zMax + 0.2);
-      billboardGeoms.push(signLeft);
+      if (!hasShortcut || !isNearTunnel(centerX - wX / 4, zMax)) {
+        const shopSignW = 5.8;
+        const shopSignH = 1.0;
+        const signLeft = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
+        signLeft.translate(centerX - wX / 4, 5.4, zMax + 0.2);
+        billboardGeoms.push(signLeft);
+      }
 
-      const signRight = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
-      signRight.translate(centerX + wX / 4, 5.4, zMax + 0.2);
-      billboardGeoms.push(signRight);
+      if (!hasShortcut || !isNearTunnel(centerX + wX / 4, zMax)) {
+        const shopSignW = 5.8;
+        const shopSignH = 1.0;
+        const signRight = new THREE.BoxGeometry(shopSignW, shopSignH, 0.2, Math.max(1, Math.round(shopSignW / 2)), 1, 1);
+        signRight.translate(centerX + wX / 4, 5.4, zMax + 0.2);
+        billboardGeoms.push(signRight);
+      }
 
-      const awning = new THREE.BoxGeometry(wX - 2, 0.35, 2.0, Math.max(1, Math.round((wX - 2) / 2)), 1, 1);
-      awning.translate(centerX, 6.0, zMax + 1.0);
-      accessoryGeoms.push(awning);
+      if (!hasShortcut || !isNearTunnel(centerX, zMax)) {
+        const awning = new THREE.BoxGeometry(wX - 2, 0.35, 2.0, Math.max(1, Math.round((wX - 2) / 2)), 1, 1);
+        awning.translate(centerX, 6.0, zMax + 1.0);
+        accessoryGeoms.push(awning);
+      }
 
       if (wX >= 28 && hasDoor) {
-        const trashCan = new THREE.BoxGeometry(1.0, 1.6, 1.0);
-        trashCan.translate(centerX - wX / 2 + 2.5, 0.8, zMax + 2.0);
-        accessoryGeoms.push(trashCan);
+        if (!hasShortcut || !isNearTunnel(centerX - wX / 2 + 2.5, zMax)) {
+          const trashCan = new THREE.BoxGeometry(1.0, 1.6, 1.0);
+          trashCan.translate(centerX - wX / 2 + 2.5, 0.8, zMax + 2.0);
+          accessoryGeoms.push(trashCan);
+        }
 
-        // Sidewalk Bench
-        const benchSeat = new THREE.BoxGeometry(3.5, 0.2, 1.0, 3, 1, 1);
-        benchSeat.translate(centerX + wX / 2 - 4.0, 0.8, zMax + 2.0);
-        accessoryGeoms.push(benchSeat);
+        if (!hasShortcut || !isNearTunnel(centerX + wX / 2 - 4.0, zMax)) {
+          // Sidewalk Bench
+          const benchSeat = new THREE.BoxGeometry(3.5, 0.2, 1.0, 3, 1, 1);
+          benchSeat.translate(centerX + wX / 2 - 4.0, 0.8, zMax + 2.0);
+          accessoryGeoms.push(benchSeat);
 
-        const benchLegL = new THREE.BoxGeometry(0.25, 0.8, 1.0);
-        benchLegL.translate(centerX + wX / 2 - 5.5, 0.4, zMax + 2.0);
-        accessoryGeoms.push(benchLegL);
+          const benchLegL = new THREE.BoxGeometry(0.25, 0.8, 1.0);
+          benchLegL.translate(centerX + wX / 2 - 5.5, 0.4, zMax + 2.0);
+          accessoryGeoms.push(benchLegL);
 
-        const benchLegR = new THREE.BoxGeometry(0.25, 0.8, 1.0);
-        benchLegR.translate(centerX + wX / 2 - 2.5, 0.4, zMax + 2.0);
-        accessoryGeoms.push(benchLegR);
+          const benchLegR = new THREE.BoxGeometry(0.25, 0.8, 1.0);
+          benchLegR.translate(centerX + wX / 2 - 2.5, 0.4, zMax + 2.0);
+          accessoryGeoms.push(benchLegR);
+        }
       }
 
       // Storefronts are highly emissive and glow in the dark naturally. We add storefront ground pools
       // and register their light sources to smoothly transition from baked to real-time light near the player.
-      const poolMeshLName = `poolMesh_l_${lights.length}`;
-      const poolMeshL = new THREE.Mesh(
-        this.storefrontLightPoolGeo,
-        this.storefrontGroundLightPoolMat.clone()
-      );
-      poolMeshL.name = poolMeshLName;
-      const hPoolL = this.getBaseHeight(posX + centerX - wX / 4, posZ + zMax + 3.0);
-      poolMeshL.position.set(posX + centerX - wX / 4, 0.36 + hPoolL, posZ + zMax + 3.0);
-      group.add(poolMeshL);
+      if (!hasShortcut || (!isNearTunnel(centerX - wX / 4, zMax) && !isNearTunnel(centerX + wX / 4, zMax))) {
+        const poolMeshLName = `poolMesh_l_${lights.length}`;
+        const poolMeshL = new THREE.Mesh(
+          this.storefrontLightPoolGeo,
+          this.storefrontGroundLightPoolMat.clone()
+        );
+        poolMeshL.name = poolMeshLName;
+        const hPoolL = this.getBaseHeight(posX + centerX - wX / 4, posZ + zMax + 3.0);
+        poolMeshL.position.set(posX + centerX - wX / 4, 0.36 + hPoolL, posZ + zMax + 3.0);
+        group.add(poolMeshL);
 
-      const poolMeshRName = `poolMesh_r_${lights.length + 1}`;
-      const poolMeshR = new THREE.Mesh(
-        this.storefrontLightPoolGeo,
-        this.storefrontGroundLightPoolMat.clone()
-      );
-      poolMeshR.name = poolMeshRName;
-      const hPoolR = this.getBaseHeight(posX + centerX + wX / 4, posZ + zMax + 3.0);
-      poolMeshR.position.set(posX + centerX + wX / 4, 0.36 + hPoolR, posZ + zMax + 3.0);
-      group.add(poolMeshR);
+        const poolMeshRName = `poolMesh_r_${lights.length + 1}`;
+        const poolMeshR = new THREE.Mesh(
+          this.storefrontLightPoolGeo,
+          this.storefrontGroundLightPoolMat.clone()
+        );
+        poolMeshR.name = poolMeshRName;
+        const hPoolR = this.getBaseHeight(posX + centerX + wX / 4, posZ + zMax + 3.0);
+        poolMeshR.position.set(posX + centerX + wX / 4, 0.36 + hPoolR, posZ + zMax + 3.0);
+        group.add(poolMeshR);
 
-      const storefrontLightL = {
-        x: posX + centerX - wX / 4,
-        y: 1.8 + hPoolL,
-        z: posZ + zMax + 1.2,
-        intensity: 15.0,
-        color: 0xffecc4,
-        poolMeshName: poolMeshLName,
-        poolMesh: poolMeshL,
-        defaultOpacity: 0.30
-      };
-      lights.push(storefrontLightL);
+        const storefrontLightL = {
+          x: posX + centerX - wX / 4,
+          y: 1.8 + hPoolL,
+          z: posZ + zMax + 1.2,
+          intensity: 15.0,
+          color: 0xffecc4,
+          poolMeshName: poolMeshLName,
+          poolMesh: poolMeshL,
+          defaultOpacity: 0.30
+        };
+        lights.push(storefrontLightL);
 
-      const storefrontLightR = {
-        x: posX + centerX + wX / 4,
-        y: 1.8 + hPoolR,
-        z: posZ + zMax + 1.2,
-        intensity: 15.0,
-        color: 0xffecc4,
-        poolMeshName: poolMeshRName,
-        poolMesh: poolMeshR,
-        defaultOpacity: 0.30
-      };
-      lights.push(storefrontLightR);
+        const storefrontLightR = {
+          x: posX + centerX + wX / 4,
+          y: 1.8 + hPoolR,
+          z: posZ + zMax + 1.2,
+          intensity: 15.0,
+          color: 0xffecc4,
+          poolMeshName: poolMeshRName,
+          poolMesh: poolMeshR,
+          defaultOpacity: 0.30
+        };
+        lights.push(storefrontLightR);
+      }
     }
 
-    if (zMin > -20 && hasDoor) {
+    if (zMin > -20 && hasDoor && (!hasShortcut || !isNearTunnel(centerX, zMin))) {
       // Back Facade features
       const backDoor = new THREE.BoxGeometry(2.2, 4.2, 0.2, 2, 1, 1);
       backDoor.translate(centerX, 2.1, zMin - 0.15);
@@ -369,9 +525,14 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     const centerZ2 = (l2_zMin + l2_zMax) / 2;
 
     const l2Height = 15 + rand * 30;
-    const l2Geo = new THREE.BoxGeometry(wX2, l2Height, wZ2, Math.max(1, Math.round(wX2 / 2)), 1, Math.max(1, Math.round(wZ2 / 2)));
-    l2Geo.translate(centerX2, currentHeight + l2Height / 2, centerZ2);
-    facadeGeoms.push(l2Geo);
+    if (hasShortcut) {
+      const slicedL2 = buildLayerGeometry(l2_xMin, l2_xMax, l2_zMin, l2_zMax, currentHeight, currentHeight + l2Height);
+      facadeGeoms.push(...slicedL2);
+    } else {
+      const l2Geo = new THREE.BoxGeometry(wX2, l2Height, wZ2, Math.max(1, Math.round(wX2 / 2)), 1, Math.max(1, Math.round(wZ2 / 2)));
+      l2Geo.translate(centerX2, currentHeight + l2Height / 2, centerZ2);
+      facadeGeoms.push(l2Geo);
+    }
 
     // Layer 2 Corner Columns (Voxel detailing)
     if (l2_xMin > -20 && l2_zMin > -20) {
@@ -396,9 +557,11 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     }
 
     // Layer 2 Molding Ledge Belt (Voxel detailing)
-    const ledge2 = new THREE.BoxGeometry(wX2 + 0.5, ledgeHeight, wZ2 + 0.5, Math.max(1, Math.round(wX2 / 2)), 1, Math.max(1, Math.round(wZ2 / 2)));
-    ledge2.translate(centerX2, currentHeight + l2Height - ledgeHeight / 2, centerZ2);
-    facadeGeoms.push(ledge2);
+    if (!hasShortcut) {
+      const ledge2 = new THREE.BoxGeometry(wX2 + 0.5, ledgeHeight, wZ2 + 0.5, Math.max(1, Math.round(wX2 / 2)), 1, Math.max(1, Math.round(wZ2 / 2)));
+      ledge2.translate(centerX2, currentHeight + l2Height - ledgeHeight / 2, centerZ2);
+      facadeGeoms.push(ledge2);
+    }
 
     // Windows (Only place on non-connected street-facing sides)
     const winW = 1.5;
@@ -406,7 +569,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     
     for (let wy = currentHeight + 3; wy < currentHeight + l2Height - 3; wy += 4.5) {
       for (let wx = l2_xMin + 3; wx < l2_xMax - 3; wx += 4) {
-        if (l2_zMax < 20) {
+        if (l2_zMax < 20 && (!hasShortcut || !isNearTunnel(wx, l2_zMax))) {
           const winF = createDetailedWindowGeometry(winW, winH, 0.1);
           winF.translate(wx, wy, l2_zMax + 0.15);
           windowGeoms.push(winF);
@@ -417,7 +580,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
           facadeGeoms.push(sill);
         }
 
-        if (l2_zMin > -20) {
+        if (l2_zMin > -20 && (!hasShortcut || !isNearTunnel(wx, l2_zMin))) {
           const winB = createDetailedWindowGeometry(winW, winH, 0.1);
           winB.translate(wx, wy, l2_zMin - 0.15);
           windowGeoms.push(winB);
@@ -445,41 +608,56 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const centerZ3 = (l3_zMin + l3_zMax) / 2;
 
       const l3Height = 8 + rand * 10;
-      const l3Geo = new THREE.BoxGeometry(wX3, l3Height, wZ3, Math.max(1, Math.round(wX3 / 2)), 1, Math.max(1, Math.round(wZ3 / 2)));
-      l3Geo.translate(centerX3, currentHeight + l3Height / 2, centerZ3);
-      facadeGeoms.push(l3Geo);
+      if (hasShortcut) {
+        const slicedL3 = buildLayerGeometry(l3_xMin, l3_xMax, l3_zMin, l3_zMax, currentHeight, currentHeight + l3Height);
+        facadeGeoms.push(...slicedL3);
+      } else {
+        const l3Geo = new THREE.BoxGeometry(wX3, l3Height, wZ3, Math.max(1, Math.round(wX3 / 2)), 1, Math.max(1, Math.round(wZ3 / 2)));
+        l3Geo.translate(centerX3, currentHeight + l3Height / 2, centerZ3);
+        facadeGeoms.push(l3Geo);
+      }
 
       // Layer 3 Corner Columns (Voxel detailing)
       if (l3_xMin > -20 && l3_zMin > -20) {
-        const c = new THREE.BoxGeometry(colW, l3Height, colW);
-        c.translate(l3_xMin + colOffset, currentHeight + l3Height / 2, l3_zMin + colOffset);
-        facadeGeoms.push(c);
+        if (!hasShortcut || !isNearTunnel(l3_xMin + colOffset, l3_zMin + colOffset)) {
+          const c = new THREE.BoxGeometry(colW, l3Height, colW);
+          c.translate(l3_xMin + colOffset, currentHeight + l3Height / 2, l3_zMin + colOffset);
+          facadeGeoms.push(c);
+        }
       }
       if (l3_xMax < 20 && l3_zMin > -20) {
-        const c = new THREE.BoxGeometry(colW, l3Height, colW);
-        c.translate(l3_xMax - colOffset, currentHeight + l3Height / 2, l3_zMin + colOffset);
-        facadeGeoms.push(c);
+        if (!hasShortcut || !isNearTunnel(l3_xMax - colOffset, l3_zMin + colOffset)) {
+          const c = new THREE.BoxGeometry(colW, l3Height, colW);
+          c.translate(l3_xMax - colOffset, currentHeight + l3Height / 2, l3_zMin + colOffset);
+          facadeGeoms.push(c);
+        }
       }
       if (l3_xMin > -20 && l3_zMax < 20) {
-        const c = new THREE.BoxGeometry(colW, l3Height, colW);
-        c.translate(l3_xMin + colOffset, currentHeight + l3Height / 2, l3_zMax - colOffset);
-        facadeGeoms.push(c);
+        if (!hasShortcut || !isNearTunnel(l3_xMin + colOffset, l3_zMax - colOffset)) {
+          const c = new THREE.BoxGeometry(colW, l3Height, colW);
+          c.translate(l3_xMin + colOffset, currentHeight + l3Height / 2, l3_zMax - colOffset);
+          facadeGeoms.push(c);
+        }
       }
       if (l3_xMax < 20 && l3_zMax < 20) {
-        const c = new THREE.BoxGeometry(colW, l3Height, colW);
-        c.translate(l3_xMax - colOffset, currentHeight + l3Height / 2, l3_zMax - colOffset);
-        facadeGeoms.push(c);
+        if (!hasShortcut || !isNearTunnel(l3_xMax - colOffset, l3_zMax - colOffset)) {
+          const c = new THREE.BoxGeometry(colW, l3Height, colW);
+          c.translate(l3_xMax - colOffset, currentHeight + l3Height / 2, l3_zMax - colOffset);
+          facadeGeoms.push(c);
+        }
       }
 
       // Layer 3 Molding Ledge Belt (Voxel detailing)
-      const ledge3 = new THREE.BoxGeometry(wX3 + 0.5, ledgeHeight, wZ3 + 0.5, Math.max(1, Math.round(wX3 / 2)), 1, Math.max(1, Math.round(wZ3 / 2)));
-      ledge3.translate(centerX3, currentHeight + l3Height - ledgeHeight / 2, centerZ3);
-      facadeGeoms.push(ledge3);
+      if (!hasShortcut) {
+        const ledge3 = new THREE.BoxGeometry(wX3 + 0.5, ledgeHeight, wZ3 + 0.5, Math.max(1, Math.round(wX3 / 2)), 1, Math.max(1, Math.round(wZ3 / 2)));
+        ledge3.translate(centerX3, currentHeight + l3Height - ledgeHeight / 2, centerZ3);
+        facadeGeoms.push(ledge3);
+      }
 
       // Layer 3 Windows
       for (let wy = currentHeight + 2; wy < currentHeight + l3Height - 2; wy += 4.0) {
         for (let wx = l3_xMin + 3; wx < l3_xMax - 3; wx += 4.0) {
-          if (l3_zMax < 20) {
+          if (l3_zMax < 20 && (!hasShortcut || !isNearTunnel(wx, l3_zMax))) {
             const winF = createDetailedWindowGeometry(winW, winH, 0.1);
             winF.translate(wx, wy, l3_zMax + 0.15);
             windowGeoms.push(winF);
@@ -489,7 +667,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
             sill.translate(wx, wy - winH / 2 - 0.14, l3_zMax + 0.2);
             facadeGeoms.push(sill);
           }
-          if (l3_zMin > -20) {
+          if (l3_zMin > -20 && (!hasShortcut || !isNearTunnel(wx, l3_zMin))) {
             const winB = createDetailedWindowGeometry(winW, winH, 0.1);
             winB.translate(wx, wy, l3_zMin - 0.15);
             windowGeoms.push(winB);
@@ -518,19 +696,26 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       const centerZ4 = (l4_zMin + l4_zMax) / 2;
 
       const l4Height = 7 + rand * 8;
-      const l4Geo = new THREE.BoxGeometry(wX4, l4Height, wZ4, Math.max(1, Math.round(wX4 / 2)), 1, Math.max(1, Math.round(wZ4 / 2)));
-      l4Geo.translate(centerX4, currentHeight + l4Height / 2, centerZ4);
-      facadeGeoms.push(l4Geo);
+      if (hasShortcut) {
+        const slicedL4 = buildLayerGeometry(l4_xMin, l4_xMax, l4_zMin, l4_zMax, currentHeight, currentHeight + l4Height);
+        facadeGeoms.push(...slicedL4);
+      } else {
+        const l4Geo = new THREE.BoxGeometry(wX4, l4Height, wZ4, Math.max(1, Math.round(wX4 / 2)), 1, Math.max(1, Math.round(wZ4 / 2)));
+        l4Geo.translate(centerX4, currentHeight + l4Height / 2, centerZ4);
+        facadeGeoms.push(l4Geo);
+      }
 
       // Layer 4 Molding Ledge Belt
-      const ledge4 = new THREE.BoxGeometry(wX4 + 0.5, ledgeHeight, wZ4 + 0.5, Math.max(1, Math.round(wX4 / 2)), 1, Math.max(1, Math.round(wZ4 / 2)));
-      ledge4.translate(centerX4, currentHeight + l4Height - ledgeHeight / 2, centerZ4);
-      facadeGeoms.push(ledge4);
+      if (!hasShortcut) {
+        const ledge4 = new THREE.BoxGeometry(wX4 + 0.5, ledgeHeight, wZ4 + 0.5, Math.max(1, Math.round(wX4 / 2)), 1, Math.max(1, Math.round(wZ4 / 2)));
+        ledge4.translate(centerX4, currentHeight + l4Height - ledgeHeight / 2, centerZ4);
+        facadeGeoms.push(ledge4);
+      }
 
       // Layer 4 Windows
       for (let wy = currentHeight + 2; wy < currentHeight + l4Height - 2; wy += 3.8) {
         for (let wx = l4_xMin + 3; wx < l4_xMax - 3; wx += 4.0) {
-          if (l4_zMax < 20) {
+          if (l4_zMax < 20 && (!hasShortcut || !isNearTunnel(wx, l4_zMax))) {
             const winF = createDetailedWindowGeometry(winW, winH, 0.1);
             winF.translate(wx, wy, l4_zMax + 0.15);
             windowGeoms.push(winF);
@@ -547,12 +732,14 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     }
 
     // Rooftop Accessories
-    const ac = new THREE.BoxGeometry(3.0, 2.0, 3.0);
-    ac.translate(centerX, currentHeight + 1.0, centerZ);
-    accessoryGeoms.push(ac);
+    if (!hasShortcut || !isNearTunnel(centerX, centerZ)) {
+      const ac = new THREE.BoxGeometry(3.0, 2.0, 3.0);
+      ac.translate(centerX, currentHeight + 1.0, centerZ);
+      accessoryGeoms.push(ac);
+    }
 
     // Random Solar Panels
-    if (rand > 0.45) {
+    if (rand > 0.45 && (!hasShortcut || !isNearTunnel(centerX - 3.5, centerZ))) {
       const panel = new THREE.BoxGeometry(3.2, 0.18, 1.8);
       panel.rotateX(Math.PI / 8);
       panel.translate(centerX - 3.5, currentHeight + 0.5, centerZ);
@@ -560,7 +747,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     }
 
     // Voxel-style Water Tower (AC or Water Tank)
-    if (rand > 0.6) {
+    if (rand > 0.6 && (!hasShortcut || !isNearTunnel(centerX, centerZ))) {
       const leg1 = new THREE.BoxGeometry(0.3, 3.0, 0.3);
       leg1.translate(centerX - 1.2, currentHeight + 1.5, centerZ - 1.2);
       accessoryGeoms.push(leg1);
@@ -573,7 +760,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       accessoryGeoms.push(tank);
     }
 
-    if (rand > 0.3) {
+    if (rand > 0.3 && (!hasShortcut || !isNearTunnel(centerX, centerZ))) {
       const antBox = new THREE.BoxGeometry(0.2, 8.0, 0.2);
       antBox.translate(centerX, currentHeight + 4.0, centerZ);
       accessoryGeoms.push(antBox);
@@ -720,7 +907,15 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       height: currentHeight,
       isBuilding: true
     };
-    obstacles.push(obstacle);
+
+    if (hasShortcut) {
+      subBlockObstacles.forEach(obs => {
+        obs.height = currentHeight;
+      });
+      obstacles.push(...subBlockObstacles);
+    } else {
+      obstacles.push(obstacle);
+    }
 
     if (this.buildingGeoCache) {
       this.buildingGeoCache.set(key, {
@@ -733,7 +928,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
         billboardColor,
         beaconGeo,
         bMat,
-        obstacle,
+        obstacle: hasShortcut ? subBlockObstacles : obstacle,
         lights: []
       });
 

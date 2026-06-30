@@ -19,6 +19,7 @@ import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
 import { buildMallTile, isMallBlock } from './mallTile.js';
+import { isGasStationBlock, buildGasStationTile } from './gasStationTile.js';
 
 
 
@@ -50,14 +51,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5); // Spacing of 3 to 7 tiles
+      curr += 2 + Math.floor(rand * 6); // Spacing of 2 to 7 tiles (allows 1x1 blocks)
       this.mainRoadColumns.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
+      curr -= (2 + Math.floor(rand * 6));
       this.mainRoadColumns.add(curr);
     }
 
@@ -65,14 +66,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 3 + Math.floor(rand * 5);
+      curr += 2 + Math.floor(rand * 6);
       this.mainRoadRows.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (3 + Math.floor(rand * 5));
+      curr -= (2 + Math.floor(rand * 6));
       this.mainRoadRows.add(curr);
     }
 
@@ -974,8 +975,11 @@ export class World {
       const posX = gridX * this.tileSize;
       const posZ = gridZ * this.tileSize;
       const isMall = isMallBlock(gridX, gridZ, this.roadColumns, this.roadRows, this.isAlley.bind(this), this.getBaseHeight.bind(this));
+      const isGasStation = isGasStationBlock(gridX, gridZ, this.roadColumns, this.roadRows, this.isAlley.bind(this), this.getBaseHeight.bind(this));
       if (isMall) {
         this.buildMallTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
+      } else if (isGasStation) {
+        buildGasStationTile.call(this, gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
       } else {
         this.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, tileObstacles, tileLights);
       }
@@ -1780,7 +1784,7 @@ function getIntersectionHeight(c, r) {
   if (hash < 0.30) {
     const sign = ((c + r) % 4 === 0) ? 1 : -1;
     const isSharp = hashInt(c, r, 1) < 0.45;
-    const amp = isSharp ? (22.0 + hashInt(c, r, 2) * 10.0) : (15.0 + hashInt(c, r, 3) * 6.0);
+    const amp = isSharp ? (10.0 + hashInt(c, r, 2) * 5.0) : (8.0 + hashInt(c, r, 3) * 4.0);
     return sign * amp;
   }
   return 0.0;

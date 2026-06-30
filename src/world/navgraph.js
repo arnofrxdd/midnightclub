@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getMallBounds } from './mallTile.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  NavGraph  –  Road-intersection waypoint graph + A* pathfinder
@@ -221,7 +222,38 @@ export class NavGraph {
     if (ri < this._rows.length - 1)
       result.push(this._edge(gx, gz, gx, this._rows[ri + 1], variance));
 
+    // --- MALL SHORTCUT INJECTION ---
+    // Detect if we are at one of the 4 corners surrounding the mall block
+    if (this.world && this.world.getBaseHeight) {
+      const mall = getMallBounds(this.world.roadColumns, this.world.roadRows, this.world.getBaseHeight.bind(this.world));
+      
+      const leftCol = mall.colMin - 1;
+      const rightCol = mall.colMax + 1;
+      const topRow = mall.rowMin - 1;
+      const bottomRow = mall.rowMax + 1;
+
+      // Top-Left corner -> Bottom-Right corner
+      if (gx === leftCol && gz === topRow) result.push(this._mallEdge(gx, gz, rightCol, bottomRow));
+      // Bottom-Right corner -> Top-Left corner
+      if (gx === rightCol && gz === bottomRow) result.push(this._mallEdge(gx, gz, leftCol, topRow));
+      
+      // Top-Right corner -> Bottom-Left corner
+      if (gx === rightCol && gz === topRow) result.push(this._mallEdge(gx, gz, leftCol, bottomRow));
+      // Bottom-Left corner -> Top-Right corner
+      if (gx === leftCol && gz === bottomRow) result.push(this._mallEdge(gx, gz, rightCol, topRow));
+    }
+
     return result;
+  }
+
+  // ── Build a special, highly-discounted diagonal edge through the mall ───
+  _mallEdge(gx0, gz0, gx1, gz1) {
+    const dx = (gx1 - gx0) * this.ts;
+    const dz = (gz1 - gz0) * this.ts;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    
+    // Apply a massive 90% cost discount to force the AI to prioritize the mall jump!
+    return { gx: gx1, gz: gz1, cost: dist * 0.1 };
   }
 
   // ── Build one edge with Euclidean distance cost (alleys discounted) ─────

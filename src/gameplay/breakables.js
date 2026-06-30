@@ -265,6 +265,27 @@ export function checkBreakablesCollision(dt) {
             if (b.type === 'hydrant') {
               this.spawnParticles(sparkPos, impactForceDir, 0xaaddff, 18, true);
               this.spawnDebris(sparkPos, impactForceDir, 0xdd2222, 5); // red metal shards
+            } else if (b.type === 'gas_pump') {
+              // 1. MASSIVE FIREBALL EXPLOSION
+              this.spawnParticles(sparkPos, new THREE.Vector3(0, 1, 0), 0xff4400, 200, false, true); // Fireball!
+              this.spawnDebris(sparkPos, new THREE.Vector3(0, 1, 0), 0x222222, 15); // Charred metal
+              
+              // 2. EXPLOSIVE SHOCKWAVE (Launch the car into the air)
+              const explodeDir = ent.position.clone().sub(b.position).normalize();
+              explodeDir.y = 0.6; // Moderate upward bias to flip the car
+              explodeDir.normalize();
+              
+              if (ent.isPlayer) {
+                this.physics.velocity.add(explodeDir.multiplyScalar(16.0)); // Launch player!
+                this.crashShake = 1.0; // Max screen shake
+              } else {
+                ent.velocity.add(explodeDir.multiplyScalar(16.0)); // Launch AI/Cops/Traffic!
+              }
+              
+              // 3. VAPORIZE THE PUMP (Stop it from tumbling, it just disappears in the blast)
+              if (b.group) {
+                b.group.visible = false;
+              }
             } else if (b.type === 'glass') {
               this.spawnParticles(sparkPos, impactForceDir, 0xddeeef, 65, false, true); // white glass sparkles
               
@@ -318,7 +339,7 @@ export function checkBreakablesCollision(dt) {
             }
 
             // Now that shards are spawned, sever the massive pane from the physics loop so it doesn't tumble!
-            if (b.type === 'glass' && b.group) {
+            if ((b.type === 'glass' || b.type === 'gas_pump') && b.group) {
               b.group = null;
             }
 

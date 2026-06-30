@@ -3,7 +3,8 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
-import { buildMallTile, isMallBlock } from './mallTile.js';
+import { isMallBlock, buildMallTile } from './mallTile.js';
+import { isGasStationBlock, buildGasStationTile } from './gasStationTile.js';
 import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
 
 class MockWorld {
@@ -360,7 +361,7 @@ function getIntersectionHeight(c, r) {
   if (hash < 0.30) {
     const sign = ((c + r) % 4 === 0) ? 1 : -1;
     const isSharp = hashInt(c, r, 1) < 0.45;
-    const amp = isSharp ? (22.0 + hashInt(c, r, 2) * 10.0) : (15.0 + hashInt(c, r, 3) * 6.0);
+    const amp = isSharp ? (10.0 + hashInt(c, r, 2) * 5.0) : (8.0 + hashInt(c, r, 3) * 4.0);
     return sign * amp;
   }
   return 0.0;
@@ -527,8 +528,11 @@ self.onmessage = function (e) {
       mockWorld.tilePuddles.set(key, tileCircles);
     } else {
       const isMall = isMallBlock(gridX, gridZ, mockWorld.roadColumns, mockWorld.roadRows, mockWorld.isAlley.bind(mockWorld), mockWorld.getBaseHeight.bind(mockWorld));
+      const isGasStation = isGasStationBlock(gridX, gridZ, mockWorld.roadColumns, mockWorld.roadRows, mockWorld.isAlley.bind(mockWorld), mockWorld.getBaseHeight.bind(mockWorld));
       if (isMall) {
         mockWorld.buildMallTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
+      } else if (isGasStation) {
+        buildGasStationTile.call(mockWorld, gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
       } else {
         mockWorld.buildBuildingTile(gridX, gridZ, posX, posZ, tileGroup, obstacles, lights);
       }

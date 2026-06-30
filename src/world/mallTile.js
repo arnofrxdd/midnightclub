@@ -27,14 +27,15 @@ export function getBlockInfo(gridX, gridZ, roadCols, roadRows) {
   return { colMin, colMax, rowMin, rowMax };
 }
 
-export function isMallBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBaseHeightFn) {
-  // Spawn one large mall block in a flat/central area
-  const block = getBlockInfo(gridX, gridZ, roadCols, roadRows);
-  if (block.colMin === 0 || block.rowMin === 0) return false;
-  
-  // Systematically find the flattest block near the city center
+let cachedMallBounds = null;
+
+export function getMallBounds(roadCols, roadRows, getBaseHeightFn) {
+  if (cachedMallBounds) return cachedMallBounds;
+
   let selectedColMin = -999;
   let selectedRowMin = -999;
+  let selectedColMax = -999;
+  let selectedRowMax = -999;
   
   if (getBaseHeightFn) {
     let minHeight = 99999;
@@ -43,25 +44,24 @@ export function isMallBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBase
       for (let z = 2; z <= 15; z += 2) {
         const b = getBlockInfo(x, z, roadCols, roadRows);
         if (b.colMin !== 0 && b.rowMin !== 0) {
-          // Calculate center of this block in world coordinates
           const cx = ((b.colMin + b.colMax) / 2) * 40.0;
           const cz = ((b.rowMin + b.rowMax) / 2) * 40.0;
           
-          // Sample the 4 corners of the block to ensure the whole block is flat
-          const xSpan = (b.colMax - b.colMin) * 20.0;
-          const zSpan = (b.rowMax - b.rowMin) * 20.0;
+          const xSpan = ((b.colMax - b.colMin) + 1) * 20.0;
+          const zSpan = ((b.rowMax - b.rowMin) + 1) * 20.0;
           
           const hCenter = Math.abs(getBaseHeightFn(cx, cz));
           const hTL = Math.abs(getBaseHeightFn(cx - xSpan, cz - zSpan));
           const hBR = Math.abs(getBaseHeightFn(cx + xSpan, cz + zSpan));
           
-          // The block with the lowest average height variation wins
           const avgHeight = (hCenter + hTL + hBR) / 3;
           
           if (avgHeight < minHeight) {
             minHeight = avgHeight;
             selectedColMin = b.colMin;
             selectedRowMin = b.rowMin;
+            selectedColMax = b.colMax;
+            selectedRowMax = b.rowMax;
           }
         }
       }
@@ -69,14 +69,22 @@ export function isMallBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBase
   }
 
   if (selectedColMin !== -999) {
-    return (block.colMin === selectedColMin && block.rowMin === selectedRowMin);
+    cachedMallBounds = { colMin: selectedColMin, colMax: selectedColMax, rowMin: selectedRowMin, rowMax: selectedRowMax };
+  } else {
+    // Fallback to coordinates 3,3 if flat scan is not available
+    const b = getBlockInfo(3, 3, roadCols, roadRows);
+    cachedMallBounds = { colMin: b.colMin, colMax: b.colMax, rowMin: b.rowMin, rowMax: b.rowMax };
   }
+  
+  return cachedMallBounds;
+}
 
-  // Fallback to coordinates 3,3 if flat scan is not available
-  const targetGridX = 3;
-  const targetGridZ = 3;
-  return (targetGridX >= block.colMin && targetGridX <= block.colMax &&
-          targetGridZ >= block.rowMin && targetGridZ <= block.rowMax);
+export function isMallBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBaseHeightFn) {
+  const block = getBlockInfo(gridX, gridZ, roadCols, roadRows);
+  if (block.colMin === 0 || block.rowMin === 0) return false;
+  
+  const bounds = getMallBounds(roadCols, roadRows, getBaseHeightFn);
+  return (block.colMin === bounds.colMin && block.rowMin === bounds.rowMin);
 }
 
 export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {

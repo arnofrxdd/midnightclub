@@ -38,6 +38,18 @@ class MockWorld {
     this.streetlightPoleMat = new THREE.MeshStandardMaterial({ name: 'streetlightPoleMat' });
     this.streetlightBulbMat = new THREE.MeshStandardMaterial({ name: 'streetlightBulbMat' });
 
+    // Showroom Materials
+    this.showroomPadMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' });
+    this.showroomCarMat_0 = new THREE.MeshStandardMaterial({ name: 'showroomCarMat_0' });
+    this.showroomCarMat_1 = new THREE.MeshStandardMaterial({ name: 'showroomCarMat_1' });
+    this.showroomCarMat_2 = new THREE.MeshStandardMaterial({ name: 'showroomCarMat_2' });
+    this.showroomCarMat_3 = new THREE.MeshStandardMaterial({ name: 'showroomCarMat_3' });
+    this.showroomNeonMat_0 = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_0' });
+    this.showroomNeonMat_1 = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_1' });
+    this.showroomNeonMat_2 = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_2' });
+    this.showroomNeonMat_3 = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_3' });
+
+
     this.ledGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'ledGroundLightPoolMat' });
     this.sodiumGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'sodiumGroundLightPoolMat' });
     this.storefrontGroundLightPoolMat = new THREE.MeshBasicMaterial({ name: 'storefrontGroundLightPoolMat' });

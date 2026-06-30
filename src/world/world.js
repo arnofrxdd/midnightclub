@@ -172,6 +172,20 @@ export class World {
     this.streetlightPoleMat = new THREE.MeshStandardMaterial({ color: 0x22252c, metalness: 0.8, roughness: 0.5 });
     this.streetlightBulbMat = new THREE.MeshStandardMaterial({ color: 0xfff6dd, emissive: 0xffcc88, emissiveIntensity: 3.5 });
 
+    // Showroom Materials
+    this.showroomPadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.1 });
+    
+    // 0: Red, 1: Black, 2: Yellow, 3: White
+    this.showroomCarMat_0 = new THREE.MeshStandardMaterial({ color: 0xff002b, metalness: 0.8, roughness: 0.1 });
+    this.showroomCarMat_1 = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 });
+    this.showroomCarMat_2 = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.8, roughness: 0.1 });
+    this.showroomCarMat_3 = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.8, roughness: 0.1 });
+
+    this.showroomNeonMat_0 = new THREE.MeshStandardMaterial({ color: 0xff002b, emissive: 0xff002b, emissiveIntensity: 2.0 });
+    this.showroomNeonMat_1 = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 });
+    this.showroomNeonMat_2 = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0xffcc00, emissiveIntensity: 2.0 });
+    this.showroomNeonMat_3 = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 });
+
     // Baked ground light pool geometry and materials for far-distance visibility without active lights
     this.lightPoolGeo = new THREE.PlaneGeometry(64, 64); // Wider radius for better blending
     this.lightPoolGeo.rotateX(-Math.PI / 2);
@@ -1457,6 +1471,23 @@ export class World {
             if (posY > h + 0.2) continue; // Passed cleanly above the obstacle
           }
 
+          if (obs.isCircle) {
+            const dx = posX - obs.cx;
+            const dz = posZ - obs.cz;
+            const distSq = dx * dx + dz * dz;
+            const totalRad = obs.radius + radius;
+            if (distSq < totalRad * totalRad) {
+              const dist = Math.sqrt(distSq);
+              return {
+                collision: true,
+                normalX: dist > 0.001 ? dx / dist : 1,
+                normalZ: dist > 0.001 ? dz / dist : 0,
+                overlap: totalRad - dist
+              };
+            }
+            continue;
+          }
+
           const closestX = Math.max(obs.xMin, Math.min(posX, obs.xMax));
           const closestZ = Math.max(obs.zMin, Math.min(posZ, obs.zMax));
           const distanceX = posX - closestX;
@@ -1617,7 +1648,7 @@ export class World {
               }
             }
 
-            const localH = 0.5 + baseH + Math.max(0.0, Math.min(1.0, pct)) * (obs.height - 0.5);
+            const localH = 0.5 + baseH + Math.max(0.0, Math.min(1.0, pct)) * obs.rampHeight;
             if (localH > groundHeight) {
               groundHeight = localH;
             }

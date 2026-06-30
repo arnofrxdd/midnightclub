@@ -165,6 +165,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const accessoryGeoms = [];
     const glassGeoms = [];
     const tileObstacles = [];
+    const tileLights = [];
     const registeredBreakables = [];
 
     const isLeftBorder = gridX === block.colMin;
@@ -268,6 +269,17 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       glassMeshName = 'glass_br';
     }
 
+    // Fill the empty gap above the 9m tall glass pane up to the full building height
+    if (glassMeshName !== '') {
+      const topWallHeight = totalHeight - l1Height;
+      if (topWallHeight > 0) {
+        const topWallGeo = new THREE.BoxGeometry(14.2, topWallHeight, wallThick);
+        topWallGeo.rotateY(gRot);
+        topWallGeo.translate(gx, l1Height + topWallHeight / 2, gz);
+        facadeGeoms.push(topWallGeo);
+      }
+    }
+
     const lod = new THREE.LOD();
     lod.position.set(posX, 0.35, posZ);
 
@@ -331,42 +343,158 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       });
     }
 
-    // 3. MALL INTERIOR SHOWCASE (Only in Center Tile)
+    // 3. MALL INTERIOR SHOWCASE (Anchored to Center Tile to prevent unloading, offset to exact mathematical center)
     const centerGridX = Math.floor((block.colMin + block.colMax) / 2);
     const centerGridZ = Math.floor((block.rowMin + block.rowMax) / 2);
     const isCenterTile = (gridX === centerGridX && gridZ === centerGridZ);
 
     if (isCenterTile) {
-      // Main Center Exhibit Pedestal
-      const pedestalGeo = new THREE.CylinderGeometry(5.0, 5.3, 0.8, 16);
-      pedestalGeo.translate(0, 0.4 + buildingBaseHeight, 0);
+      // Calculate absolute center of the mall block in world coordinates
+      const absCenterX = (block.colMin + block.colMax) / 2 * 40.0;
+      const absCenterZ = (block.rowMin + block.rowMax) / 2 * 40.0;
+      
+      // Offset from this center tile to the exact mathematical center of the block (handles even-sized 2x2/4x4 blocks perfectly)
+      const bCx = absCenterX - posX;
+      const bCz = absCenterZ - posZ;
+
+      // Main Center Exhibit Pedestal (Huge)
+      const pedestalGeo = new THREE.CylinderGeometry(14.0, 14.5, 0.8, 32);
+      pedestalGeo.translate(bCx, 0.4 + buildingBaseHeight, bCz);
       const pedestalMesh = new THREE.Mesh(pedestalGeo, this.concreteMat);
       highGroup.add(pedestalMesh);
-
-      // Showcase Car
-      const carParts = [];
-      const carBodyGeo = new THREE.BoxGeometry(4.4, 0.7, 1.9);
-      carBodyGeo.translate(0, 1.15 + buildingBaseHeight, 0);
-      carParts.push(carBodyGeo);
-
-      const carCabinGeo = new THREE.BoxGeometry(2.4, 0.55, 1.7);
-      carCabinGeo.translate(-0.2, 1.775 + buildingBaseHeight, 0);
-      carParts.push(carCabinGeo);
-
-      const mergedCar = BufferGeometryUtils.mergeGeometries(carParts);
-      const carPaintMat = new THREE.MeshBasicMaterial({ color: 0xff002b }); // Bright red basic paint
-      highGroup.add(new THREE.Mesh(mergedCar, carPaintMat));
+      
+      // Solid collision boundary for the pedestal so players can crash into the showcase
+      tileObstacles.push({
+        xMin: posX + bCx - 14.5, xMax: posX + bCx + 14.5, // Outer bounds for spatial grid
+        zMin: posZ + bCz - 14.5, zMax: posZ + bCz + 14.5,
+        isCircle: true,
+        cx: posX + bCx,
+        cz: posZ + bCz,
+        radius: 14.0,
+        height: 1.0, isBuilding: true 
+      });
 
       // Neon Rim on Pedestal
-      const neonRimGeo = new THREE.TorusGeometry(5.1, 0.12, 8, 32);
+      const neonRimGeo = new THREE.TorusGeometry(14.2, 0.15, 8, 64);
       neonRimGeo.rotateX(Math.PI / 2);
-      neonRimGeo.translate(0, 0.8 + buildingBaseHeight, 0);
-      const neonRimMat = new THREE.MeshStandardMaterial({
-        color: 0x00ffcc,
-        emissive: 0x00ffcc,
-        emissiveIntensity: 4.0
-      });
-      highGroup.add(new THREE.Mesh(neonRimGeo, neonRimMat));
+      neonRimGeo.translate(bCx, 0.8 + buildingBaseHeight, bCz); 
+      const rimMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_1' });
+      highGroup.add(new THREE.Mesh(neonRimGeo, rimMat)); 
+
+      // Showcase Cars (4 exotic tuner cars facing outwards)
+      const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+      
+      for(let i=0; i<4; i++) {
+        const angle = angles[i];
+        const cx = bCx + Math.cos(angle) * 8.0; 
+        const cz = bCz + Math.sin(angle) * 8.0;
+        
+        // 1. NEON CAR FOUNDATION PAD
+        const padGeo = new THREE.BoxGeometry(5.8, 0.1, 3.0);
+        padGeo.rotateY(-angle);
+        padGeo.translate(cx, 0.85 + buildingBaseHeight, cz);
+        const padMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' });
+        highGroup.add(new THREE.Mesh(padGeo, padMat));
+
+        const neonPadGeo = new THREE.BoxGeometry(6.0, 0.05, 3.2);
+        neonPadGeo.rotateY(-angle);
+        neonPadGeo.translate(cx, 0.82 + buildingBaseHeight, cz);
+        const neonPadMat = new THREE.MeshStandardMaterial({ name: `showroomNeonMat_${i}` });
+        highGroup.add(new THREE.Mesh(neonPadGeo, neonPadMat)); 
+
+        // 2. AAA REIMAGINED TUNER CAR GEOMETRY
+        const carParts = [];
+        
+        // Lowered Chassis
+        const chassis = new THREE.BoxGeometry(4.8, 0.25, 2.1);
+        chassis.translate(0, 1.30 + buildingBaseHeight, 0); // Raised +0.3
+        carParts.push(chassis);
+
+        // Angled Sport Hood
+        const hood = new THREE.BoxGeometry(1.6, 0.25, 1.9);
+        hood.rotateZ(0.15);
+        hood.translate(1.6, 1.45 + buildingBaseHeight, 0); // Raised +0.3
+        carParts.push(hood);
+
+        // Teardrop Cabin
+        const cabin = new THREE.BoxGeometry(2.0, 0.45, 1.6);
+        cabin.translate(-0.3, 1.75 + buildingBaseHeight, 0); // Raised +0.3
+        carParts.push(cabin);
+
+        // GT Spoiler Blade & Struts
+        const spoiler = new THREE.BoxGeometry(0.5, 0.05, 2.1);
+        spoiler.translate(-2.2, 1.85 + buildingBaseHeight, 0); // Raised +0.3
+        carParts.push(spoiler);
+        const strut1 = new THREE.BoxGeometry(0.1, 0.25, 0.1);
+        strut1.translate(-2.2, 1.70 + buildingBaseHeight, 0.6); // Raised +0.3
+        carParts.push(strut1);
+        const strut2 = new THREE.BoxGeometry(0.1, 0.25, 0.1);
+        strut2.translate(-2.2, 1.70 + buildingBaseHeight, -0.6); // Raised +0.3
+        carParts.push(strut2);
+
+        const mergedCar = BufferGeometryUtils.mergeGeometries(carParts);
+        mergedCar.rotateY(-angle); 
+        mergedCar.translate(cx - bCx, 0, cz - bCz);
+        mergedCar.translate(bCx, 0, bCz); 
+        
+        const carMat = new THREE.MeshStandardMaterial({ name: `showroomCarMat_${i}` });
+        highGroup.add(new THREE.Mesh(mergedCar, carMat)); 
+
+        // 3. WHEELS (Black Rubber)
+        const wheelParts = [];
+        const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16); // Slightly bigger wheels
+        wheelGeo.rotateX(Math.PI / 2);
+        const wheelPositions = [
+          [1.5, 1.30, 1.05], [1.5, 1.30, -1.05], // Front (Raised +0.45 to rest on 0.9 pad)
+          [-1.5, 1.30, 1.05], [-1.5, 1.30, -1.05] // Rear
+        ];
+        for (const wp of wheelPositions) {
+           const w = wheelGeo.clone();
+           w.translate(wp[0], wp[1] + buildingBaseHeight, wp[2]);
+           wheelParts.push(w);
+        }
+        const mergedWheels = BufferGeometryUtils.mergeGeometries(wheelParts);
+        mergedWheels.rotateY(-angle);
+        mergedWheels.translate(cx - bCx, 0, cz - bCz);
+        mergedWheels.translate(bCx, 0, bCz);
+        const tireMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' }); // Re-use dark grey
+        highGroup.add(new THREE.Mesh(mergedWheels, tireMat));
+
+        // 4. GLOWING HEADLIGHTS
+        const hL = new THREE.BoxGeometry(0.1, 0.1, 0.4);
+        hL.rotateZ(0.15);
+        hL.translate(2.35, 1.35 + buildingBaseHeight, 0.75); // Raised +0.3
+        const hR = hL.clone();
+        hR.translate(0, 0, -1.5);
+        const mergedHL = BufferGeometryUtils.mergeGeometries([hL, hR]);
+        mergedHL.rotateY(-angle);
+        mergedHL.translate(cx - bCx, 0, cz - bCz);
+        mergedHL.translate(bCx, 0, bCz);
+        const hlMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_1' }); // White Glow
+        highGroup.add(new THREE.Mesh(mergedHL, hlMat));
+
+        // 5. GLOWING TAILLIGHTS
+        const tL = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+        tL.translate(-2.45, 1.35 + buildingBaseHeight, 0.75); // Raised +0.3
+        const tR = tL.clone();
+        tR.translate(0, 0, -1.5);
+        const mergedTL = BufferGeometryUtils.mergeGeometries([tL, tR]);
+        mergedTL.rotateY(-angle);
+        mergedTL.translate(cx - bCx, 0, cz - bCz);
+        mergedTL.translate(bCx, 0, bCz);
+        const tlMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_0' }); // Red Glow
+        highGroup.add(new THREE.Mesh(mergedTL, tlMat));
+
+        // 6. REALTIME DYNAMIC LIGHTING (Casts actual light onto the floor and cars)
+        const carColors = [0xff002b, 0xffffff, 0xffcc00, 0xffffff];
+        lights.push({
+          x: posX + cx, // FIXED: Using absolute world coordinates!
+          y: 3.5 + buildingBaseHeight, // Raised high above car
+          z: posZ + cz, // FIXED: Using absolute world coordinates!
+          intensity: 4.5, // Cranked up intensity for dark showroom
+          color: carColors[i]
+        });
+      }
     }
 
     // Glass Ceiling / Roof over the entire mall block
@@ -414,4 +542,5 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     }
 
     obstacles.push(...tileObstacles);
+    lights.push(...tileLights);
 }

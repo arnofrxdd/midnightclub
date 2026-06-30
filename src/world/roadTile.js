@@ -2,6 +2,440 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { applySidewalkUVs } from './geometry.js';
 
+function buildWedge(length, height, width, slopeType, slopeDir) {
+  const geo = slopeType === 'X' 
+    ? new THREE.BoxGeometry(length, height, width)
+    : new THREE.BoxGeometry(width, height, length);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    if (slopeType === 'X') {
+      if (slopeDir === 1) {
+        if (x < 0) {
+          if (y > 0) pos.setY(i, -height / 2);
+        }
+      } else {
+        if (x > 0) {
+          if (y > 0) pos.setY(i, -height / 2);
+        }
+      }
+    } else {
+      if (slopeDir === 1) {
+        if (z < 0) {
+          if (y > 0) pos.setY(i, -height / 2);
+        }
+      } else {
+        if (z > 0) {
+          if (y > 0) pos.setY(i, -height / 2);
+        }
+      }
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, isVertical, side, group, obstacles, lights) {
+  const h = this.getBaseHeight(posX, posZ);
+  const rampHeight = 2.2;
+  const rampLength = 8.0;
+  const rampWidth = 4.2;
+
+  const maintGroup = new THREE.Group();
+
+  let zRoadCenter, zSidewalkCenter;
+  let xRoadCenter, xSidewalkCenter;
+  let rampX, rampZ;
+  let slopeType, slopeDir;
+
+  const dir = isVertical ? side : -side; // Determine traffic flow direction
+
+  if (isVertical) {
+    zRoadCenter = posZ + side * roadWidth * 0.35;
+    zSidewalkCenter = posZ + side * (roadWidth * 0.5 + sidewalkWidth * 0.5);
+    xRoadCenter = posX;
+    xSidewalkCenter = posX;
+    
+    rampX = posX - dir * 15.0;
+    rampZ = zRoadCenter;
+    slopeType = 'X';
+    slopeDir = dir;
+  } else {
+    xRoadCenter = posX + side * roadWidth * 0.35;
+    xSidewalkCenter = posX + side * (roadWidth * 0.5 + sidewalkWidth * 0.5);
+    zRoadCenter = posZ;
+    zSidewalkCenter = posZ;
+
+    rampX = xRoadCenter;
+    rampZ = posZ - dir * 15.0;
+    slopeType = 'Z';
+    slopeDir = dir;
+  }
+
+  // Create the heavy steel ramp wedge
+  const rampGeo = buildWedge(rampLength, rampHeight, rampWidth, slopeType, slopeDir);
+  rampGeo.translate(0, rampHeight / 2, 0);
+  rampGeo.translate(rampX, 0.05, rampZ); 
+  this.deformGeometryToHills(rampGeo, 0, 0); 
+  const rampMesh = new THREE.Mesh(rampGeo, this.streetlightPoleMat); // Dark steel material
+  rampMesh.castShadow = true;
+  rampMesh.receiveShadow = true;
+  maintGroup.add(rampMesh);
+
+  // Yellow caution stripes on the left and right edges of the ramp (slightly larger to prevent Z-fighting)
+  const stripeW = 0.4;
+  const sLen = rampLength + 0.04;
+  const sHeight = rampHeight + 0.04;
+
+  const s1Geo = buildWedge(sLen, sHeight, stripeW, slopeType, slopeDir);
+  s1Geo.translate(0, sHeight / 2, 0);
+  if (slopeType === 'X') {
+    s1Geo.translate(rampX, 0.05, rampZ - rampWidth / 2 + stripeW / 2 - 0.02);
+  } else {
+    s1Geo.translate(rampX - rampWidth / 2 + stripeW / 2 - 0.02, 0.05, rampZ);
+  }
+  this.deformGeometryToHills(s1Geo, 0, 0);
+  maintGroup.add(new THREE.Mesh(s1Geo, this.yellowLineMat));
+
+  const s2Geo = buildWedge(sLen, sHeight, stripeW, slopeType, slopeDir);
+  s2Geo.translate(0, sHeight / 2, 0);
+  if (slopeType === 'X') {
+    s2Geo.translate(rampX, 0.05, rampZ + rampWidth / 2 - stripeW / 2 + 0.02);
+  } else {
+    s2Geo.translate(rampX + rampWidth / 2 - stripeW / 2 + 0.02, 0.05, rampZ);
+  }
+  this.deformGeometryToHills(s2Geo, 0, 0);
+  maintGroup.add(new THREE.Mesh(s2Geo, this.yellowLineMat));
+
+  // Helper to add excavated hole and rubble (to make it look like a real site)
+  const addExcavation = (hx, hz) => {
+    // Dark jagged patch representing the deep hole
+    const holeGeo = new THREE.BoxGeometry(4.5, 0.1, 4.5);
+    const pos = holeGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setX(i, pos.getX(i) + (Math.random() - 0.5) * 0.8); // randomize shape
+      pos.setZ(i, pos.getZ(i) + (Math.random() - 0.5) * 0.8);
+    }
+    holeGeo.translate(hx, 0.02, hz);
+    this.deformGeometryToHills(holeGeo, 0, 0);
+    maintGroup.add(new THREE.Mesh(holeGeo, this.streetlightPoleMat));
+
+    // Scatter concrete and asphalt rubble chunks around the edges
+    for (let i = 0; i < 18; i++) {
+      const rs = 0.3 + Math.random() * 0.5; // Random rubble size
+      const rGeo = new THREE.BoxGeometry(rs, rs, rs);
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 2.0 + Math.random() * 1.5; // Push to edges of hole
+      const rx = hx + Math.cos(angle) * dist;
+      const rz = hz + Math.sin(angle) * dist;
+      
+      rGeo.rotateX(Math.random() * Math.PI);
+      rGeo.rotateY(Math.random() * Math.PI);
+      rGeo.translate(rx, rs * 0.4, rz);
+      this.deformGeometryToHills(rGeo, 0, 0);
+      
+      // 50/50 mix of broken black asphalt and gray concrete
+      const rMesh = new THREE.Mesh(rGeo, Math.random() > 0.5 ? this.asphaltMat : this.concreteMat);
+      rMesh.castShadow = true;
+      maintGroup.add(rMesh);
+    }
+  };
+
+  // Place the hole in the landing zone between the ramp and the trailer
+  const holeX = isVertical ? posX - dir * 8.0 : xRoadCenter;
+  const holeZ = isVertical ? zRoadCenter : posZ - dir * 8.0;
+  addExcavation(holeX, holeZ);
+
+  // Add the ramp obstacle
+  const isZ = slopeType === 'Z';
+  const physXLen = isZ ? rampWidth : rampLength;
+  const physZLen = isZ ? rampLength : rampWidth;
+  
+  obstacles.push({
+    xMin: rampX - physXLen / 2,
+    xMax: rampX + physXLen / 2,
+    zMin: rampZ - physZLen / 2,
+    zMax: rampZ + physZLen / 2,
+    isRamp: true,
+    slopeDir: slopeDir,
+    slopeType: slopeType,
+    rampHeight: rampHeight,
+    rampLength: rampLength,
+    height: rampHeight + this.getBaseHeight(rampX, rampZ) + 0.5
+  });
+
+  // Unique index counter to give unique names to breakable cones
+  let coneIdx = 0;
+
+  // Helper to spawn a physical breakable cone (placed directly at ground height h)
+  const addBreakableCone = (cx, cz) => {
+    const ch = this.getBaseHeight(cx, cz);
+    const name = `cone_${gridX}_${gridZ}_${coneIdx++}`;
+
+    const coneGroup = new THREE.Group();
+    coneGroup.name = name;
+
+    // 1. Black base (0.8 x 0.08 x 0.8)
+    const baseGeo = new THREE.BoxGeometry(0.8, 0.08, 0.8);
+    baseGeo.translate(0, 0.04, 0);
+    const baseMesh = new THREE.Mesh(baseGeo, this.asphaltMat);
+    baseMesh.castShadow = true;
+    baseMesh.receiveShadow = true;
+    coneGroup.add(baseMesh);
+
+    // 2. Bright orange body (1.2 height)
+    const bodyGeo = new THREE.CylinderGeometry(0.06, 0.26, 1.2, 12);
+    bodyGeo.translate(0, 0.64, 0);
+    const bodyMesh = new THREE.Mesh(bodyGeo, this.yellowLineMat);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    coneGroup.add(bodyMesh);
+
+    // 3. Dual reflective white stripes
+    const stripe1Geo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 12);
+    stripe1Geo.translate(0, 0.85, 0);
+    coneGroup.add(new THREE.Mesh(stripe1Geo, this.whiteLineMat));
+
+    const stripe2Geo = new THREE.CylinderGeometry(0.18, 0.22, 0.20, 12);
+    stripe2Geo.translate(0, 0.45, 0);
+    coneGroup.add(new THREE.Mesh(stripe2Geo, this.whiteLineMat));
+
+    // Place group directly at terrain height (no deformation needed for tiny props)
+    coneGroup.position.set(cx, ch, cz);
+    group.add(coneGroup);
+
+    // Register breakable details
+    this.breakables.push({
+      type: 'cone',
+      comHeight: 0.6,
+      radius: 0.45,
+      position: new THREE.Vector3(cx, ch + 0.6, cz),
+      broken: false,
+      tileX: posX,
+      tileZ: posZ,
+      velocity: new THREE.Vector3(),
+      angularVelocity: new THREE.Vector3(),
+      isInstanced: false,
+      groupName: name
+    });
+  };
+
+  // Helper to make concrete Jersey Barriers (deformed relative to absolute coordinates, starting at Y=0)
+  const addJerseyBarrier = (bx, bz, angle) => {
+    const parts = [];
+    const base = new THREE.BoxGeometry(1.4, 0.4, 3.0);
+    base.translate(0, 0.2, 0);
+    parts.push(base);
+
+    const mid = new THREE.BoxGeometry(0.8, 0.6, 3.0);
+    mid.translate(0, 0.7, 0);
+    parts.push(mid);
+
+    const top = new THREE.BoxGeometry(0.5, 0.3, 3.0);
+    top.translate(0, 1.15, 0);
+    parts.push(top);
+
+    const merged = BufferGeometryUtils.mergeGeometries(parts);
+    merged.rotateY(angle);
+    merged.translate(bx, 0.02, bz); 
+    this.deformGeometryToHills(merged, 0, 0); 
+
+    const barrierMesh = new THREE.Mesh(merged, this.concreteMat);
+    barrierMesh.castShadow = true;
+    barrierMesh.receiveShadow = true;
+    maintGroup.add(barrierMesh);
+
+    // Add solid collision AABB
+    const halfW = 0.7;
+    const halfL = 1.5;
+    const isRot = Math.abs(angle - Math.PI/2) < 0.2 || Math.abs(angle + Math.PI/2) < 0.2;
+    obstacles.push({
+      xMin: bx - (isRot ? halfL : halfW),
+      xMax: bx + (isRot ? halfL : halfW),
+      zMin: bz - (isRot ? halfW : halfL),
+      zMax: bz + (isRot ? halfW : halfL),
+      height: 1.3 + this.getBaseHeight(bx, bz)
+    });
+  };
+
+  // Helper to make a construction warning diamond sign (deformed relative to absolute coordinates)
+  const addRoadSign = (sx, sz, angle) => {
+    const parts = [];
+
+    // Base stand
+    const standBase = new THREE.BoxGeometry(0.8, 0.05, 0.8);
+    standBase.translate(0, 0.025, 0);
+    parts.push(standBase);
+
+    // Pole
+    const pole = new THREE.BoxGeometry(0.1, 1.6, 0.1);
+    pole.translate(0, 0.8, 0);
+    parts.push(pole);
+
+    const mergedStand = BufferGeometryUtils.mergeGeometries(parts);
+    mergedStand.rotateY(angle);
+    mergedStand.translate(sx, 0.02, sz);
+    this.deformGeometryToHills(mergedStand, 0, 0);
+    maintGroup.add(new THREE.Mesh(mergedStand, this.streetlightPoleMat));
+
+    // Diamond board
+    const board = new THREE.BoxGeometry(1.0, 1.0, 0.06);
+    board.rotateZ(Math.PI / 4); 
+    board.translate(0, 1.5, 0.08); 
+    board.rotateY(angle);
+    board.translate(sx, 0.02, sz);
+    this.deformGeometryToHills(board, 0, 0);
+    maintGroup.add(new THREE.Mesh(board, this.yellowLineMat));
+  };
+
+  if (isVertical) {
+    const laneZ = posZ + side * 0.5; 
+    
+    // Cones along lane divider
+    for (let xOffset = -20.0; xOffset <= 20.0; xOffset += 4.5) {
+      if (Math.abs(xOffset - (-dir * 15.0)) < 5.0) continue; // Leave gap for ramp
+      addBreakableCone(posX + xOffset, laneZ);
+    }
+    
+    // Jersey barriers forming a solid wall at the END of the zone
+    const wallX = posX + dir * 12.0;
+    for (let offset = 2.0; offset <= 18.0; offset += 3.1) {
+      addJerseyBarrier(wallX, posZ + side * offset, 0); // Barrier runs along Z
+    }
+
+    // Sign at entry (early)
+    const signX = posX - dir * 18.0;
+    addRoadSign(signX, zSidewalkCenter, -dir * Math.PI / 2);
+
+    // Upgraded Generator trailer with wheels (placed in the middle of the zone)
+    const trailer = new THREE.Group();
+    const frameGeo = new THREE.BoxGeometry(3.2, 0.15, 2.2);
+    frameGeo.translate(0, 0.3, 0);
+    trailer.add(new THREE.Mesh(frameGeo, this.streetlightPoleMat));
+
+    const genGeo = new THREE.BoxGeometry(2.8, 1.4, 1.8);
+    genGeo.translate(0, 1.0, 0);
+    const genMesh = new THREE.Mesh(genGeo, this.yellowLineMat);
+    genMesh.castShadow = true;
+    trailer.add(genMesh);
+
+    const pipeGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
+    pipeGeo.translate(0.8, 1.9, 0.4);
+    trailer.add(new THREE.Mesh(pipeGeo, this.streetlightPoleMat));
+
+    const wheel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 12), this.asphaltMat);
+    wheel1.rotateX(Math.PI / 2);
+    wheel1.position.set(0.0, 0.45, 1.0);
+    trailer.add(wheel1);
+
+    const wheel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 12), this.asphaltMat);
+    wheel2.rotateX(Math.PI / 2);
+    wheel2.position.set(0.0, 0.45, -1.0);
+    trailer.add(wheel2);
+
+    const trailerX = posX - dir * 2.0;
+    trailer.position.set(trailerX, h, zRoadCenter);
+    maintGroup.add(trailer);
+
+    // Dynamic warning lights on trailer
+    const beaconGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    beaconGeo.translate(trailerX, 0.0, zRoadCenter);
+    beaconGeo.translate(0, 1.85 + h, 0);
+    this.deformGeometryToHills(beaconGeo, 0, 0);
+    maintGroup.add(new THREE.Mesh(beaconGeo, this.whiteLineMat));
+
+    lights.push({
+      x: trailerX,
+      y: h + 2.4,
+      z: zRoadCenter,
+      intensity: 3.5,
+      color: 0xffaa00
+    });
+
+    obstacles.push({
+      xMin: trailerX - 1.7,
+      xMax: trailerX + 1.7,
+      zMin: zRoadCenter - 1.2,
+      zMax: zRoadCenter + 1.2,
+      height: 1.8 + h
+    });
+
+  } else {
+    const laneX = posX + side * 0.5;
+
+    // Cones along lane divider
+    for (let zOffset = -20.0; zOffset <= 20.0; zOffset += 4.5) {
+      if (Math.abs(zOffset - (-dir * 15.0)) < 5.0) continue; // Leave gap for ramp
+      addBreakableCone(laneX, posZ + zOffset);
+    }
+
+    // Jersey barriers forming a solid wall at the END of the zone
+    const wallZ = posZ + dir * 12.0;
+    for (let offset = 2.0; offset <= 18.0; offset += 3.1) {
+      addJerseyBarrier(posX + side * offset, wallZ, Math.PI / 2); // Barrier runs along X
+    }
+
+    // Sign at entry (early)
+    const signZ = posZ - dir * 18.0;
+    addRoadSign(xSidewalkCenter, signZ, dir === -1 ? 0 : Math.PI);
+
+    // Upgraded Generator trailer with wheels (placed in the middle of the zone)
+    const trailer = new THREE.Group();
+    const frameGeo = new THREE.BoxGeometry(2.2, 0.15, 3.2);
+    frameGeo.translate(0, 0.3, 0);
+    trailer.add(new THREE.Mesh(frameGeo, this.streetlightPoleMat));
+
+    const genGeo = new THREE.BoxGeometry(1.8, 1.4, 2.8);
+    genGeo.translate(0, 1.0, 0);
+    const genMesh = new THREE.Mesh(genGeo, this.yellowLineMat);
+    genMesh.castShadow = true;
+    trailer.add(genMesh);
+
+    const pipeGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
+    pipeGeo.translate(0.4, 1.9, 0.8);
+    trailer.add(new THREE.Mesh(pipeGeo, this.streetlightPoleMat));
+
+    const wheel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 12), this.asphaltMat);
+    wheel1.position.set(1.0, 0.45, 0.0);
+    trailer.add(wheel1);
+
+    const wheel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 12), this.asphaltMat);
+    wheel2.position.set(-1.0, 0.45, 0.0);
+    trailer.add(wheel2);
+
+    const trailerZ = posZ - dir * 2.0;
+    trailer.position.set(xRoadCenter, h, trailerZ);
+    maintGroup.add(trailer);
+
+    // Dynamic warning lights on trailer
+    const beaconGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    beaconGeo.translate(xRoadCenter, 0.0, trailerZ);
+    beaconGeo.translate(0, 1.85 + h, 0);
+    this.deformGeometryToHills(beaconGeo, 0, 0);
+    maintGroup.add(new THREE.Mesh(beaconGeo, this.whiteLineMat));
+
+    lights.push({
+      x: xRoadCenter,
+      y: h + 2.4,
+      z: trailerZ,
+      intensity: 3.5,
+      color: 0xffaa00
+    });
+
+    obstacles.push({
+      xMin: xRoadCenter - 1.2,
+      xMax: xRoadCenter + 1.2,
+      zMin: trailerZ - 1.7,
+      zMax: trailerZ + 1.7,
+      height: 1.8 + h
+    });
+  }
+
+  group.add(maintGroup);
+}
 
 export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {
     const { rwX, rwZ } = this.getRoadWidthForGrid(gridX, gridZ);
@@ -1019,6 +1453,13 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             });
           }
         }
+        // Spawn roadside maintenance zone
+        const maintenanceSeed = Math.sin(gridX * 45.123 + gridZ * 91.456) * 43758.5453;
+        const maintenanceRand = maintenanceSeed - Math.floor(maintenanceSeed);
+        if (maintenanceRand < 0.12 && !isIntersection) {
+          const side = (maintenanceRand < 0.06) ? 1 : -1;
+          buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, true, side, group, obstacles, lights);
+        }
       } 
       else {
         // Build dynamic horizontal road mesh matching roadWidth (rwX)
@@ -1124,7 +1565,9 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           addTrashCan(xPositiveSide, posZ + 13);
         } else if (randRightP > 0.24) {
           addFireHydrant(xPositiveSide, posZ + 13);
-         // Spawn streetlight (excluding intersections)
+        }
+
+        // Spawn streetlight (excluding intersections)
         if (gridZ % 2 === 0 && !isIntersection) {
           const sx = posX + roadWidth/2 + sidewalkWidth/2;
           const isLED = Math.sin(sx * 5.0 + posZ * 3.0) > 0.0;
@@ -1310,6 +1753,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
             });
           }
         }
+        // Spawn roadside maintenance zone
+        const maintenanceSeed = Math.sin(gridX * 45.123 + gridZ * 91.456) * 43758.5453;
+        const maintenanceRand = maintenanceSeed - Math.floor(maintenanceSeed);
+        if (maintenanceRand < 0.12 && !isIntersection) {
+          const side = (maintenanceRand < 0.06) ? 1 : -1;
+          buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, false, side, group, obstacles, lights);
         }
       }
     }

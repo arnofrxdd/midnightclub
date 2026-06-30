@@ -91,7 +91,7 @@ export function checkBreakablesCollision(dt) {
           
           let minDy = -2.0;
           let propHeight = 8.0;
-          if (b.type === 'hydrant' || b.type === 'bench' || b.type === 'trashcan' || b.type === 'parkingmeter') {
+          if (b.type === 'hydrant' || b.type === 'bench' || b.type === 'trashcan' || b.type === 'parkingmeter' || b.type === 'cone') {
             propHeight = 1.5;
           } else if (b.type === 'glass') {
             minDy = -10.0; // Glass center is 4.5m up; we need to reach down to the ground!
@@ -164,13 +164,22 @@ export function checkBreakablesCollision(dt) {
               b.group.quaternion.copy(worldQuat);
               
               this.scene.add(b.group);
+              b.isInstanced = false; // it is now a real mesh
             }
 
             // Impulse calculation
             const impactForceDir = ent.velocity.clone().normalize();
             if (speed > 2.0) {
-              // Pole flies off in the direction of the impact velocity (heavier, less explosive flight)
-              if (b.type === 'lamp' || b.type === 'trafficlight' || b.type === 'hydrant') {
+              if (b.type === 'cone') {
+                // Cones are extremely light and pop high into the air with fast rotation
+                b.velocity.copy(impactForceDir).multiplyScalar(speed * 1.5);
+                b.velocity.y = Math.max(speed * 0.4 + 4.0, 5.5);
+                b.angularVelocity.set(
+                  (Math.random() - 0.5) * 45.0,
+                  (Math.random() - 0.5) * 45.0,
+                  (Math.random() - 0.5) * 45.0
+                );
+              } else if (b.type === 'lamp' || b.type === 'trafficlight' || b.type === 'hydrant') {
                 b.velocity.copy(impactForceDir).multiplyScalar(speed * 0.35); // Heavier object = less launch speed
                 b.velocity.y = Math.max(speed * 0.25 + 2.5, 3.5); // Less upward launch for heavy metal poles
                 
@@ -452,63 +461,98 @@ export function checkBreakablesCollision(dt) {
         // Bounce on ground level
         if (b.group) {
           const groundHeight = this.world.getGroundHeight(b.group.position.x, b.group.position.z);
-          const upVec = new THREE.Vector3(0, 1, 0).applyQuaternion(b.group.quaternion);
-          const tiltCos = Math.abs(upVec.dot(new THREE.Vector3(0, 1, 0))); // 1 = standing, 0 = flat
-          const comHeight = b.comHeight !== undefined ? b.comHeight : 4.25;
-          const radius = b.radius !== undefined ? b.radius : 0.22;
-          const minHeight = groundHeight + THREE.MathUtils.lerp(radius, comHeight, tiltCos);
-
-          if (b.group.position.y < minHeight) {
-            b.group.position.y = minHeight;
+          
+          if (b.type === 'glass_shard') {
+            // Glass shards are generated upright (tall Y, thin Z). 
+            // They are flat when their local Z-axis points straight UP or DOWN.
+            const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(b.group.quaternion);
+            const isFlatFactor = Math.abs(localZ.y); // 1 = perfectly flat on ground, 0 = standing vertically
             
-            const isFlat = tiltCos < 0.15;
-            if (isFlat) {
-              // Once flat, damp and stop
+            // Calculate dynamic clearance so it doesn't clip when tumbling
+            // Max radius is ~2.2 when standing, 0.1 when flat
+            const minHeight = groundHeight + THREE.MathUtils.lerp(2.2, 0.1, isFlatFactor);
+            
+            if (b.group.position.y < minHeight) {
+              b.group.position.y = minHeight;
+              
               if (b.velocity.y < -1.5) {
-                b.velocity.y = -b.velocity.y * 0.22; // bounce damping
+                b.velocity.y = -b.velocity.y * 0.35; // Glass bounce
               } else {
                 b.velocity.y = 0.0;
               }
-              b.velocity.x *= 0.48 * Math.exp(-dt * 6.5); // slide friction
-              b.velocity.z *= 0.48 * Math.exp(-dt * 6.5);
-              b.angularVelocity.multiplyScalar(0.35 * Math.exp(-dt * 5.0));
-            } else {
-              // While toppling, satisfy the ground tip contact constraint kinematics.
-              // Do NOT bounce the center of mass vertically.
-              // Instead, apply constant gravity torque to slide the center of mass down.
-              const sinTheta = Math.sqrt(1.0 - tiltCos * tiltCos);
-              const toppleTorque = 16.0 * sinTheta; // Accelerates as it leans further
-              const leanX = upVec.z;
-              const leanZ = -upVec.x;
-              b.angularVelocity.x += leanX * toppleTorque * dt;
-              b.angularVelocity.z += leanZ * toppleTorque * dt;
+              // Glass slides smoothly on asphalt
+              b.velocity.x *= 0.95 * Math.exp(-dt * 3.0);
+              b.velocity.z *= 0.95 * Math.exp(-dt * 3.0);
               
-              // Allow natural sliding velocity on the tip contact
-              b.velocity.x *= 0.98;
-              b.velocity.z *= 0.98;
+              b.angularVelocity.multiplyScalar(0.6 * Math.exp(-dt * 5.0));
+              
+              // Force the shard to lay flat on its wide face
+              // X rotation targets ±90 degrees (Math.PI/2)
+              // Z rotation targets 0 or 180 degrees (Math.PI)
+              const targetX = Math.round((b.group.rotation.x - Math.PI/2) / Math.PI) * Math.PI + Math.PI/2;
+              const targetZ = Math.round(b.group.rotation.z / Math.PI) * Math.PI;
+              
+              b.group.rotation.x += (targetX - b.group.rotation.x) * 12.0 * dt;
+              b.group.rotation.z += (targetZ - b.group.rotation.z) * 12.0 * dt;
             }
-            
-            // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
-            let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
-            let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
-            if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
-              if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
-                targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
+          } else {
+            // Generic Pole/Hydrant Physics
+            const upVec = new THREE.Vector3(0, 1, 0).applyQuaternion(b.group.quaternion);
+            const tiltCos = Math.abs(upVec.dot(new THREE.Vector3(0, 1, 0))); // 1 = standing, 0 = flat
+            const comHeight = b.comHeight !== undefined ? b.comHeight : 4.25;
+            const radius = b.radius !== undefined ? b.radius : 0.22;
+            const minHeight = groundHeight + THREE.MathUtils.lerp(radius, comHeight, tiltCos);
+
+            if (b.group.position.y < minHeight) {
+              b.group.position.y = minHeight;
+              
+              const isFlat = tiltCos < 0.15;
+              if (isFlat) {
+                // Once flat, damp and stop
+                if (b.velocity.y < -1.5) {
+                  b.velocity.y = -b.velocity.y * 0.22; // bounce damping
+                } else {
+                  b.velocity.y = 0.0;
+                }
+                b.velocity.x *= 0.48 * Math.exp(-dt * 6.5); // slide friction
+                b.velocity.z *= 0.48 * Math.exp(-dt * 6.5);
+                b.angularVelocity.multiplyScalar(0.35 * Math.exp(-dt * 5.0));
               } else {
-                targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+                // While toppling, satisfy the ground tip contact constraint kinematics.
+                const sinTheta = Math.sqrt(1.0 - tiltCos * tiltCos);
+                const toppleTorque = 16.0 * sinTheta; // Accelerates as it leans further
+                const leanX = upVec.z;
+                const leanZ = -upVec.x;
+                b.angularVelocity.x += leanX * toppleTorque * dt;
+                b.angularVelocity.z += leanZ * toppleTorque * dt;
+                
+                // Allow natural sliding velocity on the tip contact
+                b.velocity.x *= 0.98;
+                b.velocity.z *= 0.98;
               }
-            }
-            const alignStrength = isFlat ? 7.0 : 2.5;
-            b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
-            b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
-            
-            // Scratching spark physics when rubbing ground
-            if (b.velocity.lengthSq() > 15.0) {
-               const sparkPos = b.group.position.clone();
-               sparkPos.y = groundHeight + 0.1;
-               const slideDir = b.velocity.clone().normalize().negate(); // Sparks shoot backwards
-               slideDir.y = 0.1; // Very slight upward spray, mostly backwards along the floor
-               this.spawnParticles(sparkPos, slideDir, 0xffdd55, 10, false, true);
+              
+              // Slowly align rotation to lie flat on the ground (prevent goofy standing tilts)
+              let targetX = Math.round(b.group.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
+              let targetZ = Math.round(b.group.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+              if (Math.abs(targetX) < 0.1 && Math.abs(targetZ) < 0.1) {
+                if (Math.abs(b.velocity.x) > Math.abs(b.velocity.z)) {
+                  targetZ = b.velocity.x > 0 ? -Math.PI / 2 : Math.PI / 2;
+                } else {
+                  targetX = b.velocity.z > 0 ? Math.PI / 2 : -Math.PI / 2;
+                }
+              }
+              const alignStrength = isFlat ? 7.0 : 2.5;
+              b.group.rotation.x += (targetX - b.group.rotation.x) * alignStrength * dt;
+              b.group.rotation.z += (targetZ - b.group.rotation.z) * alignStrength * dt;
+              
+              // Scratching spark physics when rubbing ground
+              if (b.velocity.lengthSq() > 15.0) {
+                 const sparkPos = b.group.position.clone();
+                 sparkPos.y = groundHeight + 0.1;
+                 const slideDir = b.velocity.clone().normalize().negate(); // Sparks shoot backwards
+                 slideDir.y = 0.1; // Very slight upward spray, mostly backwards along the floor
+                 this.spawnParticles(sparkPos, slideDir, 0xffdd55, 10, false, true);
+              }
             }
           }
 

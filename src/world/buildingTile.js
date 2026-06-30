@@ -220,6 +220,9 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     const ledgeHeight = 0.8;
 
     // Shortcut Settings at the Block level
+    // Some blocks have huge interior tunnels that act as shortcuts
+    // const hasShortcut = (blockRand < 0.25);
+    const hasShortcut = false; // Disabled for now to prevent floating wedge glitches
     let colLeft = gridX;
     while (!this.roadColumns.has(colLeft) && colLeft > -100) colLeft--;
     let colRight = gridX;
@@ -234,7 +237,6 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     const blockSeed = Math.sin((colLeft + 17.0) * 12.9898 + (rowTop + 37.0) * 78.233) * 43758.5453;
     const blockRand = blockSeed - Math.floor(blockSeed);
 
-    const hasShortcut = (blockRand < 0.25);
     const isTopLeftToBottomRight = (Math.floor(blockRand * 10) % 2 === 0);
 
     const blockCenterX = ((colLeft + colRight) / 2) * 40;

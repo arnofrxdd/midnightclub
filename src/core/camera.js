@@ -104,36 +104,36 @@ export function updateCamera(dt = 0.016) {
     this.camRoll += (targetRoll - this.camRoll) * (1 - Math.exp(-5 * dt));
 
     // 1. Dynamic FOV: Opens up at high speed, nitro, gear shifts, landing punches, and drifts
-    const boostFOVOffset = this.physics.isBoosting ? 16.0 : 0.0;
+    const boostFOVOffset = this.physics.isBoosting ? 8.0 : 0.0; // Reduced from 16.0 to avoid warping perspective too much
     const airFOVOffset = this.physics.isAirborne ? Math.min(12.0, this.physics.airTime * 15.0) : 0.0;
     const driftFOVOffset = isDrifting ? Math.min(12.0, Math.abs(lateralVel) * 1.4) : 0.0;
     const targetFOV = 55 + Math.min(20, speed * 0.35) + (this.gearShiftPunch * 3.5) + (this.landingPunch * 14.0) + boostFOVOffset + airFOVOffset + driftFOVOffset;
     this.camera.fov += (targetFOV - this.camera.fov) * (1 - Math.exp(-6 * dt));
     this.camera.updateProjectionMatrix();
 
-    // 2. Heading Interpolation & Parameters based on Camera Mode
-    let baseDist = 15.0;
-    let baseHeight = 5.2;
+    // 2. Heading Interpolation & Parameters based on Camera Mode (Tuned closer and lower for AAA feel)
+    let baseDist = 11.0;
+    let baseHeight = 3.1;
     let useLag = true;
-    let targetLookY = 1.1;
+    let targetLookY = 0.9;
 
     const mode = this.cameraMode || 'medium';
     if (mode === 'really_close') {
-      baseDist = 7.0;
-      baseHeight = 2.4;
-      targetLookY = 0.95;
+      baseDist = 6.2;
+      baseHeight = 1.8;
+      targetLookY = 0.8;
     } else if (mode === 'close') {
-      baseDist = 10.5;
-      baseHeight = 3.5;
-      targetLookY = 1.0;
+      baseDist = 8.5;
+      baseHeight = 2.4;
+      targetLookY = 0.85;
     } else if (mode === 'medium') {
-      baseDist = 15.0;
-      baseHeight = 5.2;
-      targetLookY = 1.1;
+      baseDist = 11.0;
+      baseHeight = 3.1;
+      targetLookY = 0.9;
     } else if (mode === 'far') {
-      baseDist = 22.0;
-      baseHeight = 7.5;
-      targetLookY = 1.3;
+      baseDist = 16.0;
+      baseHeight = 4.4;
+      targetLookY = 1.0;
     } else if (mode === 'bonnet') {
       baseDist = -2.2; // front of car looking forward
       baseHeight = 1.0;
@@ -158,7 +158,8 @@ export function updateCamera(dt = 0.016) {
     // 3. Dynamic Distance & Height: Chase cam parameters with G-Force Pitching & Bungee Lag
     let distance, height;
     if (useLag) {
-      distance = baseDist + speed * 0.1 + this.camBungeeOffset + (this.gearShiftPunch * 1.8) + (this.landingPunch * 2.5);
+      const boostDistOffset = this.physics.isBoosting ? -2.0 : 0.0; // Pulls camera closer during nitro
+      distance = baseDist + speed * 0.05 + this.camBungeeOffset + (this.gearShiftPunch * 1.8) + (this.landingPunch * 2.5) + boostDistOffset;
       // Pull camera slightly lower during a drift to make the car look more grounded and wide
       const driftHeightOffset = isDrifting ? -0.45 : 0.0;
       height = baseHeight + Math.max(0.0, 1.5 - speed * 0.01) + this.camPitchOffset - (this.landingPunch * 0.8) + driftHeightOffset;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { applySidewalkUVs } from './geometry.js';
 import { getBlockInfo } from './mallTile.js';
+import { SPAWN_CONFIG } from './spawnConfig.js';
 
 export function isGasStationBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBaseHeightFn) {
   const block = getBlockInfo(gridX, gridZ, roadCols, roadRows);
@@ -10,17 +11,16 @@ export function isGasStationBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, g
   // Only spawn on fixed 1x1 city blocks (40x40m) to avoid massive empty asphalt lots
   const blockW = block.colMax - block.colMin;
   const blockH = block.rowMax - block.rowMin;
-  if (blockW !== 0 || blockH !== 0) return false;
+  if (blockW !== (SPAWN_CONFIG.BLOCKS.GAS_STATION.MIN_WIDTH - 1) || blockH !== (SPAWN_CONFIG.BLOCKS.GAS_STATION.MIN_HEIGHT - 1)) return false;
 
   // Exclude the center area (reserved for the mall and heavy traffic)
   const distToCenter = Math.abs(block.colMin - 8) + Math.abs(block.rowMin - 8);
   if (distToCenter < 6) return false;
   
   // Use a pseudo-random hash based on the block's unique coordinates
-  // Spawn rate: roughly 85% for debug testing
   const blockHash = ((block.colMin * 37) + (block.rowMin * 17)) % 100;
   
-  if (blockHash < 85) { 
+  if (blockHash < (SPAWN_CONFIG.BLOCKS.GAS_STATION.PROBABILITY * 100)) { 
     if (getBaseHeightFn) {
       const cx = ((block.colMin + block.colMax) / 2) * 40.0;
       const cz = ((block.rowMin + block.rowMax) / 2) * 40.0;

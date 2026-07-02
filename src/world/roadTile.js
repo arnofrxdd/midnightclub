@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { applySidewalkUVs } from './geometry.js';
+import { SPAWN_CONFIG } from './spawnConfig.js';
 
 function buildWedge(length, height, width, slopeType, slopeDir) {
   const geo = slopeType === 'X'
@@ -1474,11 +1475,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         for (let z = gridZ - 1; !this.roadRows.has(z) && z > gridZ - 20; z--) blockLen++;
         for (let z = gridZ + 1; !this.roadRows.has(z) && z < gridZ + 20; z++) blockLen++;
 
-        if (blockLen >= 5) {
-          const chunkZ = Math.floor(gridZ / 12);
+        if (blockLen >= SPAWN_CONFIG.ROADS.MAINTENANCE_ZONE.MIN_ROAD_LENGTH) {
+          const freq = SPAWN_CONFIG.ROADS.MAINTENANCE_ZONE.SPACING_FREQUENCY;
+          const chunkZ = Math.floor(gridZ / freq);
           const seed = Math.sin(gridX * 12.9898 + chunkZ * 78.233) * 43758.5453;
-          const targetZOffset = Math.floor((seed - Math.floor(seed)) * 12);
-          const currentOffset = ((gridZ % 12) + 12) % 12;
+          const targetZOffset = Math.floor((seed - Math.floor(seed)) * freq);
+          const currentOffset = ((gridZ % freq) + freq) % freq;
 
           if (currentOffset === targetZOffset) {
             const sideSeed = Math.sin(gridX * 7.123 + chunkZ * 19.456) * 43758.5453;
@@ -1787,11 +1789,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
         for (let x = gridX - 1; !this.roadColumns.has(x) && x > gridX - 20; x--) blockLen++;
         for (let x = gridX + 1; !this.roadColumns.has(x) && x < gridX + 20; x++) blockLen++;
 
-        if (blockLen >= 5) {
-          const chunkX = Math.floor(gridX / 12);
+        if (blockLen >= SPAWN_CONFIG.ROADS.MAINTENANCE_ZONE.MIN_ROAD_LENGTH) {
+          const freq = SPAWN_CONFIG.ROADS.MAINTENANCE_ZONE.SPACING_FREQUENCY;
+          const chunkX = Math.floor(gridX / freq);
           const seed = Math.sin(chunkX * 12.9898 + gridZ * 78.233) * 43758.5453;
-          const targetXOffset = Math.floor((seed - Math.floor(seed)) * 12);
-          const currentOffset = ((gridX % 12) + 12) % 12;
+          const targetXOffset = Math.floor((seed - Math.floor(seed)) * freq);
+          const currentOffset = ((gridX % freq) + freq) % freq;
 
           if (currentOffset === targetXOffset) {
             const sideSeed = Math.sin(chunkX * 7.123 + gridZ * 19.456) * 43758.5453;

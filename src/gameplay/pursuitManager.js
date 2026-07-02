@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CopCar } from './copCar.js';
 import { Roadblock } from './roadblock.js';
+import { SPAWN_CONFIG } from '../world/spawnConfig.js';
 
 export class PursuitManager {
   constructor(app) {
@@ -35,7 +36,7 @@ export class PursuitManager {
       this.pursuitDuration = 0.0;
     }
     this.cooldownTimer = 0.0;
-    this.maxSpawnCops = Math.min(5, Math.max(1, this.heatLevel)); // Toned down: Heat 1 = 1 cop, Heat 5 = 5 cops max
+    this.maxSpawnCops = Math.min(SPAWN_CONFIG.COPS.MAX_COPS_CAP, Math.max(1, this.heatLevel)); // Dynamic limit based on config
     // Roadblocks disabled
     // if (this.heatLevel >= 3 && prevHeat < 3) {
     //   this.roadblockTimer = 10.0; // Quick initial roadblock when hitting Heat 3
@@ -361,8 +362,8 @@ export class PursuitManager {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && activeChasingCops.length < this.maxSpawnCops) {
         // Spawning frequency scales up with Heat Level (Toned down slightly)
-        const baseMin = Math.max(3.5, 9.0 / this.heatLevel); // Toned down spawning (much larger delay before new spawn)
-        const baseRand = Math.max(4.0, 10.0 / this.heatLevel);
+        const baseMin = Math.max(SPAWN_CONFIG.COPS.COOLDOWN_MIN, SPAWN_CONFIG.COPS.COOLDOWN_FACTOR / this.heatLevel); 
+        const baseRand = Math.max(SPAWN_CONFIG.COPS.COOLDOWN_RAND_MIN, SPAWN_CONFIG.COPS.COOLDOWN_RAND_FACTOR / this.heatLevel);
         this.spawnTimer = baseMin + Math.random() * baseRand;
         this.spawnCop(world, playerPos, false);
       }
@@ -379,11 +380,11 @@ export class PursuitManager {
     const activeParkedCops = this._activeParkedBuf;
 
     // Check max once per second instead of 60 times a second
-    if (activeParkedCops.length < 4 && this.parkedSpawnTimer <= 0) {
+    if (activeParkedCops.length < 8 && this.parkedSpawnTimer <= 0) {
       this.parkedSpawnTimer = 1.0;
       this._activeParkedBuf.length = nParked;
       const activeParkedCops = this._activeParkedBuf;
-      if (activeParkedCops.length < 4 && Math.random() < 0.1) {
+      if (activeParkedCops.length < 8 && Math.random() < 0.4) {
         // Find candidate tiles from world.loadedTiles
         const candidates = [];
         for (const [key, tile] of world.loadedTiles.entries()) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { createDetailedWindowGeometry, applySidewalkUVs } from './geometry.js';
+import { applySidewalkUVs, createDetailedWindowGeometry } from './geometry.js';
+import { SPAWN_CONFIG } from './spawnConfig.js';
 
 export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {
     const key = `${gridX},${gridZ}`;
@@ -122,7 +123,7 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     const seed = Math.sin(gridX * 12.9898 + gridZ * 78.233) * 43758.5453;
     const rand = seed - Math.floor(seed);
     
-    const levelsCount = rand > 0.8 ? 4 : (rand > 0.45 ? 3 : 2);
+    const levelsCount = rand > SPAWN_CONFIG.BUILDINGS.LEVELS.LEVEL_4_THRESHOLD ? 4 : (rand > SPAWN_CONFIG.BUILDINGS.LEVELS.LEVEL_3_THRESHOLD ? 3 : 2);
     const bMat = this.materials[Math.floor(rand * this.materials.length)];
 
     // Calculate bounds relative to tile center (tileSize is 40)
@@ -139,13 +140,13 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
       // Alley neighbor: randomize width
       const alleySeed = Math.sin((gridX - 1) * 12.9898 + gridZ * 78.233) * 43758.5453;
       const alleyRand = alleySeed - Math.floor(alleySeed);
-      if (alleyRand < 0.4) xMin = -19; // narrow alley (building brought closer)
-      else if (alleyRand < 0.7) xMin = -16; // medium alley
+      if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.NARROW_THRESHOLD) xMin = -19; // narrow alley (building brought closer)
+      else if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.MEDIUM_THRESHOLD) xMin = -16; // medium alley
       else xMin = -13; // wide alley
     } else if (this.roadColumns.has(gridX - 1) || this.roadRows.has(gridZ)) {
       // Road neighbor
       const { rwX } = this.getRoadWidthForGrid(gridX - 1, gridZ);
-      if (rwX === 14 && rand < 0.5) {
+      if (rwX === 14 && rand < SPAWN_CONFIG.BUILDINGS.ROAD_EDGE.BRING_CLOSER_THRESHOLD) {
         xMin = -19; // bring buildings closer sometimes for narrow roads
       }
     }
@@ -156,12 +157,12 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     } else if (this.isAlley(gridX + 1, gridZ)) {
       const alleySeed = Math.sin((gridX + 1) * 12.9898 + gridZ * 78.233) * 43758.5453;
       const alleyRand = alleySeed - Math.floor(alleySeed);
-      if (alleyRand < 0.4) xMax = 19;
-      else if (alleyRand < 0.7) xMax = 16;
+      if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.NARROW_THRESHOLD) xMax = 19;
+      else if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.MEDIUM_THRESHOLD) xMax = 16;
       else xMax = 13;
     } else if (this.roadColumns.has(gridX + 1) || this.roadRows.has(gridZ)) {
       const { rwX } = this.getRoadWidthForGrid(gridX + 1, gridZ);
-      if (rwX === 14 && rand > 0.5) {
+      if (rwX === 14 && rand > (1.0 - SPAWN_CONFIG.BUILDINGS.ROAD_EDGE.BRING_CLOSER_THRESHOLD)) {
         xMax = 19;
       }
     }
@@ -172,12 +173,12 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     } else if (this.isAlley(gridX, gridZ - 1)) {
       const alleySeed = Math.sin(gridX * 12.9898 + (gridZ - 1) * 78.233) * 43758.5453;
       const alleyRand = alleySeed - Math.floor(alleySeed);
-      if (alleyRand < 0.4) zMin = -19;
-      else if (alleyRand < 0.7) zMin = -16;
+      if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.NARROW_THRESHOLD) zMin = -19;
+      else if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.MEDIUM_THRESHOLD) zMin = -16;
       else zMin = -13;
     } else if (this.roadColumns.has(gridX) || this.roadRows.has(gridZ - 1)) {
       const { rwZ } = this.getRoadWidthForGrid(gridX, gridZ - 1);
-      if (rwZ === 14 && rand < 0.5) {
+      if (rwZ === 14 && rand < SPAWN_CONFIG.BUILDINGS.ROAD_EDGE.BRING_CLOSER_THRESHOLD) {
         zMin = -19;
       }
     }
@@ -188,12 +189,12 @@ export function buildBuildingTile(gridX, gridZ, posX, posZ, group, obstacles, li
     } else if (this.isAlley(gridX, gridZ + 1)) {
       const alleySeed = Math.sin(gridX * 12.9898 + (gridZ + 1) * 78.233) * 43758.5453;
       const alleyRand = alleySeed - Math.floor(alleySeed);
-      if (alleyRand < 0.4) zMax = 19;
-      else if (alleyRand < 0.7) zMax = 16;
+      if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.NARROW_THRESHOLD) zMax = 19;
+      else if (alleyRand < SPAWN_CONFIG.BUILDINGS.ALLEY_WIDTHS.MEDIUM_THRESHOLD) zMax = 16;
       else zMax = 13;
     } else if (this.roadColumns.has(gridX) || this.roadRows.has(gridZ + 1)) {
       const { rwZ } = this.getRoadWidthForGrid(gridX, gridZ + 1);
-      if (rwZ === 14 && rand > 0.5) {
+      if (rwZ === 14 && rand > (1.0 - SPAWN_CONFIG.BUILDINGS.ROAD_EDGE.BRING_CLOSER_THRESHOLD)) {
         zMax = 19;
       }
     }

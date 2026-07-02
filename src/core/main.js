@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
+import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { LightTrail } from './lighttrail.js';
 import { createLensflareTexture, createSkidmarkTexture, createNitroFlareTexture } from './textures.js';
@@ -232,8 +236,60 @@ class Game {
     const renderPass = new RenderPass(this.scene, this.camera);
     const outputPass = new OutputPass();
 
+    // 1. AAA Bloom Pass (starts at 0 strength, kicks in on nitro)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.0, 0.4, 0.85);
+
+    // 2. Custom Radial Blur Shader Pass
+    const RadialBlurShader = {
+      uniforms: {
+        "tDiffuse": { value: null },
+        "center": { value: new THREE.Vector2(0.5, 0.5) },
+        "strength": { value: 0.0 } // 0 = off
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform vec2 center;
+        uniform float strength;
+        varying vec2 vUv;
+        
+        void main() {
+          vec4 color = vec4(0.0);
+          float total = 0.0;
+          vec2 toCenter = center - vUv;
+          
+          for(float t = 0.0; t <= 12.0; t++) {
+            float percent = t / 12.0;
+            float weight = 1.0 - percent;
+            color += texture2D(tDiffuse, vUv + toCenter * percent * strength) * weight;
+            total += weight;
+          }
+          gl_FragColor = color / total;
+        }
+      `
+    };
+    this.radialBlurPass = new ShaderPass(RadialBlurShader);
+
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(renderPass);
+
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(this.radialBlurPass);
+    
+    // AAA Film Grain
+    this.filmPass = new FilmPass(0.25, false);
+    this.composer.addPass(this.filmPass);
+
+    // AAA Anti-Aliasing Pass
+    this.smaaPass = new SMAAPass(window.innerWidth * window.devicePixelRatio, window.innerHeight * window.devicePixelRatio);
+    this.composer.addPass(this.smaaPass);
+    
     this.composer.addPass(outputPass);
 
     // Resize handler
@@ -242,6 +298,9 @@ class Game {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.composer.setSize(window.innerWidth, window.innerHeight);
+      if (this.smaaPass) {
+        this.smaaPass.setSize(window.innerWidth * window.devicePixelRatio, window.innerHeight * window.devicePixelRatio);
+      }
     });
   }
 
@@ -3677,7 +3736,30 @@ class Game {
     this.perf.race = performance.now() - tRaceStart;
 
     const tParticlesStart = performance.now();
-    // Tick systems
+
+    // Post-processing effects (Nitro Glow and Blur)
+    const speed = this.physics ? this.physics.velocity.length() : 0;
+    const isBoosting = this.physics && this.physics.isBoosting;
+    
+    const targetBloom = isBoosting ? 0.15 : 0.0; // Very subtle glow on nitro
+    
+    // Dynamic blur based on speeds (> 80 MPH)
+    const speedMph = speed * 2.23694;
+    let targetBlur = 0.0;
+    if (speedMph > 80) {
+      // Smooth exponential curve: starts barely visible, gets intense at 160+ MPH
+      const pct = Math.min((speedMph - 80) / 80, 1.0); 
+      targetBlur = (pct * pct) * 0.06;
+    }
+    if (isBoosting) {
+      targetBlur += 0.04;
+    }
+    targetBlur = Math.min(targetBlur, 0.10); // Cap max blur
+    
+    // Smooth transition
+    this.bloomPass.strength += (targetBloom - this.bloomPass.strength) * (1 - Math.exp(-8 * dt));
+    this.radialBlurPass.uniforms.strength.value += (targetBlur - this.radialBlurPass.uniforms.strength.value) * (1 - Math.exp(-8 * dt));
+    
     this.updateParticles(scaledDt);
     this.updateCheckpointSmoke(scaledDt);
     this.updateDebris(scaledDt);
@@ -3954,7 +4036,7 @@ class Game {
       if (this.sparkLight.intensity < 0.1) this.sparkLight.intensity = 0;
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
     this.perf.render = performance.now() - tRenderStart;
 
     const totalTime = performance.now() - startFrame;

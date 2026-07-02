@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AICar } from '../ai/ai.js';
 import { NavGraph } from '../world/navgraph.js';
+import { SPAWN_CONFIG } from '../world/spawnConfig.js';
 
 
 export class RaceManager {
@@ -558,6 +559,7 @@ export class RaceManager {
     const intersections = [];
     const cols = Array.from(world.roadColumns);
     const rows = Array.from(world.roadRows);
+    const conf = SPAWN_CONFIG.EVENTS.RACE;
 
     cols.forEach(cx => {
       rows.forEach(cz => {
@@ -567,8 +569,8 @@ export class RaceManager {
           const wz = cz * world.tileSize;
           const dist = playerPos ? Math.hypot(wx - playerPos.x, wz - playerPos.z) : 250;
           
-          // Spawn events in a broad range (80m to 1800m) to give lots of choice
-          if (dist > 80 && dist < 1800) {
+          // Spawn events in a broad range
+          if (dist > conf.MIN_SPAWN_DISTANCE && dist < conf.MAX_SPAWN_DISTANCE) {
             intersections.push({ x: wx, z: wz });
           }
         }
@@ -580,18 +582,19 @@ export class RaceManager {
     const modes = ['sprint', 'circuit'];
 
     if (intersections.length > 0) {
-      // Shuffle and pick up to 36 events for high event density
+      // Shuffle and pick up to MAX_CONCURRENT_EVENTS events
       const shuffled = intersections.sort(() => 0.5 - Math.random());
-      const count = Math.min(36, shuffled.length);
+      const count = Math.min(conf.MAX_CONCURRENT_EVENTS, shuffled.length);
+      
       for (let i = 0; i < count; i++) {
         const mode = modes[Math.floor(Math.random() * modes.length)];
         this.worldEvents.push({
           x: shuffled[i].x,
           z: shuffled[i].z,
           mode: mode,
-          laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
-          checkpoints: Math.floor(Math.random() * 8) + 5, // 5 to 12 checkpoints
-          racers: Math.floor(Math.random() * 5) + 3
+          laps: mode === 'circuit' ? Math.floor(Math.random() * (conf.CIRCUIT_LAPS_MAX - conf.CIRCUIT_LAPS_MIN + 1)) + conf.CIRCUIT_LAPS_MIN : 1,
+          checkpoints: Math.floor(Math.random() * (conf.CHECKPOINTS_MAX - conf.CHECKPOINTS_MIN + 1)) + conf.CHECKPOINTS_MIN,
+          racers: Math.floor(Math.random() * (conf.RACERS_MAX - conf.RACERS_MIN + 1)) + conf.RACERS_MIN
         });
       }
     } else {
@@ -600,15 +603,16 @@ export class RaceManager {
       const rowArr = Array.from(world.roadRows);
       if (colArr.length > 0 && rowArr.length > 0) {
         for (let i = 0; i < 5; i++) {
-          const cx = colArr[Math.floor(Math.random() * colArr.length)];
           const mode = modes[i % modes.length];
+          const wx = colArr[Math.floor(Math.random() * colArr.length)] * world.tileSize;
+          const wz = rowArr[Math.floor(Math.random() * rowArr.length)] * world.tileSize;
           this.worldEvents.push({
-            x: cx * world.tileSize,
-            z: cz * world.tileSize,
+            x: wx,
+            z: wz,
             mode: mode,
-            laps: mode === 'circuit' ? Math.floor(Math.random() * 3) + 2 : 1,
-            checkpoints: Math.floor(Math.random() * 8) + 5, // 5 to 12 checkpoints
-            racers: Math.floor(Math.random() * 5) + 3
+            laps: mode === 'circuit' ? Math.floor(Math.random() * (conf.CIRCUIT_LAPS_MAX - conf.CIRCUIT_LAPS_MIN + 1)) + conf.CIRCUIT_LAPS_MIN : 1,
+            checkpoints: Math.floor(Math.random() * (conf.CHECKPOINTS_MAX - conf.CHECKPOINTS_MIN + 1)) + conf.CHECKPOINTS_MIN,
+            racers: Math.floor(Math.random() * (conf.RACERS_MAX - conf.RACERS_MIN + 1)) + conf.RACERS_MIN
           });
         }
       }

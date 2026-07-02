@@ -410,7 +410,24 @@ export class AICar {
     }
 
     // ── 7b. Ramp Targeting ──────────────────────────────────────────────────
-    if (this._upcomingCornerSeverity > 0.25) {
+    let longDistanceTurnAhead = false;
+    if (this._currentPath) {
+      const lookaheadWpts = 14; // Check way ahead for turns before committing to a ramp
+      for (let i = this._pathWptIdx; i < Math.min(this._currentPath.length - 2, this._pathWptIdx + lookaheadWpts); i++) {
+        const a = this._currentPath[i], b = this._currentPath[i+1], c = this._currentPath[i+2];
+        const abX = b.x - a.x, abZ = b.z - a.z;
+        const bcX = c.x - b.x, bcZ = c.z - b.z;
+        const lenSq1 = abX*abX+abZ*abZ, lenSq2 = bcX*bcX+bcZ*bcZ;
+        if (lenSq1 < 0.1 || lenSq2 < 0.1) continue;
+        const dot = (abX * bcX + abZ * bcZ) / Math.sqrt(lenSq1 * lenSq2);
+        if (Math.acos(Math.max(-1, Math.min(1, dot))) > 0.35) { // ~20 degree turn
+          longDistanceTurnAhead = true;
+          break;
+        }
+      }
+    }
+
+    if (this._upcomingCornerSeverity > 0.25 || longDistanceTurnAhead) {
       // Too close to a turn, do NOT jump ramps! Cancel any existing lock-on.
       this._rampTimer = 0;
       this._rampTargetPt = null;

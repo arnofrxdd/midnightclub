@@ -14,51 +14,49 @@ import {
   applySidewalkUVs,
   createDetailedWindowGeometry
 } from './geometry.js';
-import { createFireHydrantMesh, createNewspaperBoxMesh, spawnTemplateTree, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
 import { buildRoadTile } from './roadTile.js';
 import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
-import { buildMallTile, isMallBlock } from './mallTile.js';
+import { isMallBlock, getMallBounds, getBlockInfo } from './mallTile.js';
 import { isGasStationBlock, buildGasStationTile } from './gasStationTile.js';
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { SPAWN_CONFIG } from './spawnConfig.js';
+import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
 
 export class World {
   constructor(scene) {
     this.scene = scene;
-    this.tileSize = 40;
+    this.tileSize = 40.0;
 
-    // Generate variable road columns and rows (spacings of 3 to 7 tiles)
-    // Use a random session seed to ensure the grid is unique on every game launch
-    const seedOffset = Math.random() * 10000;
+    this.renderRadius = 4; // Spawn tiles heavily reduced for performance
+
+    this.loadedTiles = new Map();
+    this.buildingGeoCache = new Map();
+    this.obstacles = [];
+
+    // Procedural City Grid Layout Setup
     this.mainRoadColumns = new Set();
     this.mainRoadRows = new Set();
     this.mainRoadColumns.add(0);
     this.mainRoadRows.add(0);
 
+    // Create random layout using seeded noise based on configured road spacing bounds
+    const seedOffset = Math.random() * 10000;
+    const minSpace = SPAWN_CONFIG.WORLD.ROAD_SPACING_MIN;
+    const maxSpace = SPAWN_CONFIG.WORLD.ROAD_SPACING_MAX;
+    const spaceRange = (maxSpace - minSpace + 1);
+
     let curr = 0;
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 2 + Math.floor(rand * 6); // Spacing of 2 to 7 tiles (allows 1x1 blocks)
+      curr += minSpace + Math.floor(rand * spaceRange);
       this.mainRoadColumns.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 1.5) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (2 + Math.floor(rand * 6));
+      curr -= (minSpace + Math.floor(rand * spaceRange));
       this.mainRoadColumns.add(curr);
     }
 
@@ -66,14 +64,14 @@ export class World {
     while (curr < 1000) {
       const seed = Math.sin((curr + seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr += 2 + Math.floor(rand * 6);
+      curr += minSpace + Math.floor(rand * spaceRange);
       this.mainRoadRows.add(curr);
     }
     curr = 0;
     while (curr > -1000) {
       const seed = Math.sin((curr - seedOffset) * 2.7) * 43758.5453;
       const rand = seed - Math.floor(seed);
-      curr -= (2 + Math.floor(rand * 6));
+      curr -= (minSpace + Math.floor(rand * spaceRange));
       this.mainRoadRows.add(curr);
     }
 
@@ -86,10 +84,10 @@ export class World {
       const c1 = sortedCols[i];
       const c2 = sortedCols[i + 1];
       const diff = c2 - c1;
-      if (diff >= 3) {
+      if (diff >= SPAWN_CONFIG.WORLD.ALLEY_MIN_BLOCK_WIDTH) {
         const seed = Math.sin(c1 * 12.9898 + c2 * 78.233) * 43758.5453;
         const rand = seed - Math.floor(seed);
-        if (rand < 0.2) { // 20% chance of a shortcut alley (more buildings, less alleys)
+        if (rand < SPAWN_CONFIG.WORLD.ALLEY_SPAWN_PROBABILITY) {
           const mid = c1 + Math.floor(diff / 2);
           this.shortcutColumns.add(mid);
         }
@@ -101,10 +99,10 @@ export class World {
       const r1 = sortedRows[i];
       const r2 = sortedRows[i + 1];
       const diff = r2 - r1;
-      if (diff >= 3) {
+      if (diff >= SPAWN_CONFIG.WORLD.ALLEY_MIN_BLOCK_WIDTH) {
         const seed = Math.sin(r1 * 53.1374 + r2 * 21.9427) * 43758.5453;
         const rand = seed - Math.floor(seed);
-        if (rand < 0.2) { // 20% chance of a shortcut alley (more buildings, less alleys)
+        if (rand < SPAWN_CONFIG.WORLD.ALLEY_SPAWN_PROBABILITY) {
           const mid = r1 + Math.floor(diff / 2);
           this.shortcutRows.add(mid);
         }
@@ -197,7 +195,10 @@ export class World {
       transparent: true,
       opacity: 0.26, // Adjusted for new texture fade
       blending: THREE.AdditiveBlending,
-      depthWrite: false
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4
     });
     this.ledGroundLightPoolMat.name = 'ledGroundLightPoolMat';
 
@@ -207,7 +208,10 @@ export class World {
       transparent: true,
       opacity: 0.35, // Adjusted for new texture fade
       blending: THREE.AdditiveBlending,
-      depthWrite: false
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4
     });
     this.sodiumGroundLightPoolMat.name = 'sodiumGroundLightPoolMat';
 
@@ -221,6 +225,9 @@ export class World {
       opacity: 0.30,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
       side: THREE.DoubleSide
     });
     this.storefrontGroundLightPoolMat.name = 'storefrontGroundLightPoolMat';

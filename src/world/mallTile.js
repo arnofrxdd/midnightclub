@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { applySidewalkUVs } from './geometry.js';
+import { SPAWN_CONFIG } from './spawnConfig.js';
 
 export function getBlockInfo(gridX, gridZ, roadCols, roadRows) {
   const cols = Array.from(roadCols).sort((a, b) => a - b);
@@ -83,14 +84,31 @@ export function isMallBlock(gridX, gridZ, roadCols, roadRows, isAlleyFn, getBase
   const block = getBlockInfo(gridX, gridZ, roadCols, roadRows);
   if (block.colMin === 0 || block.rowMin === 0) return false;
 
-  // Ensure the mall is medium-big (at least 2x2 tiles) so it has 4 distinct corners
+  // Ensure the mall is medium-big (at least min width/height)
   const width = block.colMax - block.colMin + 1;
   const height = block.rowMax - block.rowMin + 1;
-  if (width < 2 || height < 2) return false;
+  if (width < SPAWN_CONFIG.BLOCKS.MALL.MIN_WIDTH || height < SPAWN_CONFIG.BLOCKS.MALL.MIN_HEIGHT) return false;
 
-  // DEBUG: Supremely increase spawn rate of malls (approx 60%)
+  // Enforce flat terrain rule
+  if (getBaseHeightFn) {
+    const cx = ((block.colMin + block.colMax) / 2) * 40.0;
+    const cz = ((block.rowMin + block.rowMax) / 2) * 40.0;
+    const xSpan = (width / 2) * 40.0;
+    const zSpan = (height / 2) * 40.0;
+    
+    const h1 = getBaseHeightFn(cx - xSpan, cz - zSpan);
+    const h2 = getBaseHeightFn(cx + xSpan, cz - zSpan);
+    const h3 = getBaseHeightFn(cx - xSpan, cz + zSpan);
+    const h4 = getBaseHeightFn(cx + xSpan, cz + zSpan);
+    
+    const minH = Math.min(h1, h2, h3, h4);
+    const maxH = Math.max(h1, h2, h3, h4);
+    
+    if (maxH - minH > SPAWN_CONFIG.BLOCKS.MALL.MAX_SLOPE) return false;
+  }
+
   const hash = Math.sin(block.colMin * 12.9898 + block.rowMin * 78.233) * 43758.5453;
-  return (hash - Math.floor(hash)) < 0.6;
+  return (hash - Math.floor(hash)) < SPAWN_CONFIG.BLOCKS.MALL.PROBABILITY;
 }
 
 export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights) {

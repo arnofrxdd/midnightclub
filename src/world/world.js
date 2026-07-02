@@ -502,6 +502,9 @@ export class World {
     // 1h. TRASH CAN TEMPLATE
     this.templates.trashCan = this.createTrashCanMesh();
 
+    // 1i. TRAFFIC CONE TEMPLATE
+    this.templates.cone = this.createConeMesh();
+
     // 2. STREETLIGHT MODEL TEMPLATE
     const slGroup = new THREE.Group();
     const slPole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);
@@ -509,6 +512,36 @@ export class World {
     slPole.castShadow = true;
     slGroup.add(slPole);
     this.templates.streetlight = slGroup;
+  }
+
+  createConeMesh() {
+    const coneGroup = new THREE.Group();
+    // 1. Black base (0.8 x 0.08 x 0.8)
+    const baseGeo = new THREE.BoxGeometry(0.8, 0.08, 0.8);
+    baseGeo.translate(0, 0.04, 0);
+    const baseMesh = new THREE.Mesh(baseGeo, this.asphaltMat);
+    baseMesh.castShadow = true;
+    baseMesh.receiveShadow = true;
+    coneGroup.add(baseMesh);
+
+    // 2. Bright orange body (1.2 height)
+    const bodyGeo = new THREE.CylinderGeometry(0.06, 0.26, 1.2, 12);
+    bodyGeo.translate(0, 0.64, 0);
+    const bodyMesh = new THREE.Mesh(bodyGeo, this.yellowLineMat);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    coneGroup.add(bodyMesh);
+
+    // 3. Dual reflective white stripes
+    const stripe1Geo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 12);
+    stripe1Geo.translate(0, 0.85, 0);
+    coneGroup.add(new THREE.Mesh(stripe1Geo, this.whiteLineMat));
+
+    const stripe2Geo = new THREE.CylinderGeometry(0.18, 0.22, 0.20, 12);
+    stripe2Geo.translate(0, 0.45, 0);
+    coneGroup.add(new THREE.Mesh(stripe2Geo, this.whiteLineMat));
+    
+    return coneGroup;
   }
 
   createFireHydrantMesh() {

@@ -214,7 +214,7 @@ function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth
       type: 'cone',
       comHeight: 0.6,
       radius: 0.45,
-      position: new THREE.Vector3(cx, ch + 0.6, cz),
+      position: new THREE.Vector3(cx, ch, cz), // Spawn exactly on the ground
       group: null,
       flares: [],
       lights: [],

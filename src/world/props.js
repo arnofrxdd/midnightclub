@@ -1,5 +1,33 @@
 import * as THREE from 'three';
 
+export function createConeMesh() {
+  const coneGroup = new THREE.Group();
+
+  const baseGeo = new THREE.BoxGeometry(0.8, 0.08, 0.8);
+  baseGeo.translate(0, -0.56, 0);
+  const baseMesh = new THREE.Mesh(baseGeo, this.asphaltMat);
+  baseMesh.castShadow = true;
+  baseMesh.receiveShadow = true;
+  coneGroup.add(baseMesh);
+
+  const bodyGeo = new THREE.CylinderGeometry(0.06, 0.26, 1.2, 12);
+  bodyGeo.translate(0, 0.04, 0);
+  const bodyMesh = new THREE.Mesh(bodyGeo, this.yellowLineMat);
+  bodyMesh.castShadow = true;
+  bodyMesh.receiveShadow = true;
+  coneGroup.add(bodyMesh);
+
+  const stripe1Geo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 12);
+  stripe1Geo.translate(0, 0.25, 0);
+  coneGroup.add(new THREE.Mesh(stripe1Geo, this.whiteLineMat));
+
+  const stripe2Geo = new THREE.CylinderGeometry(0.18, 0.22, 0.20, 12);
+  stripe2Geo.translate(0, -0.15, 0);
+  coneGroup.add(new THREE.Mesh(stripe2Geo, this.whiteLineMat));
+
+  return coneGroup;
+}
+
 export function createFireHydrantMesh() {
     const fh = new THREE.Group();
     const redMat = this.hydrantRedMat;

@@ -5,7 +5,7 @@ import { buildAlleyTile } from './alleyTile.js';
 import { buildBuildingTile } from './buildingTile.js';
 import { isMallBlock, buildMallTile } from './mallTile.js';
 import { isGasStationBlock, buildGasStationTile } from './gasStationTile.js';
-import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh } from './props.js';
+import { createFireHydrantMesh, createNewspaperBoxMesh, createBenchMesh, createPhoneBoothMesh, createTrashCanMesh, createConeMesh } from './props.js';
 
 class MockWorld {
   constructor(initData) {
@@ -127,6 +127,7 @@ class MockWorld {
     this.createBenchMesh = createBenchMesh;
     this.createPhoneBoothMesh = createPhoneBoothMesh;
     this.createTrashCanMesh = createTrashCanMesh;
+    this.createConeMesh = createConeMesh;
 
     this.templates = {};
     this.generateTemplates();
@@ -202,6 +203,7 @@ class MockWorld {
     this.templates.bench = this.createBenchMesh();
     this.templates.phoneBooth = this.createPhoneBoothMesh();
     this.templates.trashCan = this.createTrashCanMesh();
+    this.templates.cone = this.createConeMesh();
 
     const slGroup = new THREE.Group();
     const slPole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.5, 0.3), this.streetlightPoleMat);

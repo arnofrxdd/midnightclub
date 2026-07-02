@@ -38,7 +38,7 @@ function buildWedge(length, height, width, slopeType, slopeDir) {
   return geo;
 }
 
-function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, isVertical, side, group, obstacles, lights) {
+function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, isVertical, side, group, obstacles, lights, coneTransforms, localConeBreakables) {
   const h = this.getBaseHeight(posX, posZ);
   const rampHeight = 2.2;
   const rampLength = 8.0;
@@ -123,6 +123,9 @@ function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth
     this.deformGeometryToHills(holeGeo, 0, 0);
     maintGroup.add(new THREE.Mesh(holeGeo, this.streetlightPoleMat));
 
+    const rubbleAsphaltGeoms = [];
+    const rubbleConcreteGeoms = [];
+
     // Scatter concrete and asphalt rubble chunks around the edges
     for (let i = 0; i < 18; i++) {
       const rs = 0.3 + Math.random() * 0.5; // Random rubble size
@@ -138,9 +141,25 @@ function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth
       this.deformGeometryToHills(rGeo, 0, 0);
 
       // 50/50 mix of broken black asphalt and gray concrete
-      const rMesh = new THREE.Mesh(rGeo, Math.random() > 0.5 ? this.asphaltMat : this.concreteMat);
-      rMesh.castShadow = true;
-      maintGroup.add(rMesh);
+      if (Math.random() > 0.5) {
+        rubbleAsphaltGeoms.push(rGeo);
+      } else {
+        rubbleConcreteGeoms.push(rGeo);
+      }
+    }
+
+    if (rubbleAsphaltGeoms.length > 0) {
+      const mergedA = BufferGeometryUtils.mergeGeometries(rubbleAsphaltGeoms);
+      const meshA = new THREE.Mesh(mergedA, this.asphaltMat);
+      meshA.castShadow = true;
+      maintGroup.add(meshA);
+    }
+
+    if (rubbleConcreteGeoms.length > 0) {
+      const mergedC = BufferGeometryUtils.mergeGeometries(rubbleConcreteGeoms);
+      const meshC = new THREE.Mesh(mergedC, this.concreteMat);
+      meshC.castShadow = true;
+      maintGroup.add(meshC);
     }
   };
 
@@ -182,60 +201,35 @@ function buildMaintenanceZone(gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth
     height: 1000 // Block entirely vertically
   });
 
-  // Unique index counter to give unique names to breakable cones
-  let coneIdx = 0;
-
-  // Helper to spawn a physical breakable cone (placed directly at ground height h)
+  // Helper to spawn a physical breakable cone
   const addBreakableCone = (cx, cz) => {
     const ch = this.getBaseHeight(cx, cz);
-    const name = `cone_${gridX}_${gridZ}_${coneIdx++}`;
+    
+    const matrix = new THREE.Matrix4();
+    matrix.makeTranslation(cx, ch + 0.6, cz); // Center of mass is 0.6
+    const instanceId = coneTransforms.length;
+    coneTransforms.push(matrix);
 
-    const coneGroup = new THREE.Group();
-    coneGroup.name = name;
-
-    // 1. Black base (0.8 x 0.08 x 0.8)
-    const baseGeo = new THREE.BoxGeometry(0.8, 0.08, 0.8);
-    baseGeo.translate(0, 0.04, 0);
-    const baseMesh = new THREE.Mesh(baseGeo, this.asphaltMat);
-    baseMesh.castShadow = true;
-    baseMesh.receiveShadow = true;
-    coneGroup.add(baseMesh);
-
-    // 2. Bright orange body (1.2 height)
-    const bodyGeo = new THREE.CylinderGeometry(0.06, 0.26, 1.2, 12);
-    bodyGeo.translate(0, 0.64, 0);
-    const bodyMesh = new THREE.Mesh(bodyGeo, this.yellowLineMat);
-    bodyMesh.castShadow = true;
-    bodyMesh.receiveShadow = true;
-    coneGroup.add(bodyMesh);
-
-    // 3. Dual reflective white stripes
-    const stripe1Geo = new THREE.CylinderGeometry(0.12, 0.16, 0.25, 12);
-    stripe1Geo.translate(0, 0.85, 0);
-    coneGroup.add(new THREE.Mesh(stripe1Geo, this.whiteLineMat));
-
-    const stripe2Geo = new THREE.CylinderGeometry(0.18, 0.22, 0.20, 12);
-    stripe2Geo.translate(0, 0.45, 0);
-    coneGroup.add(new THREE.Mesh(stripe2Geo, this.whiteLineMat));
-
-    // Place group directly at terrain height (no deformation needed for tiny props)
-    coneGroup.position.set(cx, ch, cz);
-    group.add(coneGroup);
-
-    // Register breakable details
-    this.breakables.push({
+    const breakable = {
       type: 'cone',
       comHeight: 0.6,
       radius: 0.45,
       position: new THREE.Vector3(cx, ch + 0.6, cz),
+      group: null,
+      flares: [],
+      lights: [],
       broken: false,
       tileX: posX,
       tileZ: posZ,
       velocity: new THREE.Vector3(),
       angularVelocity: new THREE.Vector3(),
-      isInstanced: false,
-      groupName: name
-    });
+      isInstanced: true,
+      templateName: 'cone',
+      instanceId: instanceId,
+      instancedMeshes: null
+    };
+    this.breakables.push(breakable);
+    localConeBreakables.push(breakable);
   };
 
   // Helper to make concrete Jersey Barriers (deformed relative to absolute coordinates, starting at Y=0)
@@ -498,10 +492,12 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
   const hydrantTransforms = [];
   const phoneBoothTransforms = [];
   const trashCanTransforms = [];
+  const coneTransforms = [];
   const localBenchBreakables = [];
   const localHydrantBreakables = [];
   const localPhoneBoothBreakables = [];
   const localTrashCanBreakables = [];
+  const localConeBreakables = [];
 
   const addTree = (tx, tz) => {
     const h = this.getBaseHeight(tx, tz);
@@ -1487,7 +1483,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           if (currentOffset === targetZOffset) {
             const sideSeed = Math.sin(gridX * 7.123 + chunkZ * 19.456) * 43758.5453;
             const side = (sideSeed - Math.floor(sideSeed)) > 0.5 ? 1 : -1;
-            buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, true, side, group, obstacles, lights);
+            buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, true, side, group, obstacles, lights, coneTransforms, localConeBreakables);
           }
         }
       }
@@ -1800,7 +1796,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
           if (currentOffset === targetXOffset) {
             const sideSeed = Math.sin(chunkX * 7.123 + gridZ * 19.456) * 43758.5453;
             const side = (sideSeed - Math.floor(sideSeed)) > 0.5 ? 1 : -1;
-            buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, false, side, group, obstacles, lights);
+            buildMaintenanceZone.call(this, gridX, gridZ, posX, posZ, roadWidth, sidewalkWidth, false, side, group, obstacles, lights, coneTransforms, localConeBreakables);
           }
         }
       }
@@ -1836,6 +1832,7 @@ export function buildRoadTile(gridX, gridZ, posX, posZ, group, obstacles, lights
   instantiateProps(hydrantTransforms, 'fireHydrant', localHydrantBreakables);
   instantiateProps(phoneBoothTransforms, 'phoneBooth', localPhoneBoothBreakables);
   instantiateProps(trashCanTransforms, 'trashCan', localTrashCanBreakables);
+  instantiateProps(coneTransforms, 'cone', localConeBreakables);
 
   // Merge & instantiate collected geometries to minimize draw calls
   if (localPoles.length > 0) {

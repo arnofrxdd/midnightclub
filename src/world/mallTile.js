@@ -395,7 +395,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
     const neonRimGeo = new THREE.TorusGeometry(14.2, 0.15, 8, 64);
     neonRimGeo.rotateX(Math.PI / 2);
     neonRimGeo.translate(bCx, 0.8 + buildingBaseHeight, bCz);
-    const rimMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_1' });
+    const rimMat = this.showroomNeonMat_1;
     highGroup.add(new THREE.Mesh(neonRimGeo, rimMat));
 
     // Showcase Cars (4 exotic tuner cars facing outwards)
@@ -410,13 +410,13 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       const padGeo = new THREE.BoxGeometry(5.8, 0.1, 3.0);
       padGeo.rotateY(-angle);
       padGeo.translate(cx, 0.85 + buildingBaseHeight, cz);
-      const padMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' });
+      const padMat = this.showroomPadMat;
       highGroup.add(new THREE.Mesh(padGeo, padMat));
 
       const neonPadGeo = new THREE.BoxGeometry(6.0, 0.05, 3.2);
       neonPadGeo.rotateY(-angle);
       neonPadGeo.translate(cx, 0.82 + buildingBaseHeight, cz);
-      const neonPadMat = new THREE.MeshStandardMaterial({ name: `showroomNeonMat_${i}` });
+      const neonPadMat = this[`showroomNeonMat_${i}`];
       highGroup.add(new THREE.Mesh(neonPadGeo, neonPadMat));
 
       // 2. AAA REIMAGINED TUNER CAR GEOMETRY
@@ -454,7 +454,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       mergedCar.translate(cx - bCx, 0, cz - bCz);
       mergedCar.translate(bCx, 0, bCz);
 
-      const carMat = new THREE.MeshStandardMaterial({ name: `showroomCarMat_${i}` });
+      const carMat = this[`showroomCarMat_${i}`];
       highGroup.add(new THREE.Mesh(mergedCar, carMat));
 
       // 3. WHEELS (Black Rubber)
@@ -474,7 +474,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       mergedWheels.rotateY(-angle);
       mergedWheels.translate(cx - bCx, 0, cz - bCz);
       mergedWheels.translate(bCx, 0, bCz);
-      const tireMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' }); // Re-use dark grey
+      const tireMat = this.showroomPadMat; // Re-use dark grey
       highGroup.add(new THREE.Mesh(mergedWheels, tireMat));
 
       // 4. GLOWING HEADLIGHTS
@@ -487,7 +487,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       mergedHL.rotateY(-angle);
       mergedHL.translate(cx - bCx, 0, cz - bCz);
       mergedHL.translate(bCx, 0, bCz);
-      const hlMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_1' }); // White Glow
+      const hlMat = this.showroomNeonMat_1; // White Glow
       highGroup.add(new THREE.Mesh(mergedHL, hlMat));
 
       // 5. GLOWING TAILLIGHTS
@@ -499,7 +499,7 @@ export function buildMallTile(gridX, gridZ, posX, posZ, group, obstacles, lights
       mergedTL.rotateY(-angle);
       mergedTL.translate(cx - bCx, 0, cz - bCz);
       mergedTL.translate(bCx, 0, bCz);
-      const tlMat = new THREE.MeshStandardMaterial({ name: 'showroomNeonMat_0' }); // Red Glow
+      const tlMat = this.showroomNeonMat_0; // Red Glow
       highGroup.add(new THREE.Mesh(mergedTL, tlMat));
 
       // 6. REALTIME DYNAMIC LIGHTING (Casts actual light onto the floor and cars)

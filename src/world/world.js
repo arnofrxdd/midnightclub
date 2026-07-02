@@ -163,7 +163,7 @@ export class World {
     });
     this.yellowLineMat = new THREE.MeshStandardMaterial({ color: 0xe5a93b, roughness: 0.6 });
     this.whiteLineMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.6 });
-    
+
     // Mall specific materials
     this.mallFacadeMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f7, roughness: 0.1, metalness: 0.1, emissive: 0x111111 });
     this.mallFloorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.2, emissive: 0x222222 });
@@ -175,7 +175,7 @@ export class World {
 
     // Showroom Materials
     this.showroomPadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.1 });
-    
+
     // 0: Red, 1: Black, 2: Yellow, 3: White
     this.showroomCarMat_0 = new THREE.MeshStandardMaterial({ color: 0xff002b, metalness: 0.8, roughness: 0.1 });
     this.showroomCarMat_1 = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 });
@@ -1332,6 +1332,9 @@ export class World {
           type: b.type,
           comHeight: b.comHeight,
           radius: b.radius,
+          width: b.width,
+          depth: b.depth,
+          rotationY: b.rotationY,
           position: new THREE.Vector3().fromArray(b.position),
           broken: b.broken,
           tileX: b.tileX,
@@ -1447,7 +1450,7 @@ export class World {
     return buildMallTile.call(this, gridX, gridZ, posX, posZ, group, obstacles, lights);
   }
 
-  checkCollision(posX, posZ, radius = 2.2, posY = null) {
+  checkCollision(posX, posZ, radius = 2.2, posY = null, ignoreRamps = true, ignoreTrafficBlockers = true) {
     // Spatial hash lookup: only check obstacles in nearby grid cells
     const cs = this.spatialCellSize;
     const cx0 = Math.floor((posX - radius) / cs);
@@ -1469,7 +1472,8 @@ export class World {
           if (obs._lastCheckId === currentCheckId) continue;
           obs._lastCheckId = currentCheckId;
 
-          if (obs.isRamp) continue; // Skip ramps for horizontal collision resolution
+          if (ignoreRamps && obs.isRamp) continue; // Skip ramps for horizontal collision resolution
+          if (ignoreTrafficBlockers && obs.isTrafficBlockerOnly) continue; // Skip traffic blockers for player
           if (posY !== null) {
             const h = obs.height || obs.yMax || 1000;
             if (posY > h + 0.2) continue; // Passed cleanly above the obstacle

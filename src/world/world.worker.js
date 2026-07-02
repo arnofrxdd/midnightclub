@@ -87,6 +87,13 @@ class MockWorld {
     this.tlYellowOffMat = new THREE.MeshStandardMaterial({ name: 'tlYellowOffMat' });
     this.tlGreenOffMat = new THREE.MeshStandardMaterial({ name: 'tlGreenOffMat' });
 
+    // Mall Specific Materials
+    this.showroomPadMat = new THREE.MeshStandardMaterial({ name: 'showroomPadMat' });
+    for (let i = 0; i < 5; i++) {
+      this[`showroomNeonMat_${i}`] = new THREE.MeshStandardMaterial({ name: `showroomNeonMat_${i}` });
+      this[`showroomCarMat_${i}`] = new THREE.MeshStandardMaterial({ name: `showroomCarMat_${i}` });
+    }
+
     // Mock materials list for tile choice
     this.asphaltMaterials = [];
     for (let i = 0; i < 8; i++) {
@@ -546,6 +553,9 @@ self.onmessage = function (e) {
         type: b.type,
         comHeight: b.comHeight,
         radius: b.radius,
+        width: b.width,
+        depth: b.depth,
+        rotationY: b.rotationY,
         position: b.position.toArray(),
         broken: b.broken,
         tileX: b.tileX,

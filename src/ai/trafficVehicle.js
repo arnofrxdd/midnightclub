@@ -19,6 +19,10 @@ export class TrafficVehicle {
     this.roadAxis = 'x'; // 'x' if driving horizontally along X, 'z' if driving vertically along Z
     this.roadCoord = 0;   // The fixed coordinate of the road
     this.dirSign = 1;     // 1 for positive direction (+X or +Z), -1 for negative direction
+
+    // Lane switching
+    this._laneSwitchOffset = 0;
+    this._laneSwitchTimer = 0;
     
     // Cooldown to prevent multi-turns at the same intersection
     this.lastIntersectionKey = '';
@@ -181,7 +185,7 @@ export class TrafficVehicle {
         if (overlapsExisting) continue;
 
         // Overlap safety check 3: Static tile obstacles (alley dumpsters, trash bins, utility poles, walls)
-        if (world.checkCollision && world.checkCollision(parkX, parkZ, 3.2).collision) {
+        if (world.checkCollision && world.checkCollision(parkX, parkZ, 3.2, null, false, false).collision) {
           continue;
         }
 
@@ -303,7 +307,7 @@ export class TrafficVehicle {
         }
         if (overlapsExisting) continue;
 
-        if (world.checkCollision && world.checkCollision(parkX, parkZ, 3.2).collision) {
+        if (world.checkCollision && world.checkCollision(parkX, parkZ, 3.2, null, false, false).collision) {
           continue;
         }
 
@@ -468,6 +472,11 @@ export class TrafficVehicle {
         }
         if (tooCloseToAI) continue;
 
+        // CRITICAL FIX: Active traffic vehicles were missing collision checks entirely!
+        if (world && world.checkCollision && world.checkCollision(tempX, tempZ, 3.2, null, false, false).collision) {
+          continue;
+        }
+
         spawnX = tempX;
         spawnZ = tempZ;
         found = true;
@@ -505,6 +514,11 @@ export class TrafficVehicle {
           const rw = randX > 0.6 ? 14 : 26;
           const offset = rw === 14 ? 2.5 : 5.0;
           spawnX = roadCoord + (dirSign > 0 ? offset : -offset);
+        }
+
+        // CRITICAL FIX: If the fallback spawn hits an obstacle, ABORT!
+        if (world && world.checkCollision && world.checkCollision(spawnX, spawnZ, 3.2, null, false, false).collision) {
+          return; // Abort recycling, try again next frame!
         }
       }
     }
@@ -774,6 +788,55 @@ export class TrafficVehicle {
       }
     }
 
+    // 2b. Construction Zone Scanner (Lane Switching)
+    if (this._laneSwitchTimer > 0) {
+      this._laneSwitchTimer -= dt;
+      if (this._laneSwitchTimer <= 0) {
+        this._laneSwitchOffset = 0;
+      }
+    } else if (this.world && this.world.obstacleGrid) {
+      const scanDist = 90.0; // Check up to 90m ahead
+      const cs = this.world.spatialCellSize || 30;
+      const cx0 = Math.floor((this.position.x - scanDist) / cs);
+      const cx1 = Math.floor((this.position.x + scanDist) / cs);
+      const cz0 = Math.floor((this.position.z - scanDist) / cs);
+      const cz1 = Math.floor((this.position.z + scanDist) / cs);
+      
+      let constructionAhead = false;
+      for (let cx = cx0; cx <= cx1 && !constructionAhead; cx++) {
+        for (let cz = cz0; cz <= cz1 && !constructionAhead; cz++) {
+          const cell = this.world.obstacleGrid.get(`${cx},${cz}`);
+          if (!cell) continue;
+          for (let i = 0; i < cell.length; i++) {
+            const obs = cell[i];
+            if (!obs.isConstruction) continue;
+            
+            const obsX = (obs.xMin + obs.xMax) / 2;
+            const obsZ = (obs.zMin + obs.zMax) / 2;
+            const dx = obsX - this.position.x;
+            const dz = obsZ - this.position.z;
+            
+            const localZ = dx * fwdSin + dz * fwdCos;
+            const localX = dx * rgtCos + dz * rgtSin;
+            
+            // If in front, within scanDist, and on our half of the road (within ~8.0m laterally)
+            if (localZ > 0 && localZ < scanDist && Math.abs(localX) < 8.0) {
+              constructionAhead = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (constructionAhead) {
+        // Bulletproof dodge: switch completely into the oncoming lane to clear the wide cones
+        const roadW = this.getRoadWidth();
+        const baseOffset = roadW === 14 ? 2.5 : 5.0;
+        this._laneSwitchOffset = -2.0 * baseOffset - 2.0; 
+        this._laneSwitchTimer = 9.5; // Stay in oncoming lane for 9.5s
+      }
+    }
+
     // Intersection collision avoidance (Yielding to cars already in the intersection)
     const inIntersectionCenter = Math.abs(distToIntersectionX) < 6.0 && Math.abs(distToIntersectionZ) < 6.0;
     if (!inIntersectionCenter) {
@@ -787,9 +850,30 @@ export class TrafficVehicle {
       if (approachDist > 6.0 && approachDist < 18.0) {
         const checkIntersection = (car) => {
           if (car === this || !car.position || car.isActive === false) return false;
-          const otherDistX = Math.abs(car.position.x - currentBlockX);
-          const otherDistZ = Math.abs(car.position.z - currentBlockZ);
-          return (otherDistX < 8.5 && otherDistZ < 8.5);
+          const cx = car.position.x;
+          const cz = car.position.z;
+          const otherDistX = Math.abs(cx - currentBlockX);
+          const otherDistZ = Math.abs(cz - currentBlockZ);
+          
+          // 1. If they are literally inside the middle of the intersection, always yield
+          if (otherDistX < 12.0 && otherDistZ < 12.0) return true;
+
+          // 2. If they are on the cross streets (up to 45m away), check if they are approaching
+          if ((otherDistX < 45.0 && otherDistZ < 14.0) || (otherDistZ < 45.0 && otherDistX < 14.0)) {
+            const hdg = (car.position === playerPos) ? playerHeading : (car.heading || 0);
+            const carFwdX = Math.sin(hdg);
+            const carFwdZ = Math.cos(hdg);
+            
+            const toIntX = currentBlockX - cx;
+            const toIntZ = currentBlockZ - cz;
+            
+            // Dot product determines if they are facing/moving TOWARDS the intersection
+            const dot = carFwdX * toIntX + carFwdZ * toIntZ;
+            if (dot > 5.0) {
+              return true; // They are approaching fast! Yield!
+            }
+          }
+          return false;
         };
 
         if (playerPos && checkIntersection({position: playerPos})) yieldForIntersectionCar = true;
@@ -822,6 +906,7 @@ export class TrafficVehicle {
       // Yield by steering towards the sidewalk/curb
       offset += yieldIntensity * 3.5;
     }
+    offset += this._laneSwitchOffset;
 
     if (this.roadAxis === 'x') {
       baselineAngle = this.dirSign > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -1035,29 +1120,56 @@ export class TrafficVehicle {
           return false;
         };
 
-        // Determine if perpendicular turn options lead to alleys
-        let turnPosAlley = false;
-        let turnNegAlley = false;
+        const hasConstruction = (gx, gz) => {
+          if (!this.world || !this.world.obstacleGrid) return false;
+          const posX = gx * 40;
+          const posZ = gz * 40;
+          const cs = this.world.spatialCellSize || 30;
+          const cx0 = Math.floor((posX - 20) / cs);
+          const cx1 = Math.floor((posX + 20) / cs);
+          const cz0 = Math.floor((posZ - 20) / cs);
+          const cz1 = Math.floor((posZ + 20) / cs);
+          for (let cx = cx0; cx <= cx1; cx++) {
+            for (let cz = cz0; cz <= cz1; cz++) {
+              const cell = this.world.obstacleGrid.get(`${cx},${cz}`);
+              if (!cell) continue;
+              for (let i = 0; i < cell.length; i++) {
+                if (cell[i].isConstruction) return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        // Determine if perpendicular turn options lead to alleys or construction
+        let turnPosAlley = false, turnPosConst = false;
+        let turnNegAlley = false, turnNegConst = false;
         if (perpAxis === 'z') {
           turnPosAlley = isTileAlley(gridX, gridZ + 1);
+          turnPosConst = hasConstruction(gridX, gridZ + 1);
           turnNegAlley = isTileAlley(gridX, gridZ - 1);
+          turnNegConst = hasConstruction(gridX, gridZ - 1);
         } else {
           turnPosAlley = isTileAlley(gridX + 1, gridZ);
+          turnPosConst = hasConstruction(gridX + 1, gridZ);
           turnNegAlley = isTileAlley(gridX - 1, gridZ);
+          turnNegConst = hasConstruction(gridX - 1, gridZ);
         }
 
-        // Determine if going straight leads to an alley
-        let straightAlley = false;
+        // Determine if going straight leads to an alley or construction
+        let straightAlley = false, straightConst = false;
         if (this.roadAxis === 'x') {
           straightAlley = isTileAlley(gridX + this.dirSign, gridZ);
+          straightConst = hasConstruction(gridX + this.dirSign, gridZ);
         } else {
           straightAlley = isTileAlley(gridX, gridZ + this.dirSign);
+          straightConst = hasConstruction(gridX, gridZ + this.dirSign);
         }
 
         const candidates = [
-          { axis: this.roadAxis, coord: this.roadCoord, dir: this.dirSign, weight: straightAlley ? 0.05 : 0.65 },
-          { axis: perpAxis, coord: perpAxis === 'z' ? currentBlockX : currentBlockZ, dir: 1, weight: turnPosAlley ? 0.02 : 0.30 },
-          { axis: perpAxis, coord: perpAxis === 'z' ? currentBlockX : currentBlockZ, dir: -1, weight: turnNegAlley ? 0.02 : 0.30 }
+          { axis: this.roadAxis, coord: this.roadCoord, dir: this.dirSign, weight: (straightAlley ? 0.05 : 0.65) * (straightConst ? 0.01 : 1.0) },
+          { axis: perpAxis, coord: perpAxis === 'z' ? currentBlockX : currentBlockZ, dir: 1, weight: (turnPosAlley ? 0.02 : 0.30) * (turnPosConst ? 0.01 : 1.0) },
+          { axis: perpAxis, coord: perpAxis === 'z' ? currentBlockX : currentBlockZ, dir: -1, weight: (turnNegAlley ? 0.02 : 0.30) * (turnNegConst ? 0.01 : 1.0) }
         ];
 
         const totalWeight = candidates.reduce((sum, c) => sum + c.weight, 0);

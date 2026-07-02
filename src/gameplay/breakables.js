@@ -98,17 +98,56 @@ export function checkBreakablesCollision(dt) {
             propHeight = 10.0;
           }
           
-          const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
-          if (dist2D < collisionDist && dy > minDy && dy < propHeight + ent.radius) {
-            // Re-calculate actual overlap based on 2D distance for pushing out
-            const dist = dist2D;
+          let isCollision = false;
+          let overlap = 0;
+          let normal = new THREE.Vector3();
+
+          if (b.type === 'glass' && b.width !== undefined) {
+             const localPos = new THREE.Vector3();
+             localPos.subVectors(ent.position, b.position);
+             
+             // Transform entity into glass local space by applying INVERSE rotation
+             localPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), -b.rotationY);
+
+             const halfW = b.width / 2;
+             const halfD = b.depth / 2;
+             
+             if (Math.abs(localPos.x) < halfW + ent.radius && Math.abs(localPos.z) < halfD + ent.radius) {
+                isCollision = true;
+                const overlapX = (halfW + ent.radius) - Math.abs(localPos.x);
+                const overlapZ = (halfD + ent.radius) - Math.abs(localPos.z);
+                
+                const signX = localPos.x >= 0 ? 1 : -1;
+                const signZ = localPos.z >= 0 ? 1 : -1;
+
+                if (overlapX < overlapZ) {
+                   overlap = overlapX;
+                   normal.set(signX, 0, 0);
+                } else {
+                   overlap = overlapZ;
+                   normal.set(0, 0, signZ);
+                }
+                
+                // Rotate normal back to world space
+                normal.applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotationY);
+             }
+          } else {
+             const collisionDist = ent.radius + (b.radius !== undefined ? b.radius : 0.6);
+             if (dist2D < collisionDist) {
+                isCollision = true;
+                overlap = collisionDist - dist2D;
+                normal.copy(ent.position).sub(b.position);
+                normal.y = 0;
+                normal.normalize();
+             }
+          }
+
+          if (isCollision && dy > minDy && dy < propHeight + ent.radius) {
             const speed = ent.velocity.length();
-            if (speed < 4.0) {
+            const breakSpeed = (b.type === 'glass') ? 14.0 : 4.0;
+            
+            if (speed < breakSpeed) {
               // Solid collision: push out and bounce velocity
-              const normal = ent.position.clone().sub(b.position);
-              normal.y = 0;
-              normal.normalize();
-              const overlap = collisionDist - dist;
               ent.position.addScaledVector(normal, overlap);
               
               const dot = ent.velocity.dot(normal);

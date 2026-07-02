@@ -119,13 +119,7 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
         group.add(box2);
       }
 
-      obstacles.push({
-        xMin: posX + lx - 0.9,
-        xMax: posX + lx + 0.9,
-        zMin: posZ + lz - 0.9,
-        zMax: posZ + lz + 0.9,
-        height: 2.8
-      });
+      // Do not push to obstacles so AI and players can blast through them freely
     };
 
     const addTrashBags = (lx, lz) => {
@@ -146,13 +140,7 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
         group.add(bag);
       }
       
-      obstacles.push({
-        xMin: posX + lx - 1.2,
-        xMax: posX + lx + 1.2,
-        zMin: posZ + lz - 1.2,
-        zMax: posZ + lz + 1.2,
-        height: 1.2
-      });
+      // Do not push to obstacles so AI and players can blast through them freely
     };
 
     const addUtilityPole = (lx, lz) => {
@@ -347,54 +335,52 @@ export function buildAlleyTile(gridX, gridZ, posX, posZ, group, obstacles, light
     };
 
     if (isNS && !isEW) {
-      // NS Alley: place props along left (lx = -13) and right (lx = 13) edges to keep center clear
-      // Guaranteed Utility Pole for lighting on one side
+      // NS Alley: props hugging the left/right walls, entrance corners guaranteed clear
+      // Pole at far end only, never at entrance
       if (rand < 0.5) {
-        addUtilityPole(-13, -8);
-        addBox(13, 5, 2.5, 2.5, 2.5);
+        addUtilityPole(-16, 12);
+        addBox(16, -12, 2.5, 2.5, 2.5);
       } else {
-        addUtilityPole(13, 8);
-        addBox(-13, -8, 2.5, 2.5, 2.5);
+        addUtilityPole(16, -12);
+        addBox(-16, 12, 2.5, 2.5, 2.5);
       }
 
-      // Decorative minor trash/cardboard details
+      // Decorative details — kept at walls, never within 8m of alley center axis
       if (rand > 0.6) {
-        addTrashBin(-13 * (rand < 0.5 ? -1 : 1), 2);
+        addTrashBin(-16 * (rand < 0.5 ? -1 : 1), 2);
       } else {
-        addTrashBags(-13 * (rand < 0.5 ? -1 : 1), 2);
+        addTrashBags(-16 * (rand < 0.5 ? -1 : 1), 2);
       }
       if (rand > 0.3 && rand < 0.7) {
-        addCardboardBoxes(13 * (rand < 0.5 ? -1 : 1), -4);
+        addCardboardBoxes(16 * (rand < 0.5 ? -1 : 1), -4);
       }
     } else if (isEW && !isNS) {
-      // EW Alley: place props along top (lz = -13) and bottom (lz = 13) edges to keep center clear
-      // Guaranteed Utility Pole for lighting on one side
+      // EW Alley: props hugging the top/bottom walls, entrance corners guaranteed clear
       if (rand < 0.5) {
-        addUtilityPole(-8, -13);
-        addBox(5, 13, 2.5, 2.5, 2.5);
+        addUtilityPole(-8, -16);
+        addBox(5, 16, 2.5, 2.5, 2.5);
       } else {
-        addUtilityPole(8, 13);
-        addBox(-8, -13, 2.5, 2.5, 2.5);
+        addUtilityPole(8, 16);
+        addBox(-8, -16, 2.5, 2.5, 2.5);
       }
 
-      // Decorative minor trash/cardboard details
+      // Decorative details — kept at walls
       if (rand > 0.6) {
-        addTrashBin(2, -13 * (rand < 0.5 ? -1 : 1));
+        addTrashBin(2, -16 * (rand < 0.5 ? -1 : 1));
       } else {
-        addTrashBags(2, -13 * (rand < 0.5 ? -1 : 1));
+        addTrashBags(2, -16 * (rand < 0.5 ? -1 : 1));
       }
       if (rand > 0.3 && rand < 0.7) {
-        addCardboardBoxes(-4, 13 * (rand < 0.5 ? -1 : 1));
+        addCardboardBoxes(-4, 16 * (rand < 0.5 ? -1 : 1));
       }
     } else if (isNS && isEW) {
-      // Alley-Alley Intersection: keep intersection center clear, place props in corners
-      // Guaranteed Utility Pole for lighting in one corner
+      // Alley-Alley Intersection: corners only, center guaranteed clear
       if (rand < 0.5) {
-        addUtilityPole(-13, 13);
-        addTrashBags(13, -13);
+        addUtilityPole(-16, 16);
+        addTrashBags(16, -16);
       } else {
-        addUtilityPole(13, -13);
-        addTrashBags(-13, 13);
+        addUtilityPole(16, -16);
+        addTrashBags(-16, 16);
       }
     }
   }
